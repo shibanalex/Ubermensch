@@ -1,0 +1,226 @@
+"""Telegram через официальный API (Telethon) от имени пользователя.
+
+Берём личные чаты и «Избранное» целиком. Из групп — только важное: свои сообщения (вместе с тем,
+на что ответил) и обращения к пользователю; чужая болтовня — шум. Каналы и боты не читаем.
+Сессия = полный доступ к аккаунту, поэтому лежит на зашифрованном D:.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from datetime import datetime
+
+from telethon import TelegramClient
+from telethon.errors import AuthKeyUnregisteredError, SessionRevokedError, UserDeactivatedError
+from telethon.tl.types import (InputMessagesFilterMyMentions, MessageMediaDocument,
+                               MessageMediaGeo, MessageMediaPhoto, MessageMediaPoll, User)
+
+from .. import config
+from ..store import Store
+from . import local_iso
+
+log = logging.getLogger(__name__)
+
+SESSION = config.DATA_DIR / "secrets" / "telegram"
+SERVICE_USER_ID = 777000  # служебные уведомления Telegram
+MESSAGE_CHARS = 2000
+
+
+def client() -> TelegramClient:
+    tg = TelegramClient(str(SESSION), int(os.environ["TG_API_ID"]), os.environ["TG_API_HASH"],
+                        device_model="Übermensch", app_version="1.0")
+    tg.flood_sleep_threshold = 120  # короткие ограничения Telegram пережидаем сами
+    return tg
+
+
+def _media_label(message) -> str:
+    media = message.media
+    if media is None:
+        return ""
+    if isinstance(media, MessageMediaPhoto):
+        return "[фото]"
+    if isinstance(media, MessageMediaDocument):
+        if message.voice:
+            return "[голосовое]"
+        if message.video_note or message.video:
+            return "[видео]"
+        if message.sticker:
+            return "[стикер]"
+        if message.gif:
+            return "[gif]"
+        return f"[файл: {message.file.name or 'без имени'}]"
+    if isinstance(media, MessageMediaGeo):
+        return "[геопозиция]"
+    if isinstance(media, MessageMediaPoll):
+        return "[опрос]"
+    return "[вложение]"
+
+
+class TelegramLoginRequired(RuntimeError):
+    """Нет входа: сессия не создана, завершена в настройках Telegram или удалена."""
+
+
+def _sender_name(sender) -> str:
+    name = getattr(sender, "first_name", None) or getattr(sender, "title", None) or "кто-то"
+    if getattr(sender, "last_name", None):
+        name += f" {sender.last_name}"
+    return name
+
+
+class TelegramAccount:
+    """Один клиент на сессию на всё ядро: сбор переписок и действия от имени пользователя.
+
+    Два клиента на одном файле сессии мешают друг другу, поэтому ядро держит один.
+    """
+
+    def __init__(self):
+        self._client: TelegramClient | None = None
+        self._lock = asyncio.Lock()
+
+    async def _require(self) -> TelegramClient:
+        """Подключённый и авторизованный клиент, иначе TelegramLoginRequired."""
+        async with self._lock:
+            if self._client is None:
+                self._client = client()
+            if not self._client.is_connected():
+                await self._client.connect()
+            try:
+                authorized = await self._client.is_user_authorized()
+            except (AuthKeyUnregisteredError, SessionRevokedError, UserDeactivatedError):
+                authorized = False
+            if not authorized:
+                raise TelegramLoginRequired("нет входа в Telegram — запусти telegram_login.bat")
+            return self._client
+
+    # --- действия ---
+
+    async def find_chats(self, query: str, limit: int = 10) -> list[dict]:
+        tg = await self._require()
+        query = query.casefold()
+        found = []
+        async for dialog in tg.iter_dialogs(limit=500):
+            if query in (dialog.name or "").casefold():
+                kind = "канал" if dialog.is_channel and not dialog.is_group else                     "группа" if dialog.is_group else "личный"
+                found.append({"chat_id": dialog.id, "name": dialog.name, "kind": kind,
+                              "unread": dialog.unread_count})
+                if len(found) >= limit:
+                    break
+        return found
+
+    async def history(self, chat_id: int, limit: int = 30) -> list[dict]:
+        tg = await self._require()
+        messages = await tg.get_messages(chat_id, limit=min(limit, 100))
+        result = []
+        for message in reversed(messages):
+            text = " ".join(filter(None, [_media_label(message), message.message or ""]))
+            if not text.strip():
+                continue
+            author = "Я" if message.out else _sender_name(message.sender or await message.get_sender())
+            result.append({"time": local_iso(message.date), "author": author, "text": text})
+        return result
+
+    async def chat_name(self, chat_id: int) -> str:
+        tg = await self._require()
+        entity = await tg.get_entity(chat_id)
+        return _sender_name(entity)
+
+    async def send(self, chat_id: int, text: str) -> None:
+        tg = await self._require()
+        await tg.send_message(chat_id, text)
+
+    # --- сбор ---
+
+    async def _group_highlights(self, tg: TelegramClient, dialog, since: datetime,
+                                last_id: int) -> tuple[list[dict], int]:
+        """Из группы — свои сообщения (с цитатой того, на что ответил) и обращения ко мне.
+
+        Отбор делает сам Telegram (поиск по отправителю и по упоминаниям), поэтому даже
+        в огромных группах не приходится листать чужую переписку.
+        """
+        since_utc = since.astimezone()
+        found: dict[int, dict] = {}
+        newest = last_id
+        for query in ({"from_user": "me"}, {"filter": InputMessagesFilterMyMentions}):
+            async for message in tg.iter_messages(dialog.entity, min_id=last_id, **query):
+                if not last_id and message.date < since_utc:
+                    break
+                newest = max(newest, message.id)
+                if message.id in found or message.action is not None:
+                    continue
+                text = " ".join(filter(None, [_media_label(message), message.message or ""]))
+                if not text.strip():
+                    continue
+                if message.out and message.is_reply:
+                    replied = await message.get_reply_message()
+                    if replied is not None:
+                        quote = (replied.message or _media_label(replied))[:200]
+                        who = _sender_name(replied.sender or await replied.get_sender())
+                        text = f"(в ответ {who}: «{quote}») {text}"
+                author = "Я" if message.out else                     _sender_name(message.sender or await message.get_sender())
+                found[message.id] = {
+                    "source": "telegram",
+                    "external_id": f"{dialog.id}:{message.id}",
+                    "ts": local_iso(message.date),
+                    "thread": f"{dialog.name} (группа)",
+                    "author": author,
+                    "outgoing": int(bool(message.out)),
+                    "text": text[:MESSAGE_CHARS],
+                    "meta": {"chat_id": dialog.id, "kind": "group",
+                             "mention": not message.out},
+                }
+        return sorted(found.values(), key=lambda e: e["ts"]), newest
+
+    async def collect(self, store: Store, since: datetime) -> tuple[int, int]:
+        """Собирает новые сообщения. Возвращает (новых сообщений, прочитанных чатов)."""
+        tg = await self._require()
+        added = chats = 0
+        async for dialog in tg.iter_dialogs():
+            entity = dialog.entity
+            if dialog.is_channel and not dialog.is_group:
+                continue  # каналы — чужие публикации, не жизнь пользователя
+            if isinstance(entity, User) and (entity.bot or entity.id == SERVICE_USER_ID):
+                continue
+            kind = "self" if isinstance(entity, User) and entity.is_self else                 "user" if dialog.is_user else "group"
+            name = "Избранное" if kind == "self" else dialog.name
+            cursor_key = f"telegram:{dialog.id}"
+            last_id = int(store.cursor(cursor_key) or 0)
+            if kind == "group":
+                batch, last_id = await self._group_highlights(tg, dialog, since, last_id)
+                if batch:
+                    added += store.add_events(batch)
+                    chats += 1
+                if last_id:
+                    store.set_cursor(cursor_key, str(last_id))
+                continue
+            batch: list[dict] = []
+            messages = tg.iter_messages(entity, reverse=True, min_id=last_id) if last_id else                 tg.iter_messages(entity, reverse=True, offset_date=since)
+            async for message in messages:
+                last_id = max(last_id, message.id)
+                if message.action is not None:
+                    continue  # служебные: «вступил в группу», «закрепил» и т. п.
+                text = " ".join(filter(None, [_media_label(message), message.message or ""]))
+                if not text.strip():
+                    continue
+                if message.out:
+                    author = "Я"
+                elif kind == "user":
+                    author = name
+                else:
+                    author = _sender_name(message.sender or await message.get_sender())
+                batch.append({
+                    "source": "telegram",
+                    "external_id": f"{dialog.id}:{message.id}",
+                    "ts": local_iso(message.date),
+                    "thread": name if kind != "group" else f"{name} (группа)",
+                    "author": author,
+                    "outgoing": int(bool(message.out)),
+                    "text": text[:MESSAGE_CHARS],
+                    "meta": {"chat_id": dialog.id, "kind": kind},
+                })
+            if batch:
+                added += store.add_events(batch)
+                chats += 1
+            if last_id:
+                store.set_cursor(cursor_key, str(last_id))
+        return added, chats

@@ -1,0 +1,333 @@
+"""Маскот: окошко-консоль с зелёной мордочкой-смайликом :3 (глаза-точки, рот «3» на боку).
+
+Эмоции: ожидание (моргает, следит за курсором), речь, думает, радуется, удивлён,
+перетаскивают (>.<), голова кружится после броска (@ @), спит ночью, нет связи (x x).
+Погладить — поводить курсором туда-сюда над мордочкой.
+"""
+from __future__ import annotations
+
+import math
+import random
+from datetime import datetime
+
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSettings, Qt, QTimer, Signal
+from PySide6.QtGui import (QContextMenuEvent, QCursor, QFont, QGuiApplication, QMouseEvent,
+                           QPainter, QPen, QPixmap)
+from PySide6.QtWidgets import QMenu
+
+from . import console
+from .bubble import ReplyBubble
+from .client import Api
+from .console import BG, BORDER, DIM, GREEN, MONO, TITLE_H, plain
+
+FACE = GREEN
+TALK = ("o", "3", "O", "3")  # «3» рисуется повёрнутой — это рот :3
+DOT = "•"  # глаз-точка рисуется кружком
+EYE_DX = 34  # глаза от центра
+
+
+def icon_pixmap(size: int) -> QPixmap:
+    """Иконка для трея: маленькое чёрное окошко с зелёным :3."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pixmap)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(QPen(BORDER, max(1, size // 32)))
+    p.setBrush(BG)
+    p.drawRoundedRect(QRectF(1, 1, size - 2, size - 2), size / 6, size / 6)
+    p.setPen(FACE)
+    p.setFont(QFont(MONO, int(size * 0.34), QFont.Weight.Bold))
+    p.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, ":3")
+    p.end()
+    return pixmap
+
+
+class Mascot(console.ConsoleWindow):
+    clicked = Signal()  # открыть окно запроса
+    open_history = Signal()  # открыть консоль ответов
+    quit_requested = Signal()
+    hidden_to_tray = Signal()
+
+    W, H = 220, 160
+    TICK_MS = 50
+
+    def __init__(self, api: Api):
+        super().__init__("oswald.exe")
+        self.resize(self.W, self.H)
+        self.setToolTip("Клик — спросить. Перетащи меня. Поводи курсором — погладишь :3")
+        self.api = api
+        self.bubble = ReplyBubble()  # реплики маскота — мини-окна с хвостиком
+        self.bubble.open_history.connect(self.open_history)
+        self.bubble.typing.connect(self.set_typing)
+        self.answer_visible = lambda: False  # подменяет приложение
+
+        self._ms = 0
+        self._blink_at, self._blink_until = 2500, 0
+        self._talk_until = self._happy_until = self._surprise_until = self._dizzy_until = 0
+        self._typing = False
+        self._last_touch = 0  # последнее взаимодействие — ночью котик засыпает без него
+        self._press: QPoint | None = None
+        self._dragging = False
+        self._drag_distance = 0
+        self._pet_moves: list[tuple[int, int]] = []  # (время, пройденный курсором путь)
+        self._last_cursor: QPoint | None = None
+        self._hearts: list[tuple[int, float]] = []  # (время появления, x)
+        self._last_reply_id: int | None = None
+
+        self._settings = QSettings("Ubermensch", "desktop")
+        self._place()
+        api.event.connect(self._on_event)
+        api.state_changed.connect(self._on_state)
+
+        timer = QTimer(self, interval=self.TICK_MS)
+        timer.timeout.connect(self._tick)
+        timer.start()
+
+    def _place(self) -> None:
+        saved = self._settings.value("mascot_pos")
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        if isinstance(saved, QPoint) and any(
+                s.availableGeometry().contains(saved) for s in QGuiApplication.screens()):
+            self.move(saved)
+        else:
+            self.move(area.right() - self.W - 24, area.bottom() - self.H - 12)
+
+    # --- реакции на ядро и приложение ---
+
+    def say(self, text: str, seconds: float | None = None, title: str = "oswald.exe",
+            notes: list[str] = ()) -> None:
+        self.bubble.show_text(text, self, notes=notes, title=title, hold_seconds=seconds)
+
+    def _talk(self, seconds: float) -> None:
+        self._talk_until = max(self._talk_until, self._ms + int(min(seconds, 4.0) * 1000))
+
+    def set_typing(self, typing: bool) -> None:
+        """Пока консоль ответа печатает текст, маскот «говорит»."""
+        self._typing = typing
+        if not typing:
+            self._talk(0.3)
+
+    def happy(self, seconds: float = 1.5) -> None:
+        self._happy_until = self._ms + int(seconds * 1000)
+
+    def _on_event(self, event: dict) -> None:
+        kind = event.get("type")
+        if kind == "reminder":
+            self._last_touch = self._ms
+            self._surprise_until = self._ms + 2500
+            self.say(f"⏰ {event.get('text', '')}", seconds=60, title="Напоминание")
+        elif kind == "say":  # реплика от ядра — например, комментарий к экрану
+            self.say(event.get("text", ""), seconds=20)
+        elif kind == "celebrate":
+            self.happy(2)
+            self.say(random.choice(["Мур! Так держать.", "Ещё одна готова :3",
+                                    "Вот это темп.", "Горжусь тобой."]), seconds=4)
+
+    def _on_state(self, state: dict) -> None:
+        replies = [m for m in state.get("messages", []) if m["role"] == "assistant"]
+        if not replies:
+            return
+        latest = replies[-1]
+        if self._last_reply_id is not None and latest["id"] > self._last_reply_id \
+                and not self.answer_visible():
+            self.say(plain(latest["text"]), notes=latest.get("notes") or [])
+        self._last_reply_id = latest["id"]
+
+    # --- анимация ---
+
+    def _tick(self) -> None:
+        self._ms += self.TICK_MS
+        if self._ms >= self._blink_at:
+            self._blink_until = self._ms + 140
+            self._blink_at = self._ms + random.randint(2500, 6000)
+        self._hearts = [(t, x) for t, x in self._hearts if self._ms - t < 1500]
+        self.update()
+
+    def _mood(self) -> str:
+        t = self._ms
+        if self._dragging:
+            return "drag"
+        if t < self._dizzy_until:
+            return "dizzy"
+        if not self.api.online:
+            return "offline"
+        if t < self._surprise_until:
+            return "surprised"
+        if t < self._happy_until:
+            return "happy"
+        if self.api.state.get("thinking"):
+            return "thinking"
+        if self._typing or t < self._talk_until:
+            return "talk"
+        if datetime.now().hour < 7 and t - self._last_touch > 120_000:
+            return "sleep"
+        return "idle"
+
+    def _face(self, mood: str) -> tuple[str, str, str]:
+        """Левый глаз, правый глаз, рот."""
+        eye = "-" if self._ms < self._blink_until else DOT
+        return {
+            "drag": (">", "<", "o"),
+            "dizzy": ("@", "@", "~"),
+            "offline": ("x", "x", "3"),
+            "surprised": ("O", "O", "o"),
+            "happy": ("^", "^", "3"),
+            "thinking": (DOT, DOT, "3"),
+            "talk": (eye, eye, TALK[(self._ms // 140) % len(TALK)]),
+            "sleep": ("-", "-", "3"),
+        }.get(mood, (eye, eye, "3"))
+
+    def _look(self, mood: str) -> QPointF:
+        if mood == "thinking":
+            return QPointF(3, -4)  # смотрит вверх, вспоминает
+        if mood not in ("idle", "talk"):
+            return QPointF(0, 0)
+        center = self.mapToGlobal(QPoint(self.W // 2, TITLE_H + 45))
+        dx, dy = QCursor.pos().x() - center.x(), QCursor.pos().y() - center.y()
+        dist = math.hypot(dx, dy) or 1
+        reach = min(1.0, dist / 250) * 3.5
+        return QPointF(dx / dist * reach, dy / dist * reach)
+
+    def paint_body(self, p: QPainter) -> None:
+        mood = self._mood()
+        left, right, mouth = self._face(mood)
+        look = self._look(mood)
+        color = DIM if mood == "offline" else FACE
+        cx, body_h = self.W / 2, self.H - TITLE_H
+        eyes_y, mouth_y = TITLE_H + body_h * 0.38, TITLE_H + body_h * 0.66
+
+        p.save()
+        if mood == "drag":  # покачивается в руке
+            p.translate(cx, TITLE_H + body_h / 2)
+            p.rotate(math.sin(self._ms / 90) * 7)
+            p.translate(-cx, -(TITLE_H + body_h / 2))
+        p.setPen(color)
+        for dx, glyph in ((-EYE_DX, left), (EYE_DX, right)):
+            p.save()
+            p.translate(cx + dx + look.x(), eyes_y + look.y())
+            if glyph == DOT:  # глаз-точка, как двоеточие в :3
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(color)
+                p.drawEllipse(QPointF(0, 0), 6.5, 6.5)
+            else:
+                if mood == "dizzy":
+                    p.rotate((self._ms * 0.6) % 360)
+                p.setFont(QFont(MONO, 30 if glyph == "O" else 26))
+                p.drawText(QRectF(-30, -30, 60, 60), Qt.AlignmentFlag.AlignCenter, glyph)
+            p.restore()
+        p.save()
+        p.translate(cx, mouth_y)
+        if mouth == "3":
+            p.rotate(90)  # «3» на боку — рот :3
+        p.setFont(QFont(MONO, 32))
+        p.drawText(QRectF(-30, -30, 60, 60), Qt.AlignmentFlag.AlignCenter, mouth)
+        p.restore()
+        p.restore()
+
+        self._paint_extras(p, mood, color)
+
+        status = {"offline": "нет связи с ядром", "thinking": "думаю..."}.get(mood)
+        if not status and (problems := self.api.state.get("problems")):
+            status = "⚠ " + problems[0]["message"][:34] + "…"  # подробности — /status и история
+        if status:
+            p.setFont(QFont(MONO, 8))
+            p.setPen(DIM)
+            p.drawText(QRect(10, self.H - 20, self.W - 16, 16), Qt.AlignmentFlag.AlignVCenter,
+                       rf"C:\oswald> {status}")
+
+    def _paint_extras(self, p: QPainter, mood: str, color) -> None:
+        t = self._ms
+        p.setPen(color)
+        if mood == "thinking":
+            p.setFont(QFont(MONO, 14, QFont.Weight.Bold))
+            p.drawText(QPointF(self.W - 46, TITLE_H + 22), "." * (1 + (t // 400) % 3))
+        elif mood == "surprised":
+            p.setFont(QFont(MONO, 20, QFont.Weight.Bold))
+            p.drawText(QPointF(self.W - 34, TITLE_H + 28), "!")
+        elif mood in ("sleep", "offline"):
+            for i in range(3):
+                phase = ((t / 1000) * 0.35 + i / 3) % 1
+                p.setOpacity(1 - phase)
+                p.setFont(QFont(MONO, int(9 + phase * 6)))
+                p.drawText(QPointF(self.W - 40 + phase * 14, TITLE_H + 40 - phase * 30), "z")
+            p.setOpacity(1)
+        for born, x in self._hearts:  # сердечки, когда гладят
+            phase = (t - born) / 1500
+            p.setOpacity(1 - phase)
+            p.setFont(QFont("Segoe UI Symbol", 13))
+            p.drawText(QPointF(x, TITLE_H + 40 - phase * 34), "♥")
+        p.setOpacity(1)
+
+    # --- мышь ---
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        self._last_touch = self._ms
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press = event.globalPosition().toPoint()
+            self._origin = self.pos()
+            self._dragging = False
+            self._drag_distance = 0
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self._last_touch = self._ms
+        self.set_hover(self.button_at(event.position().toPoint()))
+        if self._press is None:
+            self._detect_petting(event.globalPosition().toPoint())
+            return
+        delta = event.globalPosition().toPoint() - self._press
+        if self._dragging or delta.manhattanLength() > 5:
+            if not self._dragging:
+                self.bubble.hide()
+            self._dragging = True
+            self._drag_distance = max(self._drag_distance, delta.manhattanLength())
+            self.move(self._origin + delta)
+
+    def _detect_petting(self, cursor: QPoint) -> None:
+        """Курсор водят туда-сюда над мордочкой — это поглаживание."""
+        if self._last_cursor is not None:
+            self._pet_moves.append((self._ms, (cursor - self._last_cursor).manhattanLength()))
+        self._last_cursor = cursor
+        self._pet_moves = [(t, d) for t, d in self._pet_moves if self._ms - t < 1200]
+        if sum(d for _, d in self._pet_moves) > 450:
+            self._pet_moves.clear()
+            self.happy(1.8)
+            self._hearts.append((self._ms, random.uniform(30, self.W - 50)))
+
+    def leaveEvent(self, event) -> None:
+        super().leaveEvent(event)
+        self._last_cursor = None
+        self._pet_moves.clear()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._press is None:
+            return
+        self._press = None
+        if self._dragging:
+            self._dragging = False
+            self._settings.setValue("mascot_pos", self.pos())
+            if self._drag_distance > 120:  # швырнули — голова кружится
+                self._dizzy_until = self._ms + 1600
+            return
+        button = self.button_at(event.position().toPoint())
+        if button in ("hide", "close"):
+            self.hide_to_tray()
+        elif button == "maximize":
+            self.open_history.emit()
+        else:
+            self.happy(0.5)
+            self.clicked.emit()
+
+    def hide_to_tray(self) -> None:
+        """Прячет маскота; приложение подскажет, как его вернуть."""
+        self.hide()
+        self.bubble.hide()
+        self.hidden_to_tray.emit()
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        menu = QMenu(self)
+        menu.addAction("Спросить", self.clicked.emit)
+        menu.addAction("История ответов", self.open_history.emit)
+        menu.addAction("Спрятать в трей", self.hide_to_tray)
+        menu.addSeparator()
+        menu.addAction("Выход", self.quit_requested.emit)
+        menu.exec(event.globalPos())
