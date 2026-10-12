@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import actions, ingest
+from . import actions, config, ingest
 from .brain import MCP_SERVER, Brain
 from .config import Settings
 from .store import AREAS, Store
@@ -260,7 +260,9 @@ class Assistant:
         )
         text = (PROMPT_TEMPLATE.read_text(encoding="utf-8")
                 .replace("{{AREAS}}", areas)
-                .replace("{{ACTIONS}}", help_lines))
+                .replace("{{ACTIONS}}", help_lines)
+                .replace("{{OBSIDIAN}}", str(config.OBSIDIAN_DIR))
+                .replace("{{DOCUMENTS}}", str(config.DOCUMENTS_DIR)))
         if telegram:
             text += (PROMPTS / "telegram.md").read_text(encoding="utf-8")
         if self.style_file.exists():

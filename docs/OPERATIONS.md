@@ -13,6 +13,23 @@
 5. Вход в Telegram: `telegram_login.bat`.
 6. Запуск: `start.bat`; автозапуск: `powershell -ExecutionPolicy Bypass -File scripts\install_autostart.ps1`.
 
+### Дополнительно (рекомендуется)
+
+- **Claude Code отдельно**: `irm https://claude.ai/install.ps1 | iex`, затем `claude` → `/login`. Ядро ищет программу так: `CLAUDE_BIN` → PATH → `%USERPROFILE%\.local\bin\claude.exe` → встроенная в расширение VS Code.
+- **Everything** (voidtools) + `es.exe` в `D:\Ubermensch\bin\` — мгновенный поиск файлов. Everything должен быть запущен (Tools → Options → «Start Everything on system startup»). Без него поиск идёт медленным обходом папок.
+- **KeePassXC** — хранить `BACKUP_PASSWORD` и ключи.
+
+### Подключение Google Календаря (один раз)
+
+1. console.cloud.google.com → создать проект (любое имя, например «Oswald»).
+2. «APIs & Services» → «Library» → **Google Calendar API** → Enable.
+3. «OAuth consent screen» → External → заполнить имя и свою почту → в «Test users» добавить свой Gmail.
+4. «Credentials» → «Create credentials» → **OAuth client ID** → тип **Desktop app** → Download JSON.
+5. Сохранить файл как `D:\Ubermensch\secrets\google_oauth_client.json`.
+6. Запустить `google_login.bat` → в браузере разрешить доступ к событиям календаря.
+
+Доступ ограничен событиями календаря; отозвать — myaccount.google.com/permissions.
+
 ## Запуск и остановка
 
 | Что | Как |
@@ -57,6 +74,8 @@
 | Нет пароля бэкапов / 7-Zip | «Резервные копии не делаются…» | бэкап пропускается | задать `BACKUP_PASSWORD` в `.env` |
 | Давно нет копии вне ноутбука | «Подключи внешний диск…» | — | подключить носитель с папкой `OswaldBackup` |
 | Действие ждёт подтверждения 10 минут | — | считается отказом | — |
+| Календарь не подключён / доступ отозван | Освальд говорит «Календарь не подключён…» | инструменты календаря возвращают ошибку | раздел «Подключение Google Календаря» |
+| Everything не запущен | — | поиск файлов медленнее (обход папок) | запустить Everything |
 
 ## Резервные копии
 

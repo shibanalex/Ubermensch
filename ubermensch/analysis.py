@@ -444,6 +444,11 @@ class Investigation:
         path = DOSSIER_DIR / f"dossier-{datetime.now():%Y-%m-%d_%H-%M}.md"
         path.write_text(text, encoding="utf-8")
         (DOSSIER_DIR / "latest.md").write_text(text, encoding="utf-8")
+        try:  # копия в Obsidian — читать удобнее, со ссылками и поиском
+            config.OBSIDIAN_DIR.mkdir(parents=True, exist_ok=True)
+            (config.OBSIDIAN_DIR / "Досье.md").write_text(text, encoding="utf-8")
+        except OSError:
+            log.warning("Не удалось положить досье в Obsidian (%s)", config.OBSIDIAN_DIR)
         self.store.set_cursor("dossier_at", datetime.now().isoformat(timespec="seconds"))
         pending = self.store.job_counts().get("pending", 0)
         tail = f" Остальной год ещё разбираю в фоне (осталось порций: {pending})." if pending else ""

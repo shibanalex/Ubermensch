@@ -17,6 +17,17 @@ API_HOST = "127.0.0.1"
 API_PORT = int(os.getenv("API_PORT", "8765"))
 API_TOKEN_FILE = DATA_DIR / "secrets" / "api_token"
 
+# Свободные зоны Освальда: здесь он создаёт и правит файлы сам, без подтверждения.
+# Всё остальное на дисках — только после «да» пользователя.
+OBSIDIAN_DIR = Path(os.getenv("OSWALD_OBSIDIAN", r"D:\Aleksey\Aleksey\Oswald"))
+DOCUMENTS_DIR = Path(os.getenv("OSWALD_DOCUMENTS", str(Path.home() / "Documents" / "Oswald")))
+FREE_ZONES = (DATA_DIR / "workspace", OBSIDIAN_DIR, DOCUMENTS_DIR)
+
+
+def in_free_zone(path: Path) -> bool:
+    target = path.expanduser().resolve()
+    return any(zone.resolve() == target or zone.resolve() in target.parents for zone in FREE_ZONES)
+
 
 def api_token(create: bool = False) -> str | None:
     """Токен локального API: ядро создаёт его при первом запуске, клиенты только читают."""
@@ -35,6 +46,10 @@ def find_claude() -> str:
         return explicit
     if found := shutil.which("claude"):
         return found
+    # отдельная установка Claude Code (claude.ai/install) — надёжнее встроенной в VS Code
+    standalone = Path.home() / ".local" / "bin" / "claude.exe"
+    if standalone.exists():
+        return str(standalone)
     # Запасной вариант: бинарник, встроенный в расширение VS Code (берём самый свежий).
     bundled = sorted(
         (Path.home() / ".vscode" / "extensions").glob(
@@ -85,6 +100,9 @@ def load() -> Settings:
         claude_model=os.getenv("CLAUDE_MODEL", "opus"),
         claude_timeout=int(os.getenv("CLAUDE_TIMEOUT", "300")),
     )
-    for d in (settings.db_path.parent, settings.workspace, settings.logs_dir):
-        d.mkdir(parents=True, exist_ok=True)
+    for d in (settings.db_path.parent, settings.workspace, settings.logs_dir, *FREE_ZONES):
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass  # например, хранилище Obsidian на другом диске сейчас недоступно
     return settings

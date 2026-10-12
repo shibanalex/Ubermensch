@@ -17,8 +17,8 @@ from typing import Literal
 
 from mcp.server.mcpserver import MCPServer
 
-from . import config
-from .system import files, screen, shell, windows
+from . import config, google_calendar
+from .system import files, office, screen, shell, windows
 
 WORKSPACE = config.DATA_DIR / "workspace"
 
@@ -104,18 +104,94 @@ async def run_powershell(command: str, reason: str) -> str:
     return await asyncio.to_thread(shell.powershell, command)
 
 
+async def _may_write(target: Path, preview: str) -> bool:
+    """В своих зонах Освальд пишет сам, в остальных местах — после «да» пользователя."""
+    if config.in_free_zone(target):
+        return True
+    verb = "Перезаписать файл" if target.exists() else "Создать файл"
+    return await _ask(f"{verb} {target}", preview[:1500])
+
+
 @mcp.tool()
 async def write_file(path: str, content: str) -> str:
-    """Создать или перезаписать текстовый файл. В рабочей папке системы — сразу, в остальных местах —
-    после подтверждения пользователя."""
+    """Создать или перезаписать текстовый файл (.md, .txt …). В своих зонах (заметки Obsidian,
+    «Документы\\Oswald», рабочая папка) — сразу, в остальных местах — после подтверждения."""
     target = Path(path).expanduser().resolve()
-    if WORKSPACE.resolve() not in target.parents:
-        verb = "Перезаписать файл" if target.exists() else "Создать файл"
-        if not await _ask(f"{verb} {target}", content[:1500]):
-            return "Пользователь не разрешил запись."
+    if not await _may_write(target, content):
+        return "Пользователь не разрешил запись."
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return f"Записано: {target}"
+
+
+@mcp.tool()
+async def append_file(path: str, text: str) -> str:
+    """Дописать текст в конец файла (например, в дневную заметку Obsidian). Правила зон — как у write_file."""
+    target = Path(path).expanduser().resolve()
+    if not await _may_write(target, text):
+        return "Пользователь не разрешил запись."
+    target.parent.mkdir(parents=True, exist_ok=True)
+    separator = "\n" if target.exists() and target.stat().st_size else ""
+    with target.open("a", encoding="utf-8") as f:
+        f.write(separator + text)
+    return f"Дописано: {target}"
+
+
+@mcp.tool()
+async def write_word(path: str, title: str, markdown: str) -> str:
+    """Создать документ Word (.docx) из простого Markdown (# заголовки, - списки, **жирный**).
+    В «Документы\\Oswald» — сразу, в остальных местах — после подтверждения."""
+    target = Path(path).expanduser().resolve().with_suffix(".docx")
+    if not await _may_write(target, markdown):
+        return "Пользователь не разрешил запись."
+    await asyncio.to_thread(office.write_word, target, title, markdown)
+    return f"Документ: {target}"
+
+
+@mcp.tool()
+async def write_excel(path: str, sheet: str, rows: list[list], append: bool = False) -> str:
+    """Записать лист таблицы Excel (.xlsx): rows — строки, первая — заголовки. append=true — дописать
+    строки в конец листа (например, расходы). В «Документы\\Oswald» — сразу, иначе — с подтверждением."""
+    target = Path(path).expanduser().resolve().with_suffix(".xlsx")
+    if not await _may_write(target, "\n".join(map(str, rows[:20]))):
+        return "Пользователь не разрешил запись."
+    await asyncio.to_thread(office.write_excel, target, sheet, rows, append)
+    return f"Таблица: {target}, лист «{sheet}»"
+
+
+@mcp.tool()
+async def read_excel(path: str) -> dict:
+    """Прочитать таблицу Excel: листы и их строки (до 200 на лист)."""
+    return await asyncio.to_thread(office.read_excel, Path(path))
+
+
+# --- Google Календарь (свой календарь пользователя: добавлять можно сразу) ---
+
+@mcp.tool()
+async def calendar_upcoming(days: int = 14) -> list[dict]:
+    """События Google Календаря на ближайшие дни."""
+    return await asyncio.to_thread(google_calendar.upcoming, days)
+
+
+@mcp.tool()
+async def calendar_add(title: str, start: str, end: str | None = None, description: str = "",
+                       reminder_minutes: int | None = None) -> dict:
+    """Добавить событие в Google Календарь пользователя (сразу видно на телефоне).
+    start/end: «ГГГГ-ММ-ДД» — на весь день, «ГГГГ-ММ-ДДTЧЧ:ММ» — точное местное время."""
+    return await asyncio.to_thread(google_calendar.add, title, start, end, description,
+                                   reminder_minutes)
+
+
+@mcp.tool()
+async def calendar_delete(event_id: str) -> str:
+    """Удалить событие. Свои (добавленные Освальдом) — сразу, чужие — после подтверждения."""
+    current = await asyncio.to_thread(google_calendar.event, event_id)
+    if google_calendar.MARK not in (current.get("description") or "") and not await _ask(
+            "Удалить событие из календаря", f"{current.get('summary', '')}\n"
+            f"{current['start'].get('dateTime', current['start'].get('date'))}"):
+        return "Пользователь не разрешил удаление."
+    await asyncio.to_thread(google_calendar.delete, event_id)
+    return "Событие удалено."
 
 
 @mcp.tool()
