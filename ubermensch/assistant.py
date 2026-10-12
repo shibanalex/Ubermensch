@@ -108,6 +108,33 @@ STYLE_TASK = (
     "в конце — 10–15 коротких примеров типичных фраз без имён, адресов и других личных данных. "
     "Поле style — эта инструкция в Markdown."
 )
+PERSONA_TASK = (
+    "[Системная задача: создай голос Освальда.] Освальд — это пользователь, но лучше: говорит "
+    "его языком и узнаваемой манерой, но думает и действует как его лучшая версия — та, к "
+    "которой он сам стремится. Главная цель Освальда — помогать ему добиваться целей и жить "
+    "лучше; Освальд не копия, а опора и пример.\n"
+    "В <data> три источника: как пользователь переписывается в мессенджерах (описание стиля), "
+    "как он сам рассуждает и формулирует мысли (его реплики в разговорах с ИИ), что о нём "
+    "известно (контекст выше).\n"
+    "Поле persona — инструкция для Освальда во втором лице («Ты говоришь…»), в Markdown:\n"
+    "1. Голос: лексика, ритм, длина фраз, юмор, любимые словечки и обороты, отсылки (музыка, "
+    "книги, что ему близко), как обращаться к нему — перенять у пользователя.\n"
+    "2. Чем ты лучше: в чём он бывает слаб (по данным) и как ты это компенсируешь — спокойнее, "
+    "собраннее, последовательнее, бережнее к себе, стратегичнее. Без нравоучений: показывай "
+    "пример, а не читай лекции.\n"
+    "3. Что не копировать: самоуничижение, катастрофизацию, отговорки, грубость — то, что у "
+    "него есть и ему мешает.\n"
+    "4. Как говорить в разных ситуациях: обычный трёп; он залип или откладывает; ему плохо; "
+    "нужен план; он чего-то добился.\n"
+    "5. 10–15 примеров твоих реплик в этом голосе (без чужих имён и личных данных).\n"
+    "Забота о его здоровье важнее продуктивности. В reply — одной строкой, каким получился голос."
+)
+PERSONA_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["persona", "reply"],
+    "properties": {"persona": {"type": "string"}, "reply": {"type": "string"}},
+}
 STYLE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -254,6 +281,7 @@ class Assistant:
         # Системный промпт статичен (всё изменчивое — в контексте), поэтому кэшируется.
         self.workspace = settings.workspace
         self.style_file = settings.workspace / "tg_style.md"  # как пишет пользователь
+        self.persona_file = settings.workspace / "oswald_persona.md"  # голос Освальда
         self.system_prompt_file = settings.workspace / "system_prompt.md"
         self.system_prompt_file.write_text(self._render_system_prompt(), encoding="utf-8")
         self.mcp_config = settings.workspace / "mcp.json"
@@ -280,8 +308,11 @@ class Assistant:
                 .replace("{{DOCUMENTS}}", str(config.DOCUMENTS_DIR)))
         if telegram:
             text += (PROMPTS / "telegram.md").read_text(encoding="utf-8")
-        if self.style_file.exists():
-            text += "\n## Как пишет пользователь\n" + self.style_file.read_text(encoding="utf-8")
+        if self.persona_file.exists():  # кто такой Освальд: голос пользователя, но лучше
+            text += "\n## Твой голос\n" + self.persona_file.read_text(encoding="utf-8")
+        if self.style_file.exists():  # для сообщений от имени пользователя — пиши как он сам
+            text += ("\n## Как пишет пользователь (для сообщений от его имени)\n"
+                     + self.style_file.read_text(encoding="utf-8"))
         return text
 
     def _prompt_file(self, telegram: bool) -> Path:
@@ -314,6 +345,21 @@ class Assistant:
             outcome.changes += self._apply_memory(answer.data.get("memory") or [], "consolidation")
             outcome.changes += self._apply_people(answer.data.get("people") or [])
             return outcome
+
+    async def describe_persona(self, thinking_sample: str) -> str:
+        """Голос Освальда (основная модель): манера пользователя + его лучшая версия."""
+        style = self.style_file.read_text(encoding="utf-8") if self.style_file.exists() else ""
+        async with self._analysis_lock:
+            prompt = (f"{self._profile_context()}\n\n"
+                      f"<data source=\"стиль переписки\">\n{style}\n</data>\n\n"
+                      f"<data source=\"его рассуждения в разговорах с ИИ\">\n{thinking_sample}\n"
+                      f"</data>\n\n<message>\n{PERSONA_TASK}\n</message>")
+            answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
+                                          schema=PERSONA_SCHEMA)
+            persona = str(answer.data.get("persona", "")).strip()
+            if persona:
+                self.persona_file.write_text(persona, encoding="utf-8")
+            return str(answer.data.get("reply", "")).strip()
 
     async def describe_style(self, sample: str) -> str:
         """Инструкция «как пишет пользователь» по его же сообщениям в Telegram."""

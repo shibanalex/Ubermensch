@@ -104,7 +104,9 @@ class Maintenance:
             source.close()
             target.close()
             parts = [str(snapshot)]
-            for extra in (config.DATA_DIR / "workspace" / "tg_style.md", config.DATA_DIR / "dossier"):
+            workspace = config.DATA_DIR / "workspace"
+            for extra in (workspace / "tg_style.md", workspace / "oswald_persona.md",
+                          config.DATA_DIR / "dossier"):
                 if extra.exists():
                     parts.append(str(extra))
             done = subprocess.run(

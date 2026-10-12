@@ -93,6 +93,11 @@ def create_app(core: Core, token: str) -> web.Application:
         asyncio.create_task(core.investigation.collect())
         return web.json_response({"started": True})
 
+    async def post_voice(request: web.Request) -> web.Response:
+        """Пересобрать стиль переписки и голос Освальда сейчас, не дожидаясь недели."""
+        asyncio.create_task(core.investigation.refresh_voice())
+        return web.json_response({"started": True})
+
     async def get_investigation(request: web.Request) -> web.Response:
         return web.json_response(core.investigation.status())
 
@@ -164,6 +169,7 @@ def create_app(core: Core, token: str) -> web.Application:
         web.get("/api/events", get_events),
         web.post("/api/collect", post_collect),
         web.get("/api/investigation", get_investigation),
+        web.post("/api/voice", post_voice),
         web.get("/api/health", get_health),
         web.post("/api/approval", post_approval),
         web.post("/api/tg/chats", post_tg_chats),

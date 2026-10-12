@@ -46,7 +46,7 @@
 | `D:\Ubermensch\db\ubermensch.db` | вся память: факты, люди, цели, задачи, история, собранные данные, очередь разбора |
 | `D:\Ubermensch\logs\ubermensch.log` | лог ядра (5 файлов по 5 МБ) |
 | `D:\Ubermensch\secrets\` | токен API, сессия Telegram (= полный доступ к аккаунту) |
-| `D:\Ubermensch\workspace\` | рабочая папка мозга: промпты, `tg_style.md`, `mcp.json` |
+| `D:\Ubermensch\workspace\` | рабочая папка мозга: промпты, `tg_style.md` (как ты пишешь), `oswald_persona.md` (голос Освальда), `mcp.json` |
 | `D:\Ubermensch\dossier\latest.md` | последнее досье |
 | `D:\Ubermensch\raw\import\` | сюда класть файлы для импорта (см. ниже) |
 
@@ -66,7 +66,7 @@
 
 - **Telegram `/status`** — сервисы, расследование, известные проблемы.
 - **Маскот** — `⚠` в строке состояния, если есть проблема; серый `x x` — нет связи с ядром.
-- **API**: `GET /api/health` (проблемы + сервисы), `GET /api/investigation` (сбор и разбор), `POST /api/collect` (собрать сейчас). Заголовок `Authorization: Bearer <токен из secrets\api_token>`.
+- **API**: `GET /api/health` (проблемы + сервисы), `GET /api/investigation` (сбор и разбор), `POST /api/collect` (собрать сейчас), `POST /api/voice` (пересобрать стиль и голос Освальда). Заголовок `Authorization: Bearer <токен из secrets\api_token>`.
 - **Лог**: `D:\Ubermensch\logs\ubermensch.log`.
 
 ## Известные ситуации и что делать
@@ -90,7 +90,7 @@
 
 ## Резервные копии
 
-- Каждую ночь (или днём, если ночью компьютер был выключен) — архив `oswald-ГГГГ-ММ-ДД_ЧЧ-ММ.7z`: база, стиль переписки, досье. Шифрование AES-256, имена файлов скрыты. Пароль — `BACKUP_PASSWORD` в `.env`. **Храни пароль отдельно от ноутбука** — без него архив не открыть.
+- Каждую ночь (или днём, если ночью компьютер был выключен) — архив `oswald-ГГГГ-ММ-ДД_ЧЧ-ММ.7z`: база, стиль переписки, голос Освальда, досье. Шифрование AES-256, имена файлов скрыты. Пароль — `BACKUP_PASSWORD` в `.env`. **Храни пароль отдельно от ноутбука** — без него архив не открыть.
 - Копия вне ноутбука: создай в корне флешки или внешнего диска папку `OswaldBackup` — при подключении туда скопируется свежий архив (хранится 14 последних).
 - В бэкап **не входят** сессия Telegram и `.env`: при восстановлении их проще пересоздать.
 
@@ -98,7 +98,7 @@
 
 1. Установка по разделу «Установка с нуля», без запуска.
 2. Распаковать архив: `"C:\Program Files\7-Zip\7z.exe" x oswald-....7z -oD:\Ubermensch\restore` (спросит пароль).
-3. Положить `ubermensch.db` в `D:\Ubermensch\db\`, `tg_style.md` — в `D:\Ubermensch\workspace\`, папку `dossier` — в `D:\Ubermensch\`.
+3. Положить `ubermensch.db` в `D:\Ubermensch\db\`, `tg_style.md` и `oswald_persona.md` — в `D:\Ubermensch\workspace\`, папку `dossier` — в `D:\Ubermensch\`.
 4. `telegram_login.bat`, затем `start.bat`.
 
 ## Код и GitHub

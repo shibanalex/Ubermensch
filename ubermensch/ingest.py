@@ -30,6 +30,18 @@ def _aistudio(data: dict) -> str:
     return "\n\n".join(lines)
 
 
+def user_replicas(path: Path) -> list[str]:
+    """Только реплики пользователя из чата AI Studio — для анализа того, как он рассуждает."""
+    try:
+        data = json.loads(path.read_bytes().decode("utf-8", errors="replace").lstrip("﻿"))
+    except (ValueError, OSError):
+        return []
+    if not isinstance(data, dict) or "chunkedPrompt" not in data:
+        return []
+    return [c["text"].strip() for c in data["chunkedPrompt"].get("chunks", [])
+            if c.get("role") == "user" and not c.get("isThought") and (c.get("text") or "").strip()]
+
+
 def _pdf(path: Path) -> str:
     from pypdf import PdfReader
     return "\n".join((page.extract_text() or "") for page in PdfReader(str(path)).pages)

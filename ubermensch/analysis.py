@@ -17,7 +17,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
-from . import config
+from . import config, ingest
 from .assistant import Assistant
 from .brain import BrainError
 from .collectors import ai_chats, chrome, creative, documents, gmail, notifications, takeout
@@ -43,6 +43,7 @@ AUTH_WAIT = 5 * 60  # Claude разлогинен или не найден — �
 TELEGRAM_WAIT = timedelta(hours=24)
 STYLE_EVERY = 7 * 24 * 3600
 STYLE_SAMPLE, STYLE_CHARS = 2500, 35_000  # свежие сообщения пользователя для описания стиля
+THINKING_CHARS = 40_000  # его реплики в разговорах с ИИ — как он рассуждает
 MAX_ATTEMPTS = 3
 RETRY_PAUSE = 5 * 60
 DOSSIER_DIR = config.DATA_DIR / "dossier"
@@ -63,6 +64,18 @@ MONTHS = ["январь", "февраль", "март", "апрель", "май"
 
 def _dm(ts: str) -> str:
     return f"{ts[8:10]}.{ts[5:7]}"
+
+
+def _sample(texts: list[str], limit: int) -> str:
+    """Тексты подряд (свежие первыми), пока влезают в limit символов; длинные — обрезаются."""
+    lines, size = [], 0
+    for text in texts:
+        text = text[:2000]
+        if size + len(text) > limit:
+            break
+        lines.append(f"— {text}")
+        size += len(text)
+    return "\n".join(lines)
 
 
 def _group_chatter(event) -> bool:
@@ -442,25 +455,37 @@ class Investigation:
         log.info("Выгрузки чатов с ИИ: %d файл(ов), новых реплик %d", len(fresh), added)
         return added
 
-    async def _update_style(self) -> None:
-        """Раз в неделю — как пользователь пишет в Telegram (для бота и сообщений от его имени)."""
-        if not self._due("style", STYLE_EVERY):
-            return
+    async def refresh_voice(self) -> None:
+        """По просьбе: стиль и голос сейчас, а не по расписанию."""
+        summary = await self._update_style(force=True)
+        if summary:
+            self.notify(f"🗣 Обновил свой голос: {summary}")
+
+    async def _update_style(self, force: bool = False) -> str:
+        """Раз в неделю: стиль переписки пользователя, затем голос Освальда — «он, но лучше»."""
+        if not force and not self._due("style", STYLE_EVERY):
+            return ""
         messages = self.store.my_telegram_messages(STYLE_SAMPLE)
         if len(messages) < 100:
-            return
-        sample, size = [], 0
-        for text in messages:
-            if size + len(text) > STYLE_CHARS:
-                break
-            sample.append(f"— {text}")
-            size += len(text)
+            return ""
         try:
-            await self.assistant.describe_style("\n".join(sample))
+            await self.assistant.describe_style(_sample(messages, STYLE_CHARS))
+            log.info("Стиль переписки обновлён")
+            # как он рассуждает: реплики в чатах AI Studio из папки импорта и в Claude Code
+            replicas = [r for p in sorted(self.import_dir.glob("*"))
+                        if p.is_file() and p.suffix.lower() in ("", ".json")
+                        and p.stat().st_size < 50_000_000
+                        for r in ingest.user_replicas(p)]
+            # поровну из обоих источников, свежие первыми
+            thinking = (_sample(replicas[::-1], THINKING_CHARS // 2) + "\n"
+                        + _sample(self.store.my_ai_messages(400), THINKING_CHARS // 2)).strip()
+            summary = await self.assistant.describe_persona(thinking)
             self._mark("style")
-            log.info("Стиль переписки обновлён по %d сообщениям", len(sample))
+            log.info("Голос Освальда обновлён: %s", summary)
+            return summary
         except BrainError as e:
-            log.warning("Стиль переписки не обновлён: %s", e)
+            log.warning("Стиль и голос не обновлены: %s", e)
+            return ""
 
     async def collect_loop(self) -> None:
         await asyncio.sleep(20)

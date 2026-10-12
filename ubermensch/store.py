@@ -380,6 +380,12 @@ class Store:
             "SELECT text FROM events WHERE source = 'telegram' AND outgoing = 1 "
             "AND json_extract(meta, '$.kind') != 'self' ORDER BY ts DESC LIMIT ?", (limit,))]
 
+    def my_ai_messages(self, limit: int) -> list[str]:
+        """Свежие реплики пользователя в разговорах с ИИ (длинные — как он рассуждает)."""
+        return [r[0] for r in self.db.execute(
+            "SELECT text FROM events WHERE source = 'ai_chat' AND LENGTH(text) > 80 "
+            "ORDER BY ts DESC LIMIT ?", (limit,))]
+
     def event_counts(self) -> dict[str, int]:
         return {r[0]: r[1] for r in self.db.execute(
             "SELECT source, COUNT(*) FROM events GROUP BY source")}
