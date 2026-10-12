@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import tarfile
+import zipfile
 from collections.abc import Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
@@ -46,6 +47,72 @@ def _user_texts(lines: Iterable[bytes], project: str) -> Iterator[dict]:
             "text": text[:MAX_CHARS],
             "meta": {"tool": "Claude Code"},
         }
+
+
+def _export_messages(data: list) -> Iterator[dict]:
+    """Выгрузки ChatGPT и Claude.ai (conversations.json): только реплики пользователя."""
+    for conversation in data:
+        if not isinstance(conversation, dict):
+            continue
+        if "mapping" in conversation:  # ChatGPT
+            tool, title = "ChatGPT", conversation.get("title") or "без названия"
+            for node_id, node in (conversation.get("mapping") or {}).items():
+                message = (node or {}).get("message") or {}
+                if (message.get("author") or {}).get("role") != "user" or not message.get("create_time"):
+                    continue
+                parts = (message.get("content") or {}).get("parts") or []
+                text = "\n".join(p for p in parts if isinstance(p, str)).strip()
+                if text:
+                    yield {"source": "ai_chat", "external_id": f"chatgpt:{node_id}",
+                           "ts": local_iso(datetime.fromtimestamp(message["create_time"]).astimezone()),
+                           "thread": f"{tool}: {title}"[:200], "outgoing": 1,
+                           "text": text[:MAX_CHARS], "meta": {"tool": tool}}
+        elif "chat_messages" in conversation:  # Claude.ai
+            tool, title = "Claude.ai", conversation.get("name") or "без названия"
+            for message in conversation["chat_messages"]:
+                if message.get("sender") != "human" or not message.get("created_at"):
+                    continue
+                text = (message.get("text") or "").strip() or "\n".join(
+                    c.get("text", "") for c in message.get("content") or [] if c.get("type") == "text")
+                if text.strip():
+                    yield {"source": "ai_chat", "external_id": f"claude:{message.get('uuid')}",
+                           "ts": local_iso(datetime.fromisoformat(
+                               message["created_at"].replace("Z", "+00:00"))),
+                           "thread": f"{tool}: {title}"[:200], "outgoing": 1,
+                           "text": text.strip()[:MAX_CHARS], "meta": {"tool": tool}}
+
+
+def export_files(import_dir: Path) -> list[Path]:
+    """Кандидаты на выгрузку чатов: conversations*.json и zip-архивы с ними."""
+    found = sorted(import_dir.rglob("conversations*.json"))
+    for archive in sorted(import_dir.rglob("*.zip")):
+        try:
+            with zipfile.ZipFile(archive) as z:
+                if any(Path(n).name.startswith("conversations") and n.endswith(".json")
+                       for n in z.namelist()):
+                    found.append(archive)
+        except zipfile.BadZipFile:
+            continue
+    return found
+
+
+def collect_exports(paths: list[Path]) -> list[dict]:
+    events: list[dict] = []
+    for path in paths:
+        if path.suffix.lower() == ".zip":
+            with zipfile.ZipFile(path) as z:
+                blobs = [z.read(n) for n in z.namelist()
+                         if Path(n).name.startswith("conversations") and n.endswith(".json")]
+        else:
+            blobs = [path.read_bytes()]
+        for blob in blobs:
+            try:
+                data = json.loads(blob)
+            except ValueError:
+                continue
+            if isinstance(data, list):
+                events += _export_messages(data)
+    return events
 
 
 def collect() -> list[dict]:

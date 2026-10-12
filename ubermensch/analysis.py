@@ -384,6 +384,7 @@ class Investigation:
                 log.exception("Сбор уведомлений Windows не удался")
 
             found["takeout"] = await self._collect_takeout()
+            found["ai_export"] = await self._collect_ai_exports()
 
             for source, module in (("document", documents), ("ai_chat", ai_chats),
                                    ("creative", creative)):
@@ -421,6 +422,24 @@ class Investigation:
             key = takeout.archive_key(path) if path.is_file() else f"takeout-dir:{path}"
             self.store.record_import(path.name, key, "done", f"Takeout: событий {added}")
         log.info("Google Takeout: %d архив(ов), новых событий %d", len(fresh), added)
+        return added
+
+    async def _collect_ai_exports(self) -> int:
+        """Выгрузки ChatGPT и Claude.ai из папки импорта — каждая читается один раз."""
+        def key(path):
+            return f"aiexport:{path.name}:{path.stat().st_size}"
+        fresh = [p for p in ai_chats.export_files(self.import_dir)
+                 if self.store.import_status(key(p)) != "done"]
+        if not fresh:
+            return 0
+        try:
+            added = self.store.add_events(await asyncio.to_thread(ai_chats.collect_exports, fresh))
+        except Exception:
+            log.exception("Импорт выгрузки чатов с ИИ не удался")
+            return 0
+        for path in fresh:
+            self.store.record_import(path.name, key(path), "done", f"Чаты с ИИ: реплик {added}")
+        log.info("Выгрузки чатов с ИИ: %d файл(ов), новых реплик %d", len(fresh), added)
         return added
 
     async def _update_style(self) -> None:

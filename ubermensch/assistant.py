@@ -447,7 +447,7 @@ class Assistant:
 
     async def ingest(self, name: str, text: str) -> Outcome:
         """Импорт документа: факты и цели из него — в память. Без интернета: документ — чужие данные."""
-        async with self._lock:
+        async with self._analysis_lock:  # фоновая очередь — чат не ждёт
             parts = ingest.split(text)
             summaries, changes = [], []
             for number, part in enumerate(parts, start=1):
@@ -455,7 +455,8 @@ class Assistant:
                           f'<data source="{name}" part="{number}/{len(parts)}">\n{part}\n</data>\n\n'
                           f"<message>\n{INGEST_TASK.format(name=name)}\n</message>")
                 answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
-                                              schema=self.ingest_schema)
+                                              schema=self.ingest_schema,
+                                              model=ANALYSIS_MODEL)
                 summaries.append(str(answer.data.get("reply", "")).strip())
                 changes += self._apply_memory(answer.data.get("memory") or [], f"import:{name}")
                 changes += self._apply_goals(answer.data.get("goals") or [])

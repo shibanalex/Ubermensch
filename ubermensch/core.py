@@ -193,7 +193,8 @@ class Core:
                            if p.is_file() and p.suffix.lower() != ".zip"):
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             status = self.store.import_status(digest)
-            if status in ("done", "skipped") or (status == "failed" and not retry_failed):
+            # пропущенное (вдруг формат стал поддерживаться) и упавшее (лимит прошёл) — пробуем снова
+            if status == "done":
                 continue
             text = ingest.read_document(path)
             if text is None:
