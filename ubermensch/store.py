@@ -135,6 +135,9 @@ MIGRATIONS = [
         updated_at TEXT NOT NULL
     );
     """,
+    """
+    ALTER TABLE people ADD COLUMN merged_into INTEGER REFERENCES people (id);
+    """,
 ]
 
 
@@ -405,10 +408,24 @@ class Store:
         )
 
     def next_job(self) -> sqlite3.Row | None:
+        """Сначала важное (priority), внутри — от старого к новому: свежие сведения
+        тогда уточняют устаревшие, а не наоборот."""
         return self.db.execute(
             "SELECT * FROM analysis_jobs WHERE status = 'pending' "
-            "ORDER BY priority DESC, period_end DESC, id LIMIT 1"
+            "ORDER BY priority DESC, period_start, id LIMIT 1"
         ).fetchone()
+
+    def jobs_done_since(self, moment: str) -> int:
+        return self.db.execute(
+            "SELECT COUNT(*) FROM analysis_jobs WHERE status = 'done' AND done_at > ?",
+            (moment,)).fetchone()[0]
+
+    def telegram_contacts(self, start: str, min_messages: int) -> list[sqlite3.Row]:
+        """Личные чаты с большой перепиской — для портретов отношений."""
+        return self.db.execute(
+            "SELECT thread, COUNT(*) AS n, MIN(ts) AS first, MAX(ts) AS last FROM events "
+            "WHERE source = 'telegram' AND json_extract(meta, '$.kind') = 'user' AND ts >= ? "
+            "GROUP BY thread HAVING n >= ? ORDER BY n DESC", (start, min_messages)).fetchall()
 
     def finish_job(self, job_id: int, status: str, result: str, chars: int) -> None:
         self.db.execute(
@@ -439,7 +456,8 @@ class Store:
 
     def people(self, limit: int = 200) -> list[sqlite3.Row]:
         return self.db.execute(
-            "SELECT * FROM people ORDER BY importance DESC, updated_at DESC LIMIT ?", (limit,)
+            "SELECT * FROM people WHERE merged_into IS NULL "
+            "ORDER BY importance DESC, updated_at DESC LIMIT ?", (limit,)
         ).fetchall()
 
     def add_person(self, name: str, relation: str, notes: str, importance: int) -> int:
@@ -447,6 +465,16 @@ class Store:
             "INSERT INTO people (name, relation, notes, importance, updated_at) "
             "VALUES (?, ?, ?, ?, ?)",
             name, relation, notes, importance, now(),
+        )
+
+    def merge_person(self, person_id: int, into_id: int) -> bool:
+        """Двойник склеивается с основной записью: не удаляется, а скрывается из выдачи."""
+        if person_id == into_id:
+            return False
+        return self._changed(
+            "UPDATE people SET merged_into = ?, updated_at = ? WHERE id = ? AND merged_into IS NULL "
+            "AND EXISTS (SELECT 1 FROM people WHERE id = ? AND merged_into IS NULL)",
+            into_id, now(), person_id, into_id,
         )
 
     def update_person(self, person_id: int, name: str | None, relation: str | None,

@@ -86,6 +86,18 @@ DOSSIER_TASK = (
     "Пиши честно и тепло, без морализаторства и диагнозов. Опирайся на данные; где вывод "
     "предположительный — так и скажи. В reply — 2–3 предложения: главное, что ты понял."
 )
+CONSOLIDATE_TASK = (
+    "[Системная задача: уборка памяти.] Пересмотри факты (<facts>) и людей (<people>) целиком:\n"
+    "- Дубли и пересказы одного и того же — оставь одну, самую точную и полную формулировку "
+    "(update), остальные — forget.\n"
+    "- Устаревшее, если есть более новые сведения, — обнови с указанием времени или forget.\n"
+    "- Противоречия — оставь то, что новее и подтверждено, в формулировке укажи, к какому "
+    "времени относится.\n"
+    "- Люди: один и тот же человек под разными записями — склей (merge: id — дубль, into — "
+    "основная), перед этим перенеси в основную всё важное через update.\n"
+    "- Ничего не придумывай и не удаляй важное: лучше оставить, чем потерять.\n"
+    "В reply — одной строкой, что сделал."
+)
 STYLE_TASK = (
     "[Системная задача.] В <data> — сообщения, которые пользователь сам писал в Telegram "
     "разным людям. Опиши его манеру переписки так, чтобы другой мог писать неотличимо от него: "
@@ -195,8 +207,11 @@ def _full_schema() -> dict:
                     "additionalProperties": False,
                     "required": ["op"],
                     "properties": {
-                        "op": {"type": "string", "enum": ["add", "update"]},
-                        "id": {"type": "integer", "description": "id человека для update"},
+                        "op": {"type": "string", "enum": ["add", "update", "merge"]},
+                        "id": {"type": "integer",
+                               "description": "id человека для update/merge (merge: этот — дубль)"},
+                        "into": {"type": "integer",
+                                 "description": "merge: id основной записи, куда склеить дубль"},
                         "name": {"type": "string"},
                         "relation": {"type": "string", "description": "Кто он пользователю"},
                         "notes": {"type": "string", "description": "Что важно знать (целиком)"},
@@ -288,6 +303,17 @@ class Assistant:
                                       effort=TG_EFFORT, timeout=180)
         return (str(answer.data.get("comment", "")).strip(),
                 str(answer.data.get("activity", "")).strip())
+
+    async def consolidate(self) -> Outcome:
+        """Уборка памяти: склеить дубли фактов и людей, снять устаревшее."""
+        async with self._analysis_lock:
+            prompt = f"{self._profile_context()}\n\n<message>\n{CONSOLIDATE_TASK}\n</message>"
+            answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
+                                          schema=self.analysis_schema, model=ANALYSIS_MODEL)
+            outcome = Outcome(reply=str(answer.data.get("reply", "")).strip())
+            outcome.changes += self._apply_memory(answer.data.get("memory") or [], "consolidation")
+            outcome.changes += self._apply_people(answer.data.get("people") or [])
+            return outcome
 
     async def describe_style(self, sample: str) -> str:
         """Инструкция «как пишет пользователь» по его же сообщениям в Telegram."""
@@ -495,6 +521,8 @@ class Assistant:
             elif kind == "update" and person_id and self.store.update_person(
                     person_id, name, relation, notes, op.get("importance")):
                 changes.append(f"👤 #{person_id} обновлён")
+            elif kind == "merge" and person_id and op.get("into") and                     self.store.merge_person(person_id, op["into"]):
+                changes.append(f"👤 #{person_id} склеен с #{op['into']}")
             else:
                 log.warning("Пропущена операция с человеком: %s", op)
         return changes

@@ -53,6 +53,8 @@ SOURCES = {"telegram": "Telegram", "gmail": "Почта", "chrome": "Брауз�
            "google_activity": "Действия в сервисах Google"}
 TAKEOUT_DAYS = 2 * 365  # из Google Takeout берём два года: интересы видны в динамике
 GROUP_LINES = 700  # строк на сервис в месяц (просмотры, запросы, уведомления) — дальше шум
+PERSON_MIN_MESSAGES, PERSON_TOP = 300, 15  # портреты отношений: личные чаты от 300 сообщений
+CONSOLIDATE_EVERY = 10  # уборка памяти после каждых 10 разобранных порций
 MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь",
           "октябрь", "ноябрь", "декабрь"]
 
@@ -180,11 +182,98 @@ def _periods(source: str, first: str, today: date) -> list[tuple[str, str, str]]
     return periods
 
 
+def _stats_units(store: Store, start: str, end: str) -> list[str]:
+    """Точные цифры вместо догадок: когда встаёт и ложится, когда активен, с кем и сколько пишет.
+
+    Активность — свои сообщения, страницы браузера, работа за ПК; день считается с 5 утра,
+    чтобы ночные часы относились к прошедшему дню.
+    """
+    days: dict[str, dict] = defaultdict(lambda: {"first": None, "last": None, "sent": 0,
+                                                 "received": 0, "pages": 0, "pc": 0})
+    hours: Counter = Counter()
+    contacts: Counter = Counter()
+
+    def mark(ts: str) -> dict:
+        moment = datetime.fromisoformat(ts)
+        day = days[(moment - timedelta(hours=5)).date().isoformat()]
+        day["first"] = min(day["first"] or moment, moment)
+        day["last"] = max(day["last"] or moment, moment)
+        hours[moment.hour] += 1
+        return day
+
+    for e in store.events("telegram", start, end):
+        meta = json.loads(e["meta"] or "{}")
+        if e["outgoing"]:
+            mark(e["ts"])["sent"] += 1
+        elif not _group_chatter(e):
+            days[(datetime.fromisoformat(e["ts"]) - timedelta(hours=5)).date().isoformat()][
+                "received"] += 1
+        if meta.get("kind") == "user":
+            contacts[e["thread"]] += 1
+    for e in store.events("chrome", start, end):
+        mark(e["ts"])["pages"] += 1
+    for e in store.events("activity", start, end):
+        mark(e["ts"])["pc"] += json.loads(e["meta"] or "{}").get("seconds", 0)
+    if not days:
+        return []
+    weekdays = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
+    lines = []
+    for day, d in sorted(days.items()):
+        if d["first"] is None:
+            continue
+        lines.append(f"{day} ({weekdays[date.fromisoformat(day).weekday()]}): активен "
+                     f"{d['first']:%H:%M}–{d['last']:%H:%M}, написал {d['sent']}, получил "
+                     f"{d['received']}, страниц {d['pages']}"
+                     + (f", за ПК {d['pc'] / 3600:.1f} ч" if d["pc"] else ""))
+    histogram = ", ".join(f"{h:02d}ч: {hours[h]}" for h in range(24) if hours[h])
+    top = ", ".join(f"{name} — {n}" for name, n in contacts.most_common(15))
+    return ["### Статистика по дням (день с 5 утра; «активен» — первое и последнее своё действие)\n"
+            + "\n".join(lines),
+            f"### Активность по часам суток\n{histogram}",
+            f"### С кем больше всего переписка (сообщений в обе стороны)\n{top}"]
+
+
+def _person_units(store: Store, thread: str, start: str, end: str) -> list[str]:
+    """Вся переписка с одним человеком за период; если не влезает — равномерная выборка."""
+    events = [e for e in store.events("telegram", start, end, thread=thread)]
+    lines = [f"[{_dm(e['ts'])}.{e['ts'][2:4]}] {'Я' if e['outgoing'] else thread}: "
+             f"{e['text'][:400]}" for e in events]
+    budget, size = CHUNK_CHARS - 500, sum(len(line) + 1 for line in lines)
+    if size > budget:  # равномерно прорежаем, сохраняя ход отношений во времени
+        step = size / budget
+        lines = [line for i, line in enumerate(lines) if int(i / step) != int((i - 1) / step)]
+    return [f"### Переписка с {thread}: {len(events)} сообщений, "
+            f"{_dm(events[0]['ts'])}.{events[0]['ts'][:4]} – {_dm(events[-1]['ts'])}.{events[-1]['ts'][:4]}"
+            + (" (равномерная выборка)" if size > budget else "") + "\n" + "\n".join(lines)] \
+        if events else []
+
+
 def plan(store: Store) -> int:
     """Ставит в очередь новые порции. Возвращает, сколько добавлено."""
     today = date.today()
     recent_from = (today - timedelta(days=RECENT_DAYS)).isoformat()
     added = 0
+
+    # статистика по месяцам — с первого месяца, где есть переписка или браузер
+    firsts = [f for f in (store.event_span(s)[0] for s in ("telegram", "chrome")) if f]
+    if firsts:
+        for start, end, period in _periods("stats", min(firsts), today):
+            if end > today.isoformat() and store.has_job_prefix(f"stats|{start}"):
+                continue
+            tag = "" if end <= today.isoformat() else f"|по {today:%d.%m}"
+            added += store.add_job(f"stats|{start}{tag}|1/1", "stats",
+                                   f"Статистика активности, {period}", start, end,
+                                   2 if end > recent_from else 1)
+
+    # портреты отношений с близкими — раз в квартал по всей переписке за год
+    year_ago = (today - timedelta(days=HISTORY_DAYS)).isoformat()
+    quarter = f"{today.year}-Q{(today.month - 1) // 3 + 1}"
+    for contact in store.telegram_contacts(year_ago, PERSON_MIN_MESSAGES)[:PERSON_TOP]:
+        added += store.add_job(f"person|{contact['thread']}|{quarter}|1/1", "person",
+                               f"Отношения: переписка с {contact['thread']} за год "
+                               f"({contact['n']} сообщений)", year_ago,
+                               (today + timedelta(days=1)).isoformat(), 0)
+
     for source, label in SOURCES.items():
         first, _ = store.event_span(source)
         if not first:
@@ -209,7 +298,14 @@ def plan(store: Store) -> int:
 def digest(store: Store, job) -> str:
     """Текст порции для разбора — собирается заново из сырых данных."""
     number, total = map(int, job["key"].rsplit("|", 1)[1].split("/"))
-    chunks = _pack(_units(store, job["source"], job["period_start"], job["period_end"]))
+    if job["source"] == "person":
+        units = _person_units(store, job["key"].split("|")[1], job["period_start"],
+                              job["period_end"])
+    elif job["source"] == "stats":
+        units = _stats_units(store, job["period_start"], job["period_end"])
+    else:
+        units = _units(store, job["source"], job["period_start"], job["period_end"])
+    chunks = _pack(units)
     return chunks[number - 1] if number <= len(chunks) else ""
 
 
@@ -407,8 +503,22 @@ class Investigation:
             self.store.finish_job(job["id"], "done", outcome.reply, len(text))
             log.info("Разобрано: %s (%d симв., изменений %d)", job["title"], len(text),
                      len(outcome.changes))
+            await self._maybe_consolidate()
             await self._maybe_dossier()
             await asyncio.sleep(self._pause())
+
+    async def _maybe_consolidate(self) -> None:
+        """Каждые CONSOLIDATE_EVERY порций — уборка памяти: дубли, устаревшее, двойники людей."""
+        last = self.store.cursor("consolidated_at") or ""
+        if self.store.jobs_done_since(last) < CONSOLIDATE_EVERY:
+            return
+        try:
+            outcome = await self.assistant.consolidate()
+        except BrainError as e:
+            log.warning("Уборка памяти отложена: %s", e)
+            return
+        self.store.set_cursor("consolidated_at", datetime.now().isoformat(timespec="seconds"))
+        log.info("Уборка памяти: %s (изменений %d)", outcome.reply, len(outcome.changes))
 
     # --- досье ---
 
