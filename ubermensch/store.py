@@ -452,6 +452,21 @@ class Store:
             "SELECT status, COUNT(*) FROM analysis_jobs WHERE priority >= ? GROUP BY status",
             (min_priority,))}
 
+    def drop_legacy_jobs(self) -> int:
+        """Убирает порции старого размера (ключ без «@»), если ни одну часть их периода ещё
+        не разбирали: план поставит их заново, крупнее. Начатые периоды доразбираются как есть."""
+        groups: dict[str, set[str]] = {}
+        for key, status in self.db.execute(
+                "SELECT key, status FROM analysis_jobs WHERE instr(key, '@') = 0"):
+            groups.setdefault(key.rsplit("|", 1)[0], set()).add(status)
+        dropped = 0
+        for group, statuses in groups.items():
+            if statuses == {"pending"}:
+                dropped += self.db.execute(
+                    "DELETE FROM analysis_jobs WHERE status = 'pending' AND instr(key, '@') = 0 "
+                    "AND substr(key, 1, ?) = ?", (len(group) + 1, group + "|")).rowcount
+        return dropped
+
     def has_job_prefix(self, prefix: str) -> bool:
         return self.db.execute("SELECT 1 FROM analysis_jobs WHERE substr(key, 1, ?) = ? LIMIT 1",
                                (len(prefix), prefix)).fetchone() is not None

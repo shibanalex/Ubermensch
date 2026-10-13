@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 
 PROMPTS = Path(__file__).parent / "prompts"
 PROMPT_TEMPLATE = PROMPTS / "system.md"
+ANALYSIS_TEMPLATE = PROMPTS / "analysis.md"  # короткий промпт для разбора: без чата, голоса и действий
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 # встроенные инструменты Claude Code — только безопасные: поиск в сети и чтение файлов;
 # всё, что меняет систему, — через наш сервер инструментов (ubermensch.tools)
@@ -30,6 +31,7 @@ FACTS_LIMIT = 150
 PEOPLE_LIMIT = 40
 ANALYSIS_FACTS_LIMIT = 400
 ANALYSIS_PEOPLE_LIMIT = 200
+KEY_PERSON = 4  # люди такой важности попадают в контекст разбора, даже если не упомянуты
 WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
 
 INGEST_TASK = (
@@ -130,6 +132,7 @@ CONSOLIDATE_TASK = (
     "времени относится.\n"
     "- Люди: один и тот же человек под разными записями — склей (merge: id — дубль, into — "
     "основная), перед этим перенеси в основную всё важное через update.\n"
+    "- Многословные факты сократи до одной-двух фраз (update), не теряя дат, цифр и сути.\n"
     "- Ничего не придумывай и не удаляй важное: лучше оставить, чем потерять.\n"
     "В reply — одной строкой, что сделал."
 )
@@ -343,6 +346,9 @@ class Assistant:
         self.persona_file = settings.workspace / "oswald_persona.md"  # голос Освальда
         self.system_prompt_file = settings.workspace / "system_prompt.md"
         self.system_prompt_file.write_text(self._render_system_prompt(), encoding="utf-8")
+        self.analysis_prompt_file = settings.workspace / "system_prompt_analysis.md"
+        self.analysis_prompt_file.write_text(ANALYSIS_TEMPLATE.read_text(encoding="utf-8").replace(
+            "{{AREAS}}", ", ".join(f"{k} — {v}" for k, v in AREAS.items())), encoding="utf-8")
         self.mcp_config = settings.workspace / "mcp.json"
         self.mcp_config.write_text(json.dumps({"mcpServers": {MCP_SERVER: {
             "type": "stdio",
@@ -398,7 +404,7 @@ class Assistant:
         """Уборка памяти: склеить дубли фактов и людей, снять устаревшее."""
         async with self._analysis_lock:
             prompt = f"{self._profile_context()}\n\n<message>\n{CONSOLIDATE_TASK}\n</message>"
-            answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
+            answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
                                           schema=self.analysis_schema, model=ANALYSIS_MODEL)
             outcome = Outcome(reply=str(answer.data.get("reply", "")).strip())
             outcome.changes += self._apply_memory(answer.data.get("memory") or [], "consolidation")
@@ -425,9 +431,9 @@ class Assistant:
         lines = "\n".join(f"- key: {i['key']} | {i['minutes']} мин | " + " / ".join(i["titles"])
                           for i in items)
         async with self._analysis_lock:
-            prompt = (f"{self._profile_context()}\n\n<data source=\"время за компьютером\">\n"
+            prompt = (f"{self._profile_context('')}\n\n<data source=\"время за компьютером\">\n"
                       f"{lines}\n</data>\n\n<message>\n{CATEGORIZE_TASK}\n</message>")
-            answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
+            answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
                                           schema=CATEGORIZE_SCHEMA, model=ANALYSIS_MODEL)
         wanted = {i["key"] for i in items}
         return {i["key"]: i["category"] for i in answer.data.get("items") or []
@@ -438,7 +444,7 @@ class Assistant:
         async with self._analysis_lock:
             prompt = f"<data source=\"сообщения пользователя\">\n{sample}\n</data>\n\n" \
                      f"<message>\n{STYLE_TASK}\n</message>"
-            answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
+            answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
                                           schema=STYLE_SCHEMA, model=ANALYSIS_MODEL)
             style = str(answer.data.get("style", "")).strip()
             if style:
@@ -485,10 +491,16 @@ class Assistant:
 
         return "<context>\n" + "\n\n".join(parts) + "\n</context>"
 
-    def _knowledge(self, facts_limit: int, people_limit: int) -> list[str]:
-        """Факты и люди — общая часть контекста для чата и для разбора данных."""
+    def _knowledge(self, facts_limit: int, people_limit: int,
+                   data: str | None = None) -> list[str]:
+        """Факты и люди — общая часть контекста для чата и для разбора данных. С data — из
+        людей только упомянутые в данных и ключевые: остальные лишь тратят лимит."""
         facts = self.store.facts(facts_limit)
         people = self.store.people(people_limit)
+        if data is not None:
+            text = data.lower()
+            people = [p for p in people if p["importance"] >= KEY_PERSON or any(
+                len(word) >= 3 and word in text for word in p["name"].lower().split())]
         blocks = ["<facts>\n" + ("\n".join(
             f"#{f['id']} [{AREAS.get(f['area'], f['area'])}] ({f['importance']}) {f['content']}"
             for f in facts) or "(пока ничего не известно)") + "\n</facts>"]
@@ -498,20 +510,21 @@ class Assistant:
                 + (f". {p['notes']}" if p["notes"] else "") for p in people) + "\n</people>")
         return blocks
 
-    def _profile_context(self) -> str:
+    def _profile_context(self, data: str | None = None) -> str:
         """Контекст для разбора данных: что уже известно, без истории чата."""
         goals = self.store.goals()
         parts = ["<goals>\n" + ("\n".join(f"#{g['id']} {g['title']}" for g in goals)
                                 or "(целей пока нет)") + "\n</goals>"]
-        parts += self._knowledge(ANALYSIS_FACTS_LIMIT, ANALYSIS_PEOPLE_LIMIT)
+        parts += self._knowledge(ANALYSIS_FACTS_LIMIT, ANALYSIS_PEOPLE_LIMIT, data)
         return "<context>\n" + "\n\n".join(parts) + "\n</context>"
 
     async def analyze(self, title: str, digest: str) -> Outcome:
         """Разбор фрагмента данных: факты, люди и цели — в память; reply — наблюдение для досье."""
         async with self._analysis_lock:
-            prompt = (f"{self._profile_context()}\n\n<data source=\"{title}\">\n{digest}\n</data>\n\n"
+            prompt = (f"{self._profile_context(digest)}\n\n"
+                      f"<data source=\"{title}\">\n{digest}\n</data>\n\n"
                       f"<message>\n{ANALYSIS_TASK.format(title=title)}\n</message>")
-            answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
+            answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
                                           schema=self.analysis_schema, model=ANALYSIS_MODEL)
             data = answer.data
             outcome = Outcome(reply=str(data.get("reply", "")).strip())
@@ -569,10 +582,10 @@ class Assistant:
             parts = ingest.split(text)
             summaries, changes = [], []
             for number, part in enumerate(parts, start=1):
-                prompt = (f"{self._context()}\n\n"
+                prompt = (f"{self._profile_context(part)}\n\n"
                           f'<data source="{name}" part="{number}/{len(parts)}">\n{part}\n</data>\n\n'
                           f"<message>\n{INGEST_TASK.format(name=name)}\n</message>")
-                answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
+                answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
                                               schema=self.ingest_schema,
                                               model=ANALYSIS_MODEL)
                 summaries.append(str(answer.data.get("reply", "")).strip())
@@ -594,10 +607,10 @@ class Assistant:
             label = f"{number}/{len(parts)}"
             async with self._analysis_lock:  # по части за раз: чат успевает вклиниться
                 # память перечитывается к каждой части — найденное в прошлых частях не повторится
-                prompt = (f"{self._profile_context()}\n\n"
+                prompt = (f"{self._profile_context(part)}\n\n"
                           f'<data source="{name}" part="{label}">\n{part}\n</data>\n\n'
                           f"<message>\n{DISTILL_TASK.format(name=name, part=label)}\n</message>")
-                answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
+                answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
                                               schema=self.distill_schema, model=ANALYSIS_MODEL)
             data = answer.data
             changes += self._apply_memory(data.get("memory") or [], f"import:{name}")
@@ -612,7 +625,7 @@ class Assistant:
         async with self._analysis_lock:
             prompt = (f'<data source="конспекты частей">\n{joined}\n</data>\n\n'
                       f"<message>\n{DISTILL_MERGE_TASK.format(name=name)}\n</message>")
-            answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
+            answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
                                           schema=DISTILL_MERGE_SCHEMA, model=ANALYSIS_MODEL)
         outcome = Outcome(reply=str(answer.data.get("reply", "")).strip()
                           or f"Разобрал «{name}».", changes=changes)

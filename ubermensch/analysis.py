@@ -13,6 +13,7 @@ import imaplib
 import json
 import logging
 import os
+import time
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
@@ -24,12 +25,16 @@ from .collectors import ai_chats, chrome, creative, documents, gmail, notificati
 from .collectors.telegram import TelegramAccount, TelegramLoginRequired
 from .health import Health
 from .store import Store
+from .system import windows
 
 log = logging.getLogger(__name__)
 
 HISTORY_DAYS = 365
 RECENT_DAYS = 30
-CHUNK_CHARS = 60_000
+# Порция на один вызов. Каждый вызов несёт ещё и общий контекст (что уже известно), поэтому
+# порции покрупнее — больше данных на тот же лимит подписки.
+CHUNK_CHARS = 120_000
+LEGACY_CHUNK = 60_000  # порции, поставленные в очередь до 13.10.2026 (ключ без «@размер»)
 COLLECT_EVERY = 2 * 3600
 SLOW_SOURCES_EVERY = 24 * 3600  # документы и архив чатов с ИИ меняются редко
 # Лимит подписки Claude общий для разбора, бота и Claude Code: днём разбор идёт медленно
@@ -37,6 +42,7 @@ SLOW_SOURCES_EVERY = 24 * 3600  # документы и архив чатов с
 DAY_PAUSE = 15 * 60  # не больше 4 порций в час
 NIGHT_PAUSE = 90
 NIGHT_HOURS = (1, 8)
+AWAY_SECONDS = 10 * 60  # пользователь отошёл от ПК (или экран заблокирован) — днём как ночью
 QUIET_AFTER_CHAT = timedelta(minutes=10)
 LIMIT_PAUSE = 30 * 60  # если время сброса лимита неизвестно
 AUTH_WAIT = 5 * 60  # Claude разлогинен или не найден — проверяем снова через 5 минут
@@ -247,12 +253,13 @@ def _stats_units(store: Store, start: str, end: str) -> list[str]:
             f"### С кем больше всего переписка (сообщений в обе стороны)\n{top}"]
 
 
-def _person_units(store: Store, thread: str, start: str, end: str) -> list[str]:
+def _person_units(store: Store, thread: str, start: str, end: str,
+                  limit: int = CHUNK_CHARS) -> list[str]:
     """Вся переписка с одним человеком за период; если не влезает — равномерная выборка."""
     events = [e for e in store.events("telegram", start, end, thread=thread)]
     lines = [f"[{_dm(e['ts'])}.{e['ts'][2:4]}] {'Я' if e['outgoing'] else thread}: "
              f"{e['text'][:400]}" for e in events]
-    budget, size = CHUNK_CHARS - 500, sum(len(line) + 1 for line in lines)
+    budget, size = limit - 500, sum(len(line) + 1 for line in lines)
     if size > budget:  # равномерно прорежаем, сохраняя ход отношений во времени
         step = size / budget
         lines = [line for i, line in enumerate(lines) if int(i / step) != int((i - 1) / step)]
@@ -267,6 +274,8 @@ def plan(store: Store) -> int:
     today = date.today()
     recent_from = (today - timedelta(days=RECENT_DAYS)).isoformat()
     added = 0
+    store.drop_legacy_jobs()  # не начатые порции старого размера — перепланировать крупнее
+    size = f"@{CHUNK_CHARS}"
 
     # статистика по месяцам — с первого месяца, где есть переписка или браузер
     firsts = [f for f in (store.event_span(s)[0] for s in ("telegram", "chrome")) if f]
@@ -275,7 +284,7 @@ def plan(store: Store) -> int:
             if end > today.isoformat() and store.has_job_prefix(f"stats|{start}"):
                 continue
             tag = "" if end <= today.isoformat() else f"|по {today:%d.%m}"
-            added += store.add_job(f"stats|{start}{tag}|1/1", "stats",
+            added += store.add_job(f"stats|{start}{tag}|1/1{size}", "stats",
                                    f"Статистика активности, {period}", start, end,
                                    2 if end > recent_from else 1)
 
@@ -283,7 +292,7 @@ def plan(store: Store) -> int:
     year_ago = (today - timedelta(days=HISTORY_DAYS)).isoformat()
     quarter = f"{today.year}-Q{(today.month - 1) // 3 + 1}"
     for contact in store.telegram_contacts(year_ago, PERSON_MIN_MESSAGES)[:PERSON_TOP]:
-        added += store.add_job(f"person|{contact['thread']}|{quarter}|1/1", "person",
+        added += store.add_job(f"person|{contact['thread']}|{quarter}|1/1{size}", "person",
                                f"Отношения: переписка с {contact['thread']} за год "
                                f"({contact['n']} сообщений)", year_ago,
                                (today + timedelta(days=1)).isoformat(), 0)
@@ -304,22 +313,24 @@ def plan(store: Store) -> int:
             priority = 2 if end > recent_from else 1
             for number, _chunk in enumerate(chunks, start=1):
                 part = f", часть {number} из {len(chunks)}" if len(chunks) > 1 else ""
-                added += store.add_job(f"{prefix}{tag}|{number}/{len(chunks)}", source,
+                added += store.add_job(f"{prefix}{tag}|{number}/{len(chunks)}{size}", source,
                                        f"{label}, {period}{part}", start, end, priority)
     return added
 
 
 def digest(store: Store, job) -> str:
     """Текст порции для разбора — собирается заново из сырых данных."""
-    number, total = map(int, job["key"].rsplit("|", 1)[1].split("/"))
+    part, _, size = job["key"].rsplit("|", 1)[1].partition("@")
+    number, total = map(int, part.split("/"))
+    limit = int(size) if size else LEGACY_CHUNK  # порцию режем так же, как при планировании
     if job["source"] == "person":
         units = _person_units(store, job["key"].split("|")[1], job["period_start"],
-                              job["period_end"])
+                              job["period_end"], limit)
     elif job["source"] == "stats":
         units = _stats_units(store, job["period_start"], job["period_end"])
     else:
         units = _units(store, job["source"], job["period_start"], job["period_end"])
-    chunks = _pack(units)
+    chunks = _pack(units, limit)
     return chunks[number - 1] if number <= len(chunks) else ""
 
 
@@ -518,11 +529,18 @@ class Investigation:
         self._last_chat = datetime.now()
 
     def _pause(self) -> float:
-        """Сколько ждать перед следующей порцией: лимит подписки общий с чатом и Claude Code."""
+        """Сколько ждать перед следующей порцией: лимит подписки общий с чатом и Claude Code.
+        Ночью или пока пользователя нет за ПК — быстро, иначе медленно."""
         now = datetime.now()
-        if NIGHT_HOURS[0] <= now.hour < NIGHT_HOURS[1]:
+        if NIGHT_HOURS[0] <= now.hour < NIGHT_HOURS[1] or windows.idle_seconds() >= AWAY_SECONDS:
             return NIGHT_PAUSE
         return DAY_PAUSE
+
+    async def _rest(self) -> None:
+        """Пауза между порциями; отошёл пользователь посреди паузы — она сокращается."""
+        started = time.monotonic()
+        while time.monotonic() - started < self._pause():
+            await asyncio.sleep(30)
 
     async def worker(self) -> None:
         await asyncio.sleep(90)
@@ -567,7 +585,7 @@ class Investigation:
                      len(outcome.changes))
             await self._maybe_consolidate()
             await self._maybe_dossier()
-            await asyncio.sleep(self._pause())
+            await self._rest()
 
     async def _maybe_consolidate(self) -> None:
         """Каждые CONSOLIDATE_EVERY порций — уборка памяти: дубли, устаревшее, двойники людей."""
