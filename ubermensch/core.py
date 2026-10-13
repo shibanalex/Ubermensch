@@ -239,8 +239,11 @@ class Core:
                     if path.exists() else None)
 
         labels = {**SOURCES, "person": "Портреты отношений", "stats": "Статистика по месяцам"}
-        return {"learning": metrics.learning(self.store, self.investigation.status(), labels,
-                                             mtime("oswald_persona.md"), mtime("tg_style.md")),
+        learning = metrics.learning(self.store, self.investigation.status(), labels,
+                                    mtime("oswald_persona.md"), mtime("tg_style.md"))
+        if self.assistant.helper is not None:
+            learning["openai"] = self.assistant.helper.status()
+        return {"learning": learning,
                 "activity": metrics.activity(self.store)}
 
     async def deep_import(self, path: Path, digest: str | None = None) -> str:

@@ -57,6 +57,7 @@ UNIVERSITY_EVERY = 20 * 3600  # новости вуза и личный каби
 NEWS_SEEN = 300  # сколько адресов уже просмотренных новостей помнить  # разметка программ и сайтов — не чаще раза в сутки  # его реплики в разговорах с ИИ — как он рассуждает
 MAX_ATTEMPTS = 3
 RETRY_PAUSE = 5 * 60
+HELPER_PAUSE = 5  # после порции, разобранной вторым ИИ, — лимит Claude не тронут
 RETRY_FAILED_AFTER = timedelta(hours=12)  # упавшие порции (сеть, сон) — снова в очередь
 DOSSIER_DIR = config.DATA_DIR / "dossier"
 SOURCES = {"telegram": "Telegram", "gmail": "Почта", "chrome": "Браузер",
@@ -653,7 +654,7 @@ class Investigation:
                 self.store.finish_job(job["id"], "skipped", "", 0)
                 continue
             try:
-                outcome = await self.assistant.analyze(job["title"], text)
+                outcome = await self.assistant.analyze(job["title"], text, job["source"])
             except BrainError as e:
                 if e.kind in ("limit", "auth", "missing"):
                     # не вина порции: ждём, пока лимит сбросится или пользователь починит вход
@@ -679,7 +680,10 @@ class Investigation:
                      len(outcome.changes))
             await self._maybe_consolidate()
             await self._maybe_dossier()
-            await self._rest()
+            if outcome.engine == "claude":  # лимит Claude общий с чатом — бережём
+                await self._rest()
+            else:
+                await asyncio.sleep(HELPER_PAUSE)
 
     async def _maybe_consolidate(self) -> None:
         """Каждые CONSOLIDATE_EVERY порций — уборка памяти: дубли, устаревшее, двойники людей."""

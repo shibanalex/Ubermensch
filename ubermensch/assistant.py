@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -32,6 +34,16 @@ PEOPLE_LIMIT = 40
 ANALYSIS_FACTS_LIMIT = 400
 ANALYSIS_PEOPLE_LIMIT = 200
 KEY_PERSON = 4  # люди такой важности попадают в контекст разбора, даже если не упомянуты
+# Второй ИИ (OpenAI) берёт фоновый разбор только этих источников — в них нет личной переписки.
+HELPER_SOURCES = {"youtube", "google_search", "google_activity", "chrome"}
+PRIVATE_AREAS = {"health", "personal"}  # эти факты во второй ИИ не уходят
+PRIVATE_WORDS = re.compile(r"(?i)псих|лечен|диагноз|препарат|таблет|депресс|тревож|паник|"
+                           r"суицид|самоповр|антидепр|пнд|врач|болезн|долг|кредит")
+# Сторож чата: Claude молчит столько и не ждёт «да/нет» пользователя — отвечает второй ИИ.
+CHAT_WATCHDOG = {"tg": 120, "pc": 180}
+FALLBACK_NOTE = ("\n\n[Сейчас отвечаешь ты как запасной ИИ: основной недоступен. Инструментов и "
+                 "действий у тебя нет — ничего не отправляй и не обещай сделать прямо сейчас; если "
+                 "нужно действие, скажи, что сделаешь, когда основной вернётся.]")
 WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
 
 INGEST_TASK = (
@@ -354,6 +366,7 @@ class Outcome:
     changes: list[str] = field(default_factory=list)  # что изменилось в памяти и целях
     done: list[str] = field(default_factory=list)  # результаты выполненных действий
     pending: list[actions.Submitted] = field(default_factory=list)  # ждут подтверждения
+    engine: str = "claude"  # кто ответил: claude или openai
 
 
 class Assistant:
@@ -383,6 +396,9 @@ class Assistant:
             "args": ["-m", "ubermensch.tools"],
             "env": {"PYTHONPATH": str(PROJECT_DIR), "PYTHONIOENCODING": "utf-8"},
         }}}, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.helper = None  # второй ИИ (OpenAIBrain), подключается при запуске, если есть ключ
+        self.waiting_for_user = lambda: False  # ядро: ждёт ли сейчас какое-то действие «да/нет»
+        self.fallback_schema = _schema(("reply", "memory", "goals", "tasks", "people"))
         self._lock = asyncio.Lock()  # один разговор за раз: история и память меняются по порядку
         # Фоновый разбор идёт своей очередью, чтобы не задерживать ответы в чате.
         self._analysis_lock = asyncio.Lock()
@@ -461,11 +477,11 @@ class Assistant:
         """Категории программ и сайтов для метрики «полезное / отвлекающее» (Sonnet)."""
         lines = "\n".join(f"- key: {i['key']} | {i['minutes']} мин | " + " / ".join(i["titles"])
                           for i in items)
-        async with self._analysis_lock:
-            prompt = (f"{self._profile_context('')}\n\n<data source=\"время за компьютером\">\n"
-                      f"{lines}\n</data>\n\n<message>\n{CATEGORIZE_TASK}\n</message>")
-            answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
-                                          schema=CATEGORIZE_SCHEMA, model=ANALYSIS_MODEL)
+        answer, _ = await self._helper_first(
+            lambda private: (f"{self._profile_context('', private)}\n\n"
+                             f"<data source=\"время за компьютером\">\n{lines}\n</data>\n\n"
+                             f"<message>\n{CATEGORIZE_TASK}\n</message>"),
+            schema=CATEGORIZE_SCHEMA)
         wanted = {i["key"] for i in items}
         return {i["key"]: i["category"] for i in answer.data.get("items") or []
                 if i.get("key") in wanted}
@@ -473,11 +489,17 @@ class Assistant:
     async def university_digest(self, what: str, data: str) -> str:
         """Что из новостей вуза или изменений в личном кабинете важно пользователю (Sonnet).
         Пустая строка — ничего важного."""
-        async with self._analysis_lock:
-            prompt = (f"{self._profile_context('')}\n\n<data source=\"{what}\">\n{data}\n</data>"
-                      f"\n\n<message>\n{UNIVERSITY_TASK.format(what=what)}\n</message>")
-            answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
-                                          schema=UNIVERSITY_SCHEMA, model=ANALYSIS_MODEL)
+        def build(private: bool) -> str:
+            return (f"{self._profile_context('', private)}\n\n<data source=\"{what}\">\n{data}"
+                    f"\n</data>\n\n<message>\n{UNIVERSITY_TASK.format(what=what)}\n</message>")
+
+        if "личном кабинете" in what:  # кабинет — личное: только Claude
+            async with self._analysis_lock:
+                answer = await self.brain.ask(build(False), schema=UNIVERSITY_SCHEMA,
+                                              system_prompt_file=self.analysis_prompt_file,
+                                              model=ANALYSIS_MODEL)
+        else:
+            answer, _ = await self._helper_first(build, schema=UNIVERSITY_SCHEMA)
         return str(answer.data.get("message", "")).strip()
 
     async def describe_style(self, sample: str, work: bool = False) -> str:
@@ -535,11 +557,15 @@ class Assistant:
         return "<context>\n" + "\n\n".join(parts) + "\n</context>"
 
     def _knowledge(self, facts_limit: int, people_limit: int,
-                   data: str | None = None) -> list[str]:
+                   data: str | None = None, private: bool = False) -> list[str]:
         """Факты и люди — общая часть контекста для чата и для разбора данных. С data — из
         людей только упомянутые в данных и ключевые: остальные лишь тратят лимит."""
         facts = self.store.facts(facts_limit)
         people = self.store.people(people_limit)
+        if private:  # для второго ИИ: без здоровья, личной жизни, денег и людей
+            facts = [f for f in facts if f["area"] not in PRIVATE_AREAS
+                     and not PRIVATE_WORDS.search(f["content"])]
+            people = []
         if data is not None:
             text = data.lower()
             people = [p for p in people if p["importance"] >= KEY_PERSON or any(
@@ -553,28 +579,37 @@ class Assistant:
                 + (f". {p['notes']}" if p["notes"] else "") for p in people) + "\n</people>")
         return blocks
 
-    def _profile_context(self, data: str | None = None) -> str:
-        """Контекст для разбора данных: что уже известно, без истории чата."""
-        goals = self.store.goals()
+    def _profile_context(self, data: str | None = None, private: bool = False) -> str:
+        """Контекст для разбора данных: что уже известно, без истории чата. private — для
+        второго ИИ: без здоровья, личной жизни, денег и людей."""
+        goals = [g for g in self.store.goals()
+                 if not private or not PRIVATE_WORDS.search(g["title"])]
         parts = ["<goals>\n" + ("\n".join(f"#{g['id']} {g['title']}" for g in goals)
                                 or "(целей пока нет)") + "\n</goals>"]
-        parts += self._knowledge(ANALYSIS_FACTS_LIMIT, ANALYSIS_PEOPLE_LIMIT, data)
+        parts += self._knowledge(ANALYSIS_FACTS_LIMIT, ANALYSIS_PEOPLE_LIMIT, data, private)
         return "<context>\n" + "\n\n".join(parts) + "\n</context>"
 
-    async def analyze(self, title: str, digest: str) -> Outcome:
-        """Разбор фрагмента данных: факты, люди и цели — в память; reply — наблюдение для досье."""
-        async with self._analysis_lock:
-            prompt = (f"{self._profile_context(digest)}\n\n"
-                      f"<data source=\"{title}\">\n{digest}\n</data>\n\n"
-                      f"<message>\n{ANALYSIS_TASK.format(title=title)}\n</message>")
-            answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
-                                          schema=self.analysis_schema, model=ANALYSIS_MODEL)
-            data = answer.data
-            outcome = Outcome(reply=str(data.get("reply", "")).strip())
-            outcome.changes += self._apply_memory(data.get("memory") or [], f"analysis:{title}")
-            outcome.changes += self._apply_goals(data.get("goals") or [])
-            outcome.changes += self._apply_people(data.get("people") or [])
-            return outcome
+    async def analyze(self, title: str, digest: str, source: str = "") -> Outcome:
+        """Разбор фрагмента данных: факты, люди и цели — в память; reply — наблюдение для досье.
+        Нечувствительные источники (HELPER_SOURCES) — сначала вторым ИИ."""
+        def build(private: bool) -> str:
+            return (f"{self._profile_context(digest, private)}\n\n"
+                    f"<data source=\"{title}\">\n{digest}\n</data>\n\n"
+                    f"<message>\n{ANALYSIS_TASK.format(title=title)}\n</message>")
+
+        if source in HELPER_SOURCES:
+            answer, engine = await self._helper_first(build, schema=self.analysis_schema)
+        else:
+            async with self._analysis_lock:
+                answer, engine = await self.brain.ask(
+                    build(False), system_prompt_file=self.analysis_prompt_file,
+                    schema=self.analysis_schema, model=ANALYSIS_MODEL), "claude"
+        data = answer.data
+        outcome = Outcome(reply=str(data.get("reply", "")).strip(), engine=engine)
+        outcome.changes += self._apply_memory(data.get("memory") or [], f"analysis:{title}")
+        outcome.changes += self._apply_goals(data.get("goals") or [])
+        outcome.changes += self._apply_people(data.get("people") or [])
+        return outcome
 
     async def dossier(self, observations: str) -> tuple[str, str]:
         """Итоговое досье по всем наблюдениям. Возвращает (короткий вывод, Markdown)."""
@@ -591,14 +626,11 @@ class Assistant:
             if from_user:
                 self.store.add_message("user", text, channel)
             telegram = channel == "tg"
-            answer = await self.brain.ask(
-                prompt, system_prompt_file=self._prompt_file(telegram), schema=self.schema,
-                tools=CHAT_TOOLS, mcp_config=self.mcp_config, read_dirs=READ_DIRS,
-                timeout=ACTION_TIMEOUT,
-                model=TG_MODEL if telegram else None, effort=TG_EFFORT if telegram else None,
-            )
+            answer, engine = await self._chat_ask(prompt, telegram)
             data = answer.data
-            outcome = Outcome(reply=str(data.get("reply", "")).strip() or "…")
+            outcome = Outcome(reply=str(data.get("reply", "")).strip() or "…", engine=engine)
+            if engine == "openai":
+                outcome.done.append("ответил запасной ИИ (OpenAI): Claude недоступен, действий нет")
             reply_id = self.store.add_message("assistant", outcome.reply, channel)
             outcome.changes += self._apply_memory(data.get("memory") or [])
             outcome.changes += self._apply_goals(data.get("goals") or [])
@@ -619,6 +651,21 @@ class Assistant:
                 self.store.set_message_notes(reply_id, outcome.changes + outcome.done)
             return outcome
 
+    async def _helper_first(self, build_prompt, **kwargs) -> tuple[Answer, str]:
+        """Нечувствительная фоновая работа: сначала второй ИИ (не тратит лимит Claude, контекст
+        без личного), не вышло — Claude. build_prompt(private) собирает промпт."""
+        if self.helper is not None and self.helper.usable:
+            try:
+                return await self.helper.ask(build_prompt(True),
+                                             system_prompt_file=self.analysis_prompt_file,
+                                             **kwargs), "openai"
+            except BrainError as e:
+                log.warning("Второй ИИ не справился (%s) — делаю на Claude", e)
+        async with self._analysis_lock:
+            return await self.brain.ask(build_prompt(False), model=ANALYSIS_MODEL,
+                                        system_prompt_file=self.analysis_prompt_file,
+                                        **kwargs), "claude"
+
     async def _patient_ask(self, build_prompt, **kwargs) -> Answer:
         """Вызов для фоновой работы: кончился лимит (или слетел вход) — ждём и повторяем, а не
         бросаем начатое. Промпт собирается заново после ожидания: память могла измениться."""
@@ -632,6 +679,45 @@ class Assistant:
                 if not await self.brain.wait_out(e):
                     raise
                 log.info("Claude снова доступен — продолжаю с того же места")
+
+    async def _chat_ask(self, prompt: str, telegram: bool) -> tuple[Answer, str]:
+        """Ответ в чате: Claude; если он в лимите, упал или молчит дольше сторожа (и при этом
+        не ждёт «да/нет» пользователя) — запасной ответ вторым ИИ, без инструментов."""
+        claude = asyncio.create_task(self.brain.ask(
+            prompt, system_prompt_file=self._prompt_file(telegram), schema=self.schema,
+            tools=CHAT_TOOLS, mcp_config=self.mcp_config, read_dirs=READ_DIRS,
+            timeout=ACTION_TIMEOUT,
+            model=TG_MODEL if telegram else None, effort=TG_EFFORT if telegram else None))
+        watchdog = CHAT_WATCHDOG["tg" if telegram else "pc"]
+        started = asyncio.get_running_loop().time()
+        while True:
+            done, _ = await asyncio.wait({claude}, timeout=10)
+            if done:
+                try:
+                    return claude.result(), "claude"
+                except BrainError as e:
+                    if self.helper is None or not self.helper.usable:
+                        raise
+                    log.warning("Claude не ответил (%s) — отвечает запасной ИИ", e)
+                    try:
+                        return await self._fallback_ask(prompt, telegram), "openai"
+                    except BrainError:
+                        raise e from None
+            waited = asyncio.get_running_loop().time() - started
+            if (self.helper is not None and self.helper.usable and waited > watchdog
+                    and not self.waiting_for_user()):
+                log.warning("Claude молчит %d с — прерываю, отвечает запасной ИИ", waited)
+                claude.cancel()
+                with contextlib.suppress(asyncio.CancelledError, BrainError):
+                    await claude
+                return await self._fallback_ask(prompt, telegram), "openai"
+
+    async def _fallback_ask(self, prompt: str, telegram: bool) -> Answer:
+        system = self.workspace / ("system_prompt_fallback_tg.md" if telegram
+                                   else "system_prompt_fallback.md")
+        system.write_text(self._render_system_prompt(telegram) + FALLBACK_NOTE, encoding="utf-8")
+        return await self.helper.ask(prompt, system_prompt_file=system,
+                                     schema=self.fallback_schema)
 
     async def ingest(self, name: str, text: str) -> Outcome:
         """Импорт документа: факты и цели из него — в память. Без интернета: документ — чужие данные."""

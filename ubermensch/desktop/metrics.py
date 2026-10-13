@@ -240,6 +240,12 @@ class MetricsWindow(console.ConsoleWindow):
             self._w(f"  {label:<{LABEL_W - 2}}", FG)
             self._ln(value or missing, BRIGHT if value else DIM)
 
+        if openai := d.get("openai"):  # второй ИИ: сколько потрачено из бюджета
+            self._head("Второй ИИ", f"OpenAI · {openai['model'] or 'модель выберется сама'}")
+            self._row("потрачено", openai["spent"], openai["budget"],
+                      f"${openai['spent']:.2f} из ${openai['budget']:g}",
+                      RED if openai["spent"] >= openai["budget"] * 0.8 else GREEN)
+
     # --- «Мои действия» ---
 
     def _activity(self, d: dict) -> None:

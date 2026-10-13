@@ -218,6 +218,9 @@ class Brain:
             proc.kill()
             await proc.wait()
             raise BrainError(f"нет ответа за {limit} с") from None
+        except asyncio.CancelledError:  # вызов отменили (сторож чата) — процесс не оставляем
+            proc.kill()
+            raise
 
         try:
             result = json.loads(out.decode("utf-8"))

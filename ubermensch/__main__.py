@@ -15,6 +15,7 @@ from . import api, bot, config
 from .analysis import Investigation
 from .assistant import Assistant
 from .brain import Brain
+from .openai_brain import OpenAIBrain
 from .collectors.activity import ActivityTracker
 from .core import Core
 from .maintenance import Maintenance
@@ -51,6 +52,9 @@ async def _serve(settings: config.Settings) -> None:
     assistant = Assistant(settings, store, brain)
     core = Core(store, assistant, settings.data_dir / "raw" / "import")
     brain.health = core.health  # мозг сообщает о лимите и слетевшем входе
+    if os.getenv("OPENAI_API_KEY"):  # второй ИИ: фон без личного и запасной ответ в чате
+        assistant.helper = OpenAIBrain(store, core.health, core.notify)
+    assistant.waiting_for_user = lambda: bool(core._approvals)
     core.health.bind(asyncio.get_running_loop())
     core.investigation = Investigation(store, assistant, core.notify, core.telegrams, core.health)
 
