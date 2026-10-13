@@ -3,13 +3,18 @@
 Берём личные чаты и «Избранное» целиком. Из групп — только важное: свои сообщения (вместе с тем,
 на что ответил) и обращения к пользователю; чужая болтовня — шум. Каналы и боты не читаем.
 Сессия = полный доступ к аккаунту, поэтому лежит на зашифрованном D:.
+
+Аккаунтов два: личный (TG_API_ID/TG_API_HASH) и рабочий (TG_WORK_API_ID/TG_WORK_HASH), у каждого
+своя сессия. Рабочие чаты помечены «(рабочий TG)», чтобы разбор понимал контекст.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from telethon import TelegramClient
 from telethon.errors import AuthKeyUnregisteredError, SessionRevokedError, UserDeactivatedError
@@ -27,9 +32,34 @@ SERVICE_USER_ID = 777000  # служебные уведомления Telegram
 MESSAGE_CHARS = 2000
 
 
-def client() -> TelegramClient:
-    tg = TelegramClient(str(SESSION), int(os.environ["TG_API_ID"]), os.environ["TG_API_HASH"],
-                        device_model="Übermensch", app_version="1.0")
+@dataclass(frozen=True)
+class Profile:
+    key: str  # personal | work
+    label: str  # для сообщений пользователю: «личный», «рабочий»
+    session: Path
+    id_env: str
+    hash_env: str
+    login_bat: str
+
+    @property
+    def configured(self) -> bool:
+        return bool(os.getenv(self.id_env) and os.getenv(self.hash_env))
+
+    @property
+    def personal(self) -> bool:
+        return self.key == "personal"
+
+
+PERSONAL = Profile("personal", "личный", SESSION, "TG_API_ID", "TG_API_HASH",
+                   "telegram_login.bat")
+WORK = Profile("work", "рабочий", config.DATA_DIR / "secrets" / "telegram_work",
+               "TG_WORK_API_ID", "TG_WORK_HASH", "telegram_work_login.bat")
+PROFILES = {p.key: p for p in (PERSONAL, WORK)}
+
+
+def client(profile: Profile = PERSONAL) -> TelegramClient:
+    tg = TelegramClient(str(profile.session), int(os.environ[profile.id_env]),
+                        os.environ[profile.hash_env], device_model="Übermensch", app_version="1.0")
     tg.flood_sleep_threshold = 120  # короткие ограничения Telegram пережидаем сами
     return tg
 
@@ -74,15 +104,30 @@ class TelegramAccount:
     Два клиента на одном файле сессии мешают друг другу, поэтому ядро держит один.
     """
 
-    def __init__(self):
+    def __init__(self, profile: Profile = PERSONAL):
+        self.profile = profile
         self._client: TelegramClient | None = None
         self._lock = asyncio.Lock()
+
+    def _thread(self, name: str, kind: str) -> str:
+        """Имя чата в данных; рабочие помечены, чтобы разбор понимал контекст."""
+        tags = (["группа"] if kind == "group" else []) + ([] if self.profile.personal
+                                                          else ["рабочий TG"])
+        return f"{name} ({', '.join(tags)})" if tags else name
+
+    def _id(self, dialog_id: int, message_id: int) -> str:
+        """Номера сообщений у аккаунтов пересекаются — у рабочего свой префикс."""
+        prefix = "" if self.profile.personal else f"{self.profile.key}:"
+        return f"{prefix}{dialog_id}:{message_id}"
+
+    def _meta(self, **meta) -> dict:
+        return meta if self.profile.personal else {**meta, "account": self.profile.key}
 
     async def _require(self) -> TelegramClient:
         """Подключённый и авторизованный клиент, иначе TelegramLoginRequired."""
         async with self._lock:
             if self._client is None:
-                self._client = client()
+                self._client = client(self.profile)
             if not self._client.is_connected():
                 await self._client.connect()
             try:
@@ -90,7 +135,8 @@ class TelegramAccount:
             except (AuthKeyUnregisteredError, SessionRevokedError, UserDeactivatedError):
                 authorized = False
             if not authorized:
-                raise TelegramLoginRequired("нет входа в Telegram — запусти telegram_login.bat")
+                raise TelegramLoginRequired(f"нет входа в {self.profile.label} Telegram — "
+                                            f"запусти {self.profile.login_bat}")
             return self._client
 
     # --- действия ---
@@ -160,14 +206,13 @@ class TelegramAccount:
                 author = "Я" if message.out else                     _sender_name(message.sender or await message.get_sender())
                 found[message.id] = {
                     "source": "telegram",
-                    "external_id": f"{dialog.id}:{message.id}",
+                    "external_id": self._id(dialog.id, message.id),
                     "ts": local_iso(message.date),
-                    "thread": f"{dialog.name} (группа)",
+                    "thread": self._thread(dialog.name, "group"),
                     "author": author,
                     "outgoing": int(bool(message.out)),
                     "text": text[:MESSAGE_CHARS],
-                    "meta": {"chat_id": dialog.id, "kind": "group",
-                             "mention": not message.out},
+                    "meta": self._meta(chat_id=dialog.id, kind="group", mention=not message.out),
                 }
         return sorted(found.values(), key=lambda e: e["ts"]), newest
 
@@ -183,7 +228,8 @@ class TelegramAccount:
                 continue
             kind = "self" if isinstance(entity, User) and entity.is_self else                 "user" if dialog.is_user else "group"
             name = "Избранное" if kind == "self" else dialog.name
-            cursor_key = f"telegram:{dialog.id}"
+            cursor_key = f"telegram:{dialog.id}" if self.profile.personal else \
+                f"telegram:{self.profile.key}:{dialog.id}"
             last_id = int(store.cursor(cursor_key) or 0)
             if kind == "group":
                 batch, last_id = await self._group_highlights(tg, dialog, since, last_id)
@@ -210,13 +256,13 @@ class TelegramAccount:
                     author = _sender_name(message.sender or await message.get_sender())
                 batch.append({
                     "source": "telegram",
-                    "external_id": f"{dialog.id}:{message.id}",
+                    "external_id": self._id(dialog.id, message.id),
                     "ts": local_iso(message.date),
-                    "thread": name if kind != "group" else f"{name} (группа)",
+                    "thread": self._thread(name, kind),
                     "author": author,
                     "outgoing": int(bool(message.out)),
                     "text": text[:MESSAGE_CHARS],
-                    "meta": {"chat_id": dialog.id, "kind": kind},
+                    "meta": self._meta(chat_id=dialog.id, kind=kind),
                 })
             if batch:
                 added += store.add_events(batch)

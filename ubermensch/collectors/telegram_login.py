@@ -1,4 +1,4 @@
-"""Первый вход в Telegram: python -m ubermensch.collectors.telegram_login
+"""Первый вход в Telegram: python -m ubermensch.collectors.telegram_login [work]
 
 Telegram пришлёт код в приложение; если включён облачный пароль — спросит и его.
 После входа ядро сразу начинает собирать переписки.
@@ -8,10 +8,11 @@ from __future__ import annotations
 import asyncio
 import getpass
 import json
+import sys
 import urllib.request
 
 from .. import config
-from .telegram import SESSION, client
+from .telegram import PROFILES, client
 
 
 def _trigger_collection() -> None:
@@ -28,8 +29,13 @@ def _trigger_collection() -> None:
 
 
 async def main() -> None:
-    SESSION.parent.mkdir(parents=True, exist_ok=True)
-    tg = client()
+    profile = PROFILES[sys.argv[1] if len(sys.argv) > 1 else "personal"]
+    if not profile.configured:
+        print(f"В .env нет {profile.id_env} и {profile.hash_env} — сначала добавь их.")
+        return
+    print(f"Вход в {profile.label} Telegram.")
+    profile.session.parent.mkdir(parents=True, exist_ok=True)
+    tg = client(profile)
     await tg.start(
         phone=lambda: input("Номер телефона в формате +7...: ").strip(),
         code_callback=lambda: input("Код из Telegram: ").strip(),
@@ -37,7 +43,8 @@ async def main() -> None:
     )
     me = await tg.get_me()
     print(f"\nГотово: вход выполнен как {me.first_name} (@{me.username}).")
-    print(f"Сессия сохранена в {SESSION}.session — это ключ к аккаунту, никому его не передавай.")
+    print(f"Сессия сохранена в {profile.session}.session — это ключ к аккаунту, никому его "
+          "не передавай.")
     await tg.disconnect()
     _trigger_collection()
 

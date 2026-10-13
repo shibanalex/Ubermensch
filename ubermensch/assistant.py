@@ -159,6 +159,13 @@ STYLE_TASK = (
     "в конце — 10–15 коротких примеров типичных фраз без имён, адресов и других личных данных. "
     "Поле style — эта инструкция в Markdown."
 )
+WORK_STYLE_TASK = STYLE_TASK.replace(
+    "сам писал в Telegram разным людям", "сам писал в рабочем Telegram — коллегам, по работе"
+) + (" Опиши именно рабочую манеру: как он обращается к коллегам и начальству, как "
+     "отчитывается и договаривается о сроках. Отдельным пунктом «Не делай» запиши: никаких "
+     "длинных тире, двоеточий, списков и перечислений, никакого «почерка ИИ» (вводные «конечно», "
+     "«отличный вопрос», выверенные гладкие фразы) — сообщение должно выглядеть написанным "
+     "человеком в мессенджере.")
 PERSONA_TASK = (
     "[Системная задача: создай голос Освальда.] Освальд — это пользователь, но лучше: говорит "
     "его языком и узнаваемой манерой, но думает и действует как его лучшая версия — та, к "
@@ -362,6 +369,7 @@ class Assistant:
         # Системный промпт статичен (всё изменчивое — в контексте), поэтому кэшируется.
         self.workspace = settings.workspace
         self.style_file = settings.workspace / "tg_style.md"  # как пишет пользователь
+        self.work_style_file = settings.workspace / "tg_style_work.md"  # он же в рабочем Telegram
         self.persona_file = settings.workspace / "oswald_persona.md"  # голос Освальда
         self.system_prompt_file = settings.workspace / "system_prompt.md"
         self.system_prompt_file.write_text(self._render_system_prompt(), encoding="utf-8")
@@ -397,6 +405,10 @@ class Assistant:
         if self.style_file.exists():  # для сообщений от имени пользователя — пиши как он сам
             text += ("\n## Как пишет пользователь (для сообщений от его имени)\n"
                      + self.style_file.read_text(encoding="utf-8"))
+        if self.work_style_file.exists():
+            text += ("\n## Как пишет пользователь в рабочем Telegram (для сообщений с рабочего "
+                     "аккаунта — вместо раздела выше)\n"
+                     + self.work_style_file.read_text(encoding="utf-8"))
         return text
 
     def _prompt_file(self, telegram: bool) -> Path:
@@ -468,16 +480,18 @@ class Assistant:
                                           schema=UNIVERSITY_SCHEMA, model=ANALYSIS_MODEL)
         return str(answer.data.get("message", "")).strip()
 
-    async def describe_style(self, sample: str) -> str:
-        """Инструкция «как пишет пользователь» по его же сообщениям в Telegram."""
+    async def describe_style(self, sample: str, work: bool = False) -> str:
+        """Инструкция «как пишет пользователь» по его же сообщениям в Telegram (личном или
+        рабочем)."""
         async with self._analysis_lock:
             prompt = f"<data source=\"сообщения пользователя\">\n{sample}\n</data>\n\n" \
-                     f"<message>\n{STYLE_TASK}\n</message>"
+                     f"<message>\n{WORK_STYLE_TASK if work else STYLE_TASK}\n</message>"
             answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
                                           schema=STYLE_SCHEMA, model=ANALYSIS_MODEL)
             style = str(answer.data.get("style", "")).strip()
             if style:
-                self.style_file.write_text(style, encoding="utf-8")
+                (self.work_style_file if work else self.style_file).write_text(
+                    style, encoding="utf-8")
             return style
 
     def _context(self) -> str:

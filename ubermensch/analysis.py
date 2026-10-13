@@ -51,6 +51,7 @@ TELEGRAM_WAIT = timedelta(hours=24)
 STYLE_EVERY = 7 * 24 * 3600
 STYLE_SAMPLE, STYLE_CHARS = 2500, 35_000  # свежие сообщения пользователя для описания стиля
 THINKING_CHARS = 40_000
+WORK_STYLE_MIN = 50  # рабочий стиль — когда своих сообщений в рабочем Telegram хотя бы столько
 CATEGORIZE_EVERY = 20 * 3600
 UNIVERSITY_EVERY = 20 * 3600  # новости вуза и личный кабинет — раз в сутки
 NEWS_SEEN = 300  # сколько адресов уже просмотренных новостей помнить  # разметка программ и сайтов — не чаще раза в сутки  # его реплики в разговорах с ИИ — как он рассуждает
@@ -346,10 +347,10 @@ def digest(store: Store, job) -> str:
 
 class Investigation:
     def __init__(self, store: Store, assistant: Assistant, notify: Callable[[str], None],
-                 telegram: TelegramAccount, health: Health):
+                 telegrams: dict[str, TelegramAccount], health: Health):
         self.store = store
         self.assistant = assistant
-        self.telegram = telegram
+        self.telegrams = telegrams  # личный и рабочий
         self.health = health
         self.import_dir = config.DATA_DIR / "raw" / "import"
         self.notify = notify  # сообщение пользователю (маскот + Telegram)
@@ -401,15 +402,21 @@ class Investigation:
                 except Exception:
                     log.exception("Сбор Gmail не удался")  # обычно сеть — повторим в следующий раз
 
-            if os.getenv("TG_API_ID") and os.getenv("TG_API_HASH"):
+            for account in self.telegrams.values():
+                profile = account.profile
+                if not profile.configured:
+                    continue
+                key = "telegram" if profile.personal else f"telegram_{profile.key}"
                 try:
-                    found["telegram"], _ = await self.telegram.collect(self.store, since)
-                    self.health.clear("telegram", "Telegram снова на связи.")
+                    found[key], _ = await account.collect(self.store, since)
+                    self.health.clear(key, f"{profile.label.capitalize()} Telegram снова на связи.")
                 except TelegramLoginRequired:
-                    self.health.report("telegram", "Нет входа в Telegram (сессия завершена или "
-                                       "удалена). Запусти telegram_login.bat в папке проекта.")
+                    self.health.report(key, f"Нет входа в {profile.label} Telegram (сессия не "
+                                       f"создана, завершена или удалена). Запусти "
+                                       f"{profile.login_bat} в папке проекта.")
                 except Exception:
-                    log.exception("Сбор Telegram не удался")
+                    log.exception("Сбор Telegram (%s) не удался", profile.label)
+            if any(a.profile.configured for a in self.telegrams.values()):
                 await self._update_style()
 
             try:
@@ -583,6 +590,10 @@ class Investigation:
         try:
             await self.assistant.describe_style(_sample(messages, STYLE_CHARS))
             log.info("Стиль переписки обновлён")
+            work = self.store.my_telegram_messages(STYLE_SAMPLE, "work")
+            if len(work) >= WORK_STYLE_MIN:
+                await self.assistant.describe_style(_sample(work, STYLE_CHARS), work=True)
+                log.info("Рабочий стиль переписки обновлён по %d сообщениям", len(work))
             # как он рассуждает: реплики в чатах AI Studio из папки импорта и в Claude Code
             replicas = [r for p in sorted(self.import_dir.glob("*"))
                         if p.is_file() and p.suffix.lower() in ("", ".json")

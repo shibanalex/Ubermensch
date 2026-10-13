@@ -136,15 +136,16 @@ def create_app(core: Core, token: str) -> web.Application:
             return web.json_response({"error": str(e)})
 
     async def post_tg_chats(request: web.Request) -> web.Response:
-        return await tool_call(request, lambda d: core.telegram.find_chats(str(d["query"])))
+        return await tool_call(request, lambda d: core.tg(d.get("account", "personal"))
+                               .find_chats(str(d["query"])))
 
     async def post_tg_history(request: web.Request) -> web.Response:
-        return await tool_call(request, lambda d: core.telegram.history(
+        return await tool_call(request, lambda d: core.tg(d.get("account", "personal")).history(
             int(d["chat_id"]), int(d.get("limit", 30))))
 
     async def post_tg_send(request: web.Request) -> web.Response:
         return await tool_call(request, lambda d: core.send_telegram(
-            int(d["chat_id"]), str(d["text"])))
+            int(d["chat_id"]), str(d["text"]), d.get("account", "personal")))
 
     async def post_lk_find(request: web.Request) -> web.Response:
         return await tool_call(request, lambda d: asyncio.to_thread(

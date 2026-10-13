@@ -6,7 +6,7 @@
 |---|---|---|
 | Память, переписки, письма, история браузера, досье | `D:\Ubermensch` | BitLocker на D:; бэкапы — 7-Zip AES-256 |
 | Ключи (бот, Telegram API, Gmail, логин и пароль личного кабинета вуза, пароль бэкапов) | `.env` в папке проекта (C:) | не в git; C: не зашифрован — рекомендуется BitLocker на C: |
-| Сессия Telegram (полный доступ к аккаунту) | `D:\Ubermensch\secrets\telegram.session` | BitLocker; не в git и не в бэкапах |
+| Сессии Telegram — личная и рабочая (полный доступ к аккаунтам) | `D:\Ubermensch\secrets\telegram.session`, `telegram_work.session` | BitLocker; не в git и не в бэкапах |
 | Доступ к Google Календарю (только события) | `D:\Ubermensch\secrets\google_*.json` | BitLocker; не в git и не в бэкапах; отозвать — myaccount.google.com/permissions |
 | Сессия личного кабинета вуза | `D:\Ubermensch\secrets\lk_session.json` | BitLocker; не в git и не в бэкапах; кабинет только читается |
 | Снимок личного кабинета (тексты страниц) | `D:\Ubermensch\raw\lk\snapshot.json` | BitLocker |

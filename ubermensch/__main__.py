@@ -52,7 +52,7 @@ async def _serve(settings: config.Settings) -> None:
     core = Core(store, assistant, settings.data_dir / "raw" / "import")
     brain.health = core.health  # мозг сообщает о лимите и слетевшем входе
     core.health.bind(asyncio.get_running_loop())
-    core.investigation = Investigation(store, assistant, core.notify, core.telegram, core.health)
+    core.investigation = Investigation(store, assistant, core.notify, core.telegrams, core.health)
 
     # Фоновые сервисы: упавший перезапускается надсмотрщиком, ядро продолжает работать.
     services = core.supervisor

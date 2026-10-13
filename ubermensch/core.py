@@ -25,7 +25,7 @@ from . import actions, config, ingest, mail, metrics
 from .analysis import SOURCES
 from .assistant import ONBOARDING_EVENT, Assistant, Outcome
 from .brain import BrainError
-from .collectors.telegram import TelegramAccount
+from .collectors.telegram import PROFILES, TelegramAccount
 from .health import Health
 from .services import Supervisor
 from .store import Store
@@ -68,7 +68,9 @@ class Core:
         self.investigation: Investigation  # подключается при запуске, до старта API
         self.health = Health(self.notify)  # известные проблемы и что с ними делать
         self.supervisor = Supervisor(self.health)  # фоновые сервисы с перезапуском
-        self.telegram = TelegramAccount()  # один клиент на сессию: и для сбора, и для действий
+        # один клиент на сессию: и для сбора, и для действий; личный и рабочий аккаунты
+        self.telegrams = {key: TelegramAccount(profile) for key, profile in PROFILES.items()}
+        self.telegram = self.telegrams["personal"]
         self._brain_calls = 0  # счётчик, а не флаг: вызовы могут стоять в очереди друг за другом
         self._approvals: dict[int, asyncio.Future] = {}  # действия, ждущие «да/нет»
 
@@ -142,12 +144,21 @@ class Core:
 
     # --- действия от имени пользователя (всё внешнее — только после «да») ---
 
-    async def send_telegram(self, chat_id: int, text: str) -> str:
-        name = await self.telegram.chat_name(chat_id)
-        if not await self.request_approval(f"Отправить в Telegram → {name}", text):
+    def tg(self, account: str = "personal") -> TelegramAccount:
+        if account not in self.telegrams:
+            raise ValueError(f"Нет такого аккаунта Telegram: {account} (есть: personal, work)")
+        if not self.telegrams[account].profile.configured:
+            raise ValueError(f"{account}: аккаунт не настроен в .env")
+        return self.telegrams[account]
+
+    async def send_telegram(self, chat_id: int, text: str, account: str = "personal") -> str:
+        tg = self.tg(account)
+        name = await tg.chat_name(chat_id)
+        where = "Telegram" if tg.profile.personal else f"{tg.profile.label} Telegram"
+        if not await self.request_approval(f"Отправить в {where} → {name}", text):
             return "Пользователь не подтвердил отправку."
-        await self.telegram.send(chat_id, text)
-        return f"Отправлено в «{name}»."
+        await tg.send(chat_id, text)
+        return f"Отправлено в «{name}» ({tg.profile.label} аккаунт)."
 
     async def send_email(self, to: str, subject: str, body: str) -> str:
         if not await self.request_approval(f"Отправить письмо → {to}",

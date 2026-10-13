@@ -382,11 +382,14 @@ class Store:
                               (source,)).fetchone()
         return row[0], row[1]
 
-    def my_telegram_messages(self, limit: int) -> list[str]:
-        """Свежие сообщения, которые пользователь сам писал людям (не в «Избранное»)."""
+    def my_telegram_messages(self, limit: int, account: str = "personal") -> list[str]:
+        """Свежие сообщения, которые пользователь сам писал людям (не в «Избранное»)
+        с личного (у событий нет поля account) или другого аккаунта."""
         return [r[0] for r in self.db.execute(
             "SELECT text FROM events WHERE source = 'telegram' AND outgoing = 1 "
-            "AND json_extract(meta, '$.kind') != 'self' ORDER BY ts DESC LIMIT ?", (limit,))]
+            "AND json_extract(meta, '$.kind') != 'self' "
+            "AND COALESCE(json_extract(meta, '$.account'), 'personal') = ? "
+            "ORDER BY ts DESC LIMIT ?", (account, limit))]
 
     def my_ai_messages(self, limit: int) -> list[str]:
         """Свежие реплики пользователя в разговорах с ИИ (длинные — как он рассуждает)."""
