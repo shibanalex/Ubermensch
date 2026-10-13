@@ -19,7 +19,7 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
 from . import config, ingest, metrics
-from .assistant import Assistant
+from .assistant import HELPER_SOURCES, Assistant
 from .brain import BrainError
 from .collectors import ai_chats, chrome, creative, documents, gmail, notifications, takeout
 from .collectors.telegram import TelegramAccount, TelegramLoginRequired
@@ -632,10 +632,16 @@ class Investigation:
         return DAY_PAUSE
 
     async def _rest(self) -> None:
-        """Пауза между порциями; отошёл пользователь посреди паузы — она сокращается."""
+        """Пауза между порциями Claude; отошёл пользователь посреди паузы — она сокращается.
+        Пока Claude отдыхает, второй ИИ разбирает свои порции: лимит Claude они не тратят."""
         started = time.monotonic()
         while time.monotonic() - started < self._pause():
-            await asyncio.sleep(30)
+            helper = self.assistant.helper
+            job = self.store.next_job(HELPER_SOURCES) if helper and helper.usable else None
+            if job is None:
+                await asyncio.sleep(30)
+            elif await self._process(job):
+                await asyncio.sleep(HELPER_PAUSE)
 
     async def worker(self) -> None:
         await asyncio.sleep(90)
@@ -649,41 +655,49 @@ class Investigation:
                 await self._maybe_dossier()
                 await asyncio.sleep(300)
                 continue
-            text = digest(self.store, job)
-            if not text.strip():
-                self.store.finish_job(job["id"], "skipped", "", 0)
+            engine = await self._process(job)
+            if engine is None:
                 continue
-            try:
-                outcome = await self.assistant.analyze(job["title"], text, job["source"])
-            except BrainError as e:
-                if e.kind in ("limit", "auth", "missing"):
-                    # не вина порции: ждём, пока лимит сбросится или пользователь починит вход
-                    wait = (e.reset_at - datetime.now()).total_seconds() + 120 if e.reset_at \
-                        else LIMIT_PAUSE if e.is_limit else AUTH_WAIT
-                    log.warning("Разбор на паузе до %s (%s): %s",
-                                (datetime.now() + timedelta(seconds=wait)).strftime("%H:%M"),
-                                e.kind, e)
-                    await asyncio.sleep(max(60, wait))
-                    continue
-                # обрыв сети, сон компьютера — пробуем ещё, прежде чем сдаться
-                self._attempts[job["id"]] = self._attempts.get(job["id"], 0) + 1
-                if self._attempts[job["id"]] < MAX_ATTEMPTS:
-                    log.warning("Порция «%s»: попытка %d не удалась (%s), повторю позже",
-                                job["title"], self._attempts[job["id"]], e)
-                    await asyncio.sleep(RETRY_PAUSE)
-                else:
-                    log.error("Порция «%s» не разобрана: %s", job["title"], e)
-                    self.store.finish_job(job["id"], "failed", str(e), len(text))
-                continue
-            self.store.finish_job(job["id"], "done", outcome.reply, len(text))
-            log.info("Разобрано: %s (%d симв., изменений %d)", job["title"], len(text),
-                     len(outcome.changes))
             await self._maybe_consolidate()
             await self._maybe_dossier()
-            if outcome.engine == "claude":  # лимит Claude общий с чатом — бережём
+            if engine == "claude":  # лимит Claude общий с чатом — бережём
                 await self._rest()
             else:
                 await asyncio.sleep(HELPER_PAUSE)
+
+    async def _process(self, job) -> str | None:
+        """Разобрать одну порцию. Возвращает, кто разбирал (claude/openai), или None, если
+        порция пустая или не вышло (тогда она повторится позже)."""
+        text = digest(self.store, job)
+        if not text.strip():
+            self.store.finish_job(job["id"], "skipped", "", 0)
+            return None
+        try:
+            outcome = await self.assistant.analyze(job["title"], text, job["source"])
+        except BrainError as e:
+            if e.kind in ("limit", "auth", "missing"):
+                # не вина порции: ждём, пока лимит сбросится или пользователь починит вход
+                wait = (e.reset_at - datetime.now()).total_seconds() + 120 if e.reset_at \
+                    else LIMIT_PAUSE if e.is_limit else AUTH_WAIT
+                log.warning("Разбор на паузе до %s (%s): %s",
+                            (datetime.now() + timedelta(seconds=wait)).strftime("%H:%M"),
+                            e.kind, e)
+                await asyncio.sleep(max(60, wait))
+                return None
+            # обрыв сети, сон компьютера — пробуем ещё, прежде чем сдаться
+            self._attempts[job["id"]] = self._attempts.get(job["id"], 0) + 1
+            if self._attempts[job["id"]] < MAX_ATTEMPTS:
+                log.warning("Порция «%s»: попытка %d не удалась (%s), повторю позже",
+                            job["title"], self._attempts[job["id"]], e)
+                await asyncio.sleep(RETRY_PAUSE)
+            else:
+                log.error("Порция «%s» не разобрана: %s", job["title"], e)
+                self.store.finish_job(job["id"], "failed", str(e), len(text))
+            return None
+        self.store.finish_job(job["id"], "done", outcome.reply, len(text))
+        log.info("Разобрано (%s): %s (%d симв., изменений %d)", outcome.engine, job["title"],
+                 len(text), len(outcome.changes))
+        return outcome.engine
 
     async def _maybe_consolidate(self) -> None:
         """Каждые CONSOLIDATE_EVERY порций — уборка памяти: дубли, устаревшее, двойники людей."""

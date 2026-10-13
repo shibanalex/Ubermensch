@@ -434,12 +434,13 @@ class Store:
             key, source, title, period_start, period_end, priority, now(),
         )
 
-    def next_job(self) -> sqlite3.Row | None:
+    def next_job(self, sources: set[str] | None = None) -> sqlite3.Row | None:
         """Сначала важное (priority), внутри — от старого к новому: свежие сведения
-        тогда уточняют устаревшие, а не наоборот."""
+        тогда уточняют устаревшие, а не наоборот. sources — только из этих источников."""
+        only = f"AND source IN ({','.join('?' * len(sources))}) " if sources else ""
         return self.db.execute(
-            "SELECT * FROM analysis_jobs WHERE status = 'pending' "
-            "ORDER BY priority DESC, period_start, id LIMIT 1"
+            f"SELECT * FROM analysis_jobs WHERE status = 'pending' {only}"
+            "ORDER BY priority DESC, period_start, id LIMIT 1", tuple(sources or ())
         ).fetchone()
 
     def jobs_done_since(self, moment: str) -> int:
