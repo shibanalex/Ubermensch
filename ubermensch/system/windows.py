@@ -61,6 +61,13 @@ def foreground() -> Window | None:
     return Window(app, title.value, int(hwnd))
 
 
+def is_desktop(hwnd: int | None) -> bool:
+    """Окно рабочего стола Windows (обои и значки)."""
+    name = ctypes.create_unicode_buffer(32)
+    _user32.GetClassNameW(wintypes.HWND(hwnd or 0), name, 32)
+    return name.value in ("Progman", "WorkerW")
+
+
 def is_fullscreen(window: Window) -> bool:
     """Окно занимает весь монитор — игра, фильм, презентация."""
     rect = wintypes.RECT()

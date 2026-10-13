@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import QPoint, QRect, QRectF, Qt, Signal
+from PySide6.QtCore import (QEasingCurve, QParallelAnimationGroup, QPoint,
+                            QPropertyAnimation, QRect, QRectF, Qt, Signal)
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QMouseEvent, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -22,6 +23,7 @@ BUTTON_HOVER = QColor("#3a3a3a")
 CLOSE_HOVER = QColor("#c42b1c")
 
 TITLE_H, BUTTON_W = 28, 34
+SHOW_MS, HIDE_MS, SLIDE = 180, 130, 12  # появление: проявляется и всплывает на SLIDE пикселей
 BUTTONS = ("hide", "maximize", "close")  # слева направо
 GLYPHS = {"hide": "─", "maximize": "☐", "close": "✕"}
 
@@ -54,6 +56,77 @@ class ConsoleWindow(QWidget):
         self.title = title
         self._hover: str | None = None
         self._drag: QPoint | None = None
+        self._showing: QParallelAnimationGroup | None = None
+        self._fading: QPropertyAnimation | None = None
+        self._gliding: QPropertyAnimation | None = None
+
+    # --- плавность: окна проявляются, тают и переезжают, а не прыгают ---
+
+    def _animation(self, prop: bytes, start, end, ms: int,
+                   curve=QEasingCurve.Type.OutCubic) -> QPropertyAnimation:
+        animation = QPropertyAnimation(self, prop, self)
+        animation.setDuration(ms)
+        animation.setStartValue(start)
+        animation.setEndValue(end)
+        animation.setEasingCurve(curve)
+        return animation
+
+    def _stop_animations(self) -> None:
+        for name in ("_showing", "_fading"):
+            if (animation := getattr(self, name)) is not None:
+                animation.stop()
+                setattr(self, name, None)
+        self.setWindowOpacity(1.0)
+
+    def show(self) -> None:
+        if self.isVisible() and self._fading is None:
+            if self._showing is not None:  # окно переставили, пока оно всплывало
+                self._stop_animations()
+            super().show()
+            return
+        self._stop_animations()
+        target = self.pos()
+        self.setWindowOpacity(0.0)
+        self.move(target + QPoint(0, SLIDE))
+        super().show()
+        group = QParallelAnimationGroup(self)
+        group.addAnimation(self._animation(b"windowOpacity", 0.0, 1.0, SHOW_MS))
+        group.addAnimation(self._animation(b"pos", target + QPoint(0, SLIDE), target, SHOW_MS))
+        group.finished.connect(lambda: setattr(self, "_showing", None))
+        self._showing = group
+        group.start()
+
+    def hide(self) -> None:
+        if not self.isVisible() or self._fading is not None:
+            return
+        if self._showing is not None:
+            self._showing.stop()
+            self._showing = None
+        fading = self._animation(b"windowOpacity", self.windowOpacity(), 0.0, HIDE_MS,
+                                 QEasingCurve.Type.InQuad)
+
+        def done() -> None:
+            self._fading = None
+            super(ConsoleWindow, self).hide()
+            self.setWindowOpacity(1.0)
+
+        fading.finished.connect(done)
+        self._fading = fading
+        fading.start()
+
+    def glide(self, target: QPoint, ms: int = 260,
+              curve=QEasingCurve.Type.InOutSine) -> QPropertyAnimation:
+        """Плавно переехать в target (прогулка маскота, перестановка окон)."""
+        if self._gliding is not None:
+            self._gliding.stop()
+        self._gliding = self._animation(b"pos", self.pos(), target, ms, curve)
+        self._gliding.start()
+        return self._gliding
+
+    def stop_glide(self) -> None:
+        if self._gliding is not None:
+            self._gliding.stop()
+            self._gliding = None
 
     def buttons(self) -> dict[str, QRect]:
         right = self.width() - 1

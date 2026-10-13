@@ -3,6 +3,8 @@
 Эмоции: ожидание (моргает, следит за курсором), речь, думает, радуется, удивлён,
 перетаскивают (>.<), голова кружится после броска (@ @), спит ночью, нет связи (x x).
 Погладить — поводить курсором туда-сюда над мордочкой.
+Сам по себе (behavior.py): гуляет, оглядывается, напевает, подпрыгивает, зевает, скучает,
+спит, пока пользователя нет, и прячется за край экрана от полноэкранных окон.
 """
 from __future__ import annotations
 
@@ -10,12 +12,14 @@ import math
 import random
 from datetime import datetime
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSettings, Qt, QTimer, Signal
+from PySide6.QtCore import (QEasingCurve, QPoint, QPointF, QRect, QRectF, QSettings, Qt,
+                            QTimer, Signal)
 from PySide6.QtGui import (QContextMenuEvent, QCursor, QFont, QGuiApplication, QMouseEvent,
                            QPainter, QPen, QPixmap)
-from PySide6.QtWidgets import QMenu
+from PySide6.QtWidgets import QApplication, QMenu
 
-from . import console
+from ..system import windows
+from . import behavior, console
 from .bubble import ReplyBubble
 from .client import Api
 from .console import BG, BORDER, DIM, GREEN, MONO, TITLE_H, plain
@@ -24,6 +28,9 @@ FACE = GREEN
 TALK = ("o", "3", "O", "3")  # «3» рисуется повёрнутой — это рот :3
 DOT = "•"  # глаз-точка рисуется кружком
 EYE_DX = 34  # глаза от центра
+PEEK = 30  # сколько маскота видно, когда он спрятался за край экрана
+CHEERS = ("кайф. минус одна", "закрыто :3", "вот это темп", "красота. дальше?",
+          "засчитано)")
 
 
 def icon_pixmap(size: int) -> QPixmap:
@@ -60,6 +67,9 @@ class Mascot(console.ConsoleWindow):
         self.bubble.open_history.connect(self.open_history)
         self.bubble.typing.connect(self.set_typing)
         self.answer_visible = lambda: False  # подменяет приложение
+        self.engaged = lambda: False  # открыто окно запроса или история — не отвлекаться
+        self.behavior = behavior.Behavior()
+        self._tucked_from: QPoint | None = None  # откуда ушёл за край экрана
 
         self._ms = 0
         self._blink_at, self._blink_until = 2500, 0
@@ -75,15 +85,18 @@ class Mascot(console.ConsoleWindow):
         self._last_reply_id: int | None = None
 
         self._settings = QSettings("Ubermensch", "desktop")
-        self._place()
+        self.home = self._place()  # его место; гуляет вокруг него, после перетаскивания — новое
         api.event.connect(self._on_event)
         api.state_changed.connect(self._on_state)
 
         timer = QTimer(self, interval=self.TICK_MS)
         timer.timeout.connect(self._tick)
         timer.start()
+        observe = QTimer(self, interval=1000)
+        observe.timeout.connect(self._observe)
+        observe.start()
 
-    def _place(self) -> None:
+    def _place(self) -> QPoint:
         saved = self._settings.value("mascot_pos")
         area = QGuiApplication.primaryScreen().availableGeometry()
         if isinstance(saved, QPoint) and any(
@@ -91,6 +104,45 @@ class Mascot(console.ConsoleWindow):
             self.move(saved)
         else:
             self.move(area.right() - self.W - 24, area.bottom() - self.H - 12)
+        return self.pos()
+
+    # --- сам по себе ---
+
+    def _fullscreen_app(self) -> bool:
+        """На весь экран чужое окно (игра, фильм), а не рабочий стол и не наши окна."""
+        window = windows.foreground()
+        if window is None or windows.is_desktop(window.hwnd):
+            return False
+        ours = {int(w.winId()) for w in QApplication.topLevelWidgets() if w.isVisible()}
+        return window.hwnd not in ours and windows.is_fullscreen(window)
+
+    def _observe(self) -> None:
+        if not self.isVisible():
+            return
+        busy = (self._dragging or self._press is not None or self._typing
+                or self._ms < self._talk_until or bool(self.api.state.get("thinking"))
+                or self.bubble.isVisible() or self.engaged())
+        world = behavior.World(
+            now_ms=self._ms, hour=datetime.now().hour, user_idle_s=windows.idle_seconds(),
+            fullscreen=self._fullscreen_app(), touched_ago_ms=self._ms - self._last_touch,
+            busy=busy, offset=self.x() - self.home.x())
+        action = self.behavior.step(world)
+        area = self.screen().availableGeometry()
+        if isinstance(action, behavior.Walk):
+            x = max(area.left(), min(self.x() + action.dx, area.right() - self.W))
+            ms = max(300, int(action.ms * abs(x - self.x()) / max(1, abs(action.dx))))
+            walk = self.glide(QPoint(x, self.y()), ms, QEasingCurve.Type.Linear)
+            walk.finished.connect(lambda: self.behavior.walk_finished(self._ms))
+            self._walk_dir = 1 if action.dx > 0 else -1
+        elif isinstance(action, behavior.Say):
+            self.say(action.text, seconds=6)
+        elif isinstance(action, behavior.Tuck) and action.hidden:
+            self.bubble.hide()
+            self._tucked_from = self.pos()
+            self.glide(QPoint(area.right() - PEEK, self.y()), 600, QEasingCurve.Type.InOutCubic)
+        elif isinstance(action, behavior.Tuck) and self._tucked_from is not None:
+            self.glide(self._tucked_from, 600, QEasingCurve.Type.OutCubic)
+            self._tucked_from = None
 
     # --- реакции на ядро и приложение ---
 
@@ -120,8 +172,7 @@ class Mascot(console.ConsoleWindow):
             self.say(event.get("text", ""), seconds=20)
         elif kind == "celebrate":
             self.happy(2)
-            self.say(random.choice(["Мур! Так держать.", "Ещё одна готова :3",
-                                    "Вот это темп.", "Горжусь тобой."]), seconds=4)
+            self.say(random.choice(CHEERS), seconds=4)
 
     def _on_state(self, state: dict) -> None:
         replies = [m for m in state.get("messages", []) if m["role"] == "assistant"]
@@ -159,6 +210,11 @@ class Mascot(console.ConsoleWindow):
             return "thinking"
         if self._typing or t < self._talk_until:
             return "talk"
+        activity = self.behavior.activity
+        if activity == "wake":  # вздрогнул, потом обрадовался
+            return "surprised" if self.behavior.progress(t) < 0.35 else "happy"
+        if activity != "idle":
+            return activity
         if datetime.now().hour < 7 and t - self._last_touch > 120_000:
             return "sleep"
         return "idle"
@@ -175,11 +231,20 @@ class Mascot(console.ConsoleWindow):
             "thinking": (DOT, DOT, "3"),
             "talk": (eye, eye, TALK[(self._ms // 140) % len(TALK)]),
             "sleep": ("-", "-", "3"),
+            "hum": ("^", "^", "o" if (self._ms // 450) % 2 else "3"),
+            "yawn": ("-", "-", "O" if 0.2 < self.behavior.progress(self._ms) < 0.8 else "o"),
+            "bored": ("=", "=", "~"),
         }.get(mood, (eye, eye, "3"))
 
     def _look(self, mood: str) -> QPointF:
         if mood == "thinking":
             return QPointF(3, -4)  # смотрит вверх, вспоминает
+        if mood == "walk":  # смотрит, куда идёт
+            return QPointF(4 * getattr(self, "_walk_dir", 1), 1)
+        if mood == "look":  # налево, потом направо
+            return QPointF(-4 if self.behavior.progress(self._ms) < 0.5 else 4, 0)
+        if mood == "tucked":  # выглядывает из-за края
+            return QPointF(-4, 0)
         if mood not in ("idle", "talk"):
             return QPointF(0, 0)
         center = self.mapToGlobal(QPoint(self.W // 2, TITLE_H + 45))
@@ -200,6 +265,14 @@ class Mascot(console.ConsoleWindow):
         if mood == "drag":  # покачивается в руке
             p.translate(cx, TITLE_H + body_h / 2)
             p.rotate(math.sin(self._ms / 90) * 7)
+            p.translate(-cx, -(TITLE_H + body_h / 2))
+        elif mood == "walk":  # шагает — мордочка подпрыгивает в такт
+            p.translate(0, -abs(math.sin(self._ms / 130)) * 4)
+        elif mood == "hop":
+            p.translate(0, -math.sin(self.behavior.progress(self._ms) * math.pi) * 14)
+        elif mood == "hum":  # покачивается в такт
+            p.translate(cx, TITLE_H + body_h / 2)
+            p.rotate(math.sin(self._ms / 300) * 5)
             p.translate(-cx, -(TITLE_H + body_h / 2))
         p.setPen(color)
         for dx, glyph in ((-EYE_DX, left), (EYE_DX, right)):
@@ -244,6 +317,19 @@ class Mascot(console.ConsoleWindow):
         elif mood == "surprised":
             p.setFont(QFont(MONO, 20, QFont.Weight.Bold))
             p.drawText(QPointF(self.W - 34, TITLE_H + 28), "!")
+        elif mood == "hum":  # ноты всплывают и тают
+            for i, note in enumerate("♪♫♪"):
+                phase = ((t / 1000) * 0.45 + i / 3) % 1
+                p.setOpacity(1 - phase)
+                p.setFont(QFont("Segoe UI Symbol", int(10 + phase * 5)))
+                p.drawText(QPointF(self.W - 52 + math.sin(phase * 6 + i) * 8,
+                                   TITLE_H + 46 - phase * 34), note)
+            p.setOpacity(1)
+        elif mood == "bored":
+            p.setOpacity(0.6)
+            p.setFont(QFont(MONO, 9))
+            p.drawText(QPointF(self.W - 44, TITLE_H + 24), "эх")
+            p.setOpacity(1)
         elif mood in ("sleep", "offline"):
             for i in range(3):
                 phase = ((t / 1000) * 0.35 + i / 3) % 1
@@ -262,6 +348,8 @@ class Mascot(console.ConsoleWindow):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self._last_touch = self._ms
+        self.stop_glide()  # поймали на прогулке
+        self.behavior.interrupt()
         if event.button() == Qt.MouseButton.LeftButton:
             self._press = event.globalPosition().toPoint()
             self._origin = self.pos()
@@ -304,6 +392,8 @@ class Mascot(console.ConsoleWindow):
         self._press = None
         if self._dragging:
             self._dragging = False
+            self.home = self.pos()  # куда поставили — там теперь его место
+            self._tucked_from = None
             self._settings.setValue("mascot_pos", self.pos())
             if self._drag_distance > 120:  # швырнули — голова кружится
                 self._dizzy_until = self._ms + 1600

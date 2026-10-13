@@ -15,6 +15,7 @@ from PySide6.QtGui import (QColor, QContextMenuEvent, QFont, QFontMetrics, QGuiA
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QScrollArea,
                                QVBoxLayout, QWidget)
 
+from ..system import windows
 from . import theme
 from .client import Api
 
@@ -28,18 +29,10 @@ WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
 _user32 = ctypes.windll.user32
 _user32.GetForegroundWindow.restype = ctypes.c_void_p
-_user32.GetClassNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
 _user32.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
                                  ctypes.c_int, ctypes.c_int, ctypes.c_uint]
 HWND_TOP, HWND_BOTTOM = None, ctypes.c_void_p(1)
 SWP_NOSIZE_NOMOVE_NOACTIVATE = 0x0001 | 0x0002 | 0x0010
-
-
-def _is_desktop(hwnd: int | None) -> bool:
-    """Окно рабочего стола Windows (обои и значки)."""
-    name = ctypes.create_unicode_buffer(32)
-    _user32.GetClassNameW(hwnd, name, 32)
-    return name.value in ("Progman", "WorkerW")
 
 
 def _hand(size: float) -> QFont:
@@ -187,7 +180,7 @@ class TaskSheet(QWidget):
         if foreground == int(self.winId()):
             self._raised = True  # с листом работают — он сверху сам
             return
-        raise_it = _is_desktop(foreground)
+        raise_it = windows.is_desktop(foreground)
         if raise_it != self._raised:
             self._raised = raise_it
             _user32.SetWindowPos(int(self.winId()), HWND_TOP if raise_it else HWND_BOTTOM,

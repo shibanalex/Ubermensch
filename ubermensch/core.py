@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import actions, ingest, mail
+from . import actions, config, ingest, mail
 from .assistant import ONBOARDING_EVENT, Assistant, Outcome
 from .brain import BrainError
 from .collectors.telegram import TelegramAccount
@@ -196,6 +196,9 @@ class Core:
             # пропущенное (вдруг формат стал поддерживаться) и упавшее (лимит прошёл) — пробуем снова
             if status == "done":
                 continue
+            if ingest.is_aistudio(path):  # чаты с ИИ — глубоко: сведения живут и в ответах ИИ
+                results.append(await self.deep_import(path, digest))
+                continue
             text = ingest.read_document(path)
             if text is None:
                 self.store.record_import(path.name, digest, "skipped",
@@ -214,6 +217,37 @@ class Core:
             self.store.record_import(path.name, digest, "done", outcome.reply)
             results.append(f"📥 {path.name}: фактов и целей — {len(outcome.changes)}")
         return results
+
+    async def deep_import(self, path: Path, digest: str | None = None) -> str:
+        """Чат с ИИ целиком: без повторов, только новое относительно памяти; сжатый конспект
+        новых сведений — в Obsidian (Конспекты). Можно запускать повторно на уже импортированном."""
+        digest = digest or hashlib.sha256(path.read_bytes()).hexdigest()
+        paragraphs, dropped = ingest.dedup(ingest.aistudio_full(path))
+        text = "\n\n".join(paragraphs)
+        log.info("Глубокий импорт %s: %d символов, повторов выброшено %d", path.name, len(text),
+                 dropped)
+        try:
+            with self._brain_busy():
+                outcome, summary = await self.assistant.distill(path.name, text)
+        except BrainError as e:
+            log.error("Глубокий импорт %s не удался: %s", path.name, e)
+            self.store.record_import(path.name, digest, "failed", str(e))
+            return f"⚠️ {path.name}: {e.friendly()}"
+        note = ""
+        if summary:
+            try:
+                folder = config.OBSIDIAN_DIR / "Конспекты"
+                folder.mkdir(parents=True, exist_ok=True)
+                target = folder / f"{path.stem}.md"
+                if not summary.startswith("#"):  # заголовок модель обычно пишет сама
+                    summary = f"# {path.stem}\n\n{summary}"
+                target.write_text(summary + "\n", encoding="utf-8")
+                note = f"\nКонспект: {target}"
+            except OSError:
+                log.warning("Не удалось положить конспект в Obsidian (%s)", config.OBSIDIAN_DIR)
+        self.store.record_import(path.name, digest, "done", outcome.reply)
+        self.notify(f"📥 {outcome.reply}\nНового в памяти: {len(outcome.changes)}.{note}")
+        return f"📥 {path.name}: изменений в памяти — {len(outcome.changes)}"
 
     async def import_loop(self) -> None:
         await asyncio.sleep(10)

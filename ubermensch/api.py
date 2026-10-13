@@ -13,6 +13,7 @@ from datetime import date
 
 from aiohttp import web
 
+from . import ingest
 from .brain import BrainError
 from .core import Core
 
@@ -98,6 +99,15 @@ def create_app(core: Core, token: str) -> web.Application:
         asyncio.create_task(core.investigation.refresh_voice())
         return web.json_response({"started": True})
 
+    async def post_deep_import(request: web.Request) -> web.Response:
+        """Заново и глубоко разобрать чат с ИИ из папки импорта: {"name": "имя файла"}."""
+        name = str((await body(request)).get("name", ""))
+        path = core.import_dir / name
+        if not name or path.parent != core.import_dir or not ingest.is_aistudio(path):
+            raise web.HTTPBadRequest(text="Нужно имя чата AI Studio из папки импорта")
+        asyncio.create_task(core.deep_import(path))
+        return web.json_response({"started": True})
+
     async def get_investigation(request: web.Request) -> web.Response:
         return web.json_response(core.investigation.status())
 
@@ -170,6 +180,7 @@ def create_app(core: Core, token: str) -> web.Application:
         web.post("/api/collect", post_collect),
         web.get("/api/investigation", get_investigation),
         web.post("/api/voice", post_voice),
+        web.post("/api/import/deep", post_deep_import),
         web.get("/api/health", get_health),
         web.post("/api/approval", post_approval),
         web.post("/api/tg/chats", post_tg_chats),
