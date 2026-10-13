@@ -717,7 +717,7 @@ class Assistant:
                                    else "system_prompt_fallback.md")
         system.write_text(self._render_system_prompt(telegram) + FALLBACK_NOTE, encoding="utf-8")
         return await self.helper.ask(prompt, system_prompt_file=system,
-                                     schema=self.fallback_schema)
+                                     schema=self.fallback_schema, role="chat")
 
     async def ingest(self, name: str, text: str) -> Outcome:
         """Импорт документа: факты и цели из него — в память. Без интернета: документ — чужие данные."""
