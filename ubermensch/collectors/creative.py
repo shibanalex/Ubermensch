@@ -20,17 +20,26 @@ SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "__pycache__", "$RECYCLE.B
              "Backups", "Program Files", "Program Files (x86)", "Visual Studio"}
 
 
+def mscz_xml(archive: zipfile.ZipFile) -> str:
+    """Текст партитуры (.mscx) из файла MuseScore (.mscz — это zip)."""
+    name = next(n for n in archive.namelist() if n.endswith(".mscx"))
+    return archive.read(name).decode("utf-8", errors="replace")
+
+
 def _score_details(path: Path) -> str:
-    """Название, инструменты и примерная длина партитуры MuseScore."""
     try:
         if path.suffix.lower() == ".mscz":
             with zipfile.ZipFile(path) as archive:
-                name = next(n for n in archive.namelist() if n.endswith(".mscx"))
-                xml = archive.read(name).decode("utf-8", errors="replace")
+                xml = mscz_xml(archive)
         else:
             xml = path.read_text(encoding="utf-8", errors="replace")
     except (OSError, zipfile.BadZipFile, StopIteration):
         return ""
+    return score_details(xml)
+
+
+def score_details(xml: str) -> str:
+    """Название, инструменты и примерная длина партитуры MuseScore."""
     title = re.search(r'<metaTag name="workTitle">([^<]*)</metaTag>', xml)
     instruments = list(dict.fromkeys(re.findall(r"<trackName>([^<]+)</trackName>", xml)))
     staves = max(1, len(re.findall(r"<Staff id=", xml)) // 2)  # описание + содержимое

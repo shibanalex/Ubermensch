@@ -1,13 +1,20 @@
 """Google Takeout: история YouTube, поиска Google и других действий в сервисах Google.
 
-Архивы (takeout-*.zip, хоть по частям) кладутся в папку импорта. Читаем из них только
-«Мои действия» и историю YouTube — Диск, Фото и прочее не трогаем. Понимаем оба формата
-выгрузки: JSON и HTML (по умолчанию Google отдаёт HTML), русские и английские названия.
+Архивы (takeout-*.zip, хоть по частям) кладутся в папку импорта. Из них берём:
+- «Мои действия» и историю YouTube — события по времени;
+- свои комментарии и сообщения в чатах трансляций YouTube — его собственные слова;
+- партитуры MuseScore с Диска — что он сочиняет (как сборщик творчества);
+- чаты Google AI Studio с Диска и подписки/плейлисты YouTube — в папку импорта как документы:
+  их разберёт импорт (чаты — глубоко).
+Остальное (видео, музыка, картинки, книги, Фото) не трогаем. Понимаем оба формата выгрузки:
+JSON и HTML (по умолчанию Google отдаёт HTML), русские и английские названия.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
 import html
+import io
 import json
 import os
 import re
@@ -16,7 +23,11 @@ from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 
-from . import local_iso
+from . import creative, local_iso
+
+UNSAFE_NAME = re.compile(r'[<>:"/\\|?*]')  # нельзя в имени файла Windows
+YOUTUBE_WORDS = {"комментарии": "YouTube: мои комментарии", "comments": "YouTube: мои комментарии",
+                 "live chats": "YouTube: мои сообщения в чатах трансляций"}
 
 RU_MONTHS = {"янв": 1, "фев": 2, "мар": 3, "апр": 4, "мая": 5, "май": 5, "июн": 6, "июл": 7,
              "авг": 8, "сен": 9, "окт": 10, "ноя": 11, "дек": 12}
@@ -125,20 +136,176 @@ def archive_key(path: Path) -> str:
     return f"takeout:{path.name}:{stat.st_size}"
 
 
+def _youtube_thread(name: str) -> str | None:
+    lower = name.lower().replace("\\", "/")
+    if "youtube" not in lower or not lower.endswith(".csv"):
+        return None
+    folder = lower.rsplit("/", 2)[-2] if lower.count("/") >= 1 else ""
+    return YOUTUBE_WORDS.get(folder)
+
+
+def _comment_text(cell: str) -> str:
+    """Текст комментария в выгрузке — JSON-фрагменты {"text": ...} через запятую."""
+    try:
+        parts = json.loads(f"[{cell}]")
+        return "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+    except ValueError:
+        return cell.strip()
+
+
+def _youtube_words(thread: str, raw: bytes, since: datetime) -> list[dict]:
+    """Свои комментарии и сообщения в чатах трансляций — его слова, как исходящие сообщения."""
+    rows = list(csv.reader(io.StringIO(raw.decode("utf-8-sig", errors="replace"))))
+    if len(rows) < 2:
+        return []
+    header = [h.lower() for h in rows[0]]
+    col = lambda *words: next((i for i, h in enumerate(header)  # noqa: E731
+                               if any(w in h for w in words)), None)
+    ts_col, text_col = col("дата", "временная метка", "timestamp", "created"), col("текст", "text")
+    id_col, video_col = col("идентификатор комментария", "идентификатор сообщения", "id"), \
+        col("видео", "video")
+    if ts_col is None or text_col is None:
+        return []
+    events = []
+    for row in rows[1:]:
+        if len(row) <= max(ts_col, text_col):
+            continue
+        try:
+            moment = datetime.fromisoformat(row[ts_col].replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        text = _comment_text(row[text_col])
+        ts = local_iso(moment)
+        if not text or ts < since.isoformat():
+            continue
+        video = row[video_col] if video_col is not None and video_col < len(row) else ""
+        events.append({
+            "source": "youtube", "outgoing": 1, "thread": thread, "ts": ts,
+            "external_id": row[id_col] if id_col is not None else hashlib.sha1(
+                f"{thread}|{ts}|{text}".encode()).hexdigest(),
+            "text": text, "meta": {"video": video} if video else {},
+        })
+    return events
+
+
+def _drive_score(info: zipfile.ZipInfo, raw: bytes) -> dict | None:
+    """Партитура MuseScore с Google Диска — событие творчества на дату последней правки."""
+    name = info.filename.replace("\\", "/")
+    if not name.lower().endswith(".mscz") or "/.mscbackup/" in name or "/Корзина/" in name:
+        return None
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as score:
+            details = creative.score_details(creative.mscz_xml(score))
+    except (zipfile.BadZipFile, StopIteration):
+        details = ""
+    moment = datetime(*info.date_time)
+    file = name.rsplit("/", 1)[-1]
+    return {
+        "source": "creative", "thread": "MuseScore",
+        "external_id": f"drive|{name}|{info.date_time}",
+        "ts": moment.isoformat(timespec="seconds"),
+        "text": f"MuseScore (Google Диск): {file}" + (f" — {details}" if details else "")
+                + f" ({info.file_size // 1024} КБ)",
+        "meta": {"path": name},
+    }
+
+
+def _entries(path: Path) -> Iterator[tuple[zipfile.ZipInfo | None, str, bytes]]:
+    """(сведения о файле в архиве или None, имя, содержимое) — из архива или папки Takeout."""
+    if path.is_dir():
+        for file in path.rglob("*"):
+            if file.is_file():
+                yield None, str(file), file.read_bytes()
+        return
+    with zipfile.ZipFile(path) as archive:
+        for info in archive.infolist():
+            if not info.is_dir():
+                yield info, info.filename, archive.read(info)
+
+
+def _wanted(name: str) -> bool:
+    lower = name.lower()
+    return (_relevant(name) or _youtube_thread(name) is not None
+            or (lower.endswith(".mscz") and ("/диск/" in lower or "/drive/" in lower)))
+
+
 def collect(paths: list[Path], since: datetime) -> list[dict]:
     """События из выбранных архивов Takeout (и из уже распакованных папок Takeout)."""
     events: list[dict] = []
     for path in paths:
-        if path.is_dir():
-            for file in path.rglob("*"):
-                if file.is_file() and _relevant(str(file)):
-                    events += _events(file.name, file.read_bytes(), since)
-            continue
-        with zipfile.ZipFile(path) as archive:
-            for info in archive.infolist():
-                if not info.is_dir() and _relevant(info.filename):
-                    events += _events(info.filename, archive.read(info), since)
+        for info, name, raw in _filtered(path, _wanted):
+            if _relevant(name):
+                events += _events(name, raw, since)
+            elif thread := _youtube_thread(name):
+                events += _youtube_words(thread, raw, since)
+            elif info is not None and (score := _drive_score(info, raw)):
+                events.append(score)
     return events
+
+
+def _filtered(path: Path, wanted) -> Iterator[tuple[zipfile.ZipInfo | None, str, bytes]]:
+    """Только нужные файлы — гигабайтные видео и музыку из архива не читаем."""
+    if path.is_dir():
+        for info, name, raw in _entries(path):
+            if wanted(name):
+                yield info, name, raw
+        return
+    with zipfile.ZipFile(path) as archive:
+        for info in archive.infolist():
+            if not info.is_dir() and wanted(info.filename):
+                yield info, info.filename, archive.read(info)
+
+
+def _subscriptions(name: str) -> bool:
+    lower = name.lower()
+    return "youtube" in lower and lower.endswith(".csv") and (
+        "подписки" in lower or "subscriptions" in lower or "плейлисты.csv" in lower
+        or "playlists.csv" in lower)
+
+
+def _ai_studio(name: str) -> bool:
+    lower = name.lower().replace("\\", "/")
+    return "/google ai studio/" in lower and lower.rsplit(".", 1)[-1] not in (
+        "png", "jpg", "jpeg", "webp", "gif", "pdf", "mp3", "mp4", "wav", "docx", "xlsx", "pptx",
+        "py", "html", "zip")
+
+
+def extract_documents(paths: list[Path], import_dir: Path) -> list[str]:
+    """Чаты AI Studio с Диска и подписки/плейлисты YouTube — в папку импорта как документы
+    (импорт сам разберёт их, чаты — глубоко). Возвращает имена созданных файлов."""
+    created, seen = [], set()
+    channels: list[str] = []
+    playlists: list[str] = []
+    for path in paths:
+        for _, name, raw in _filtered(path, lambda n: _ai_studio(n) or _subscriptions(n)):
+            if _subscriptions(name):
+                rows = list(csv.reader(io.StringIO(raw.decode("utf-8-sig", errors="replace"))))
+                if "плейлист" in name.lower() or "playlist" in name.lower():
+                    playlists += [r[2] for r in rows[1:] if len(r) > 2 and r[2]]
+                else:
+                    channels += [r[2] for r in rows[1:] if len(r) > 2 and r[2]]
+                continue
+            try:
+                data = json.loads(raw.decode("utf-8", errors="replace").lstrip("\ufeff"))
+            except ValueError:
+                continue
+            digest = hashlib.sha256(raw).hexdigest()
+            if not isinstance(data, dict) or "chunkedPrompt" not in data or digest in seen:
+                continue
+            seen.add(digest)
+            stem = re.sub(r"\.(txt|json)$", "", name.replace("\\", "/").rsplit("/", 1)[-1])
+            target = import_dir / f"AI Studio — {UNSAFE_NAME.sub('_', stem)}"
+            if not target.exists():
+                target.write_bytes(raw)
+                created.append(target.name)
+    if channels or playlists:
+        target = import_dir / "YouTube — подписки и плейлисты.txt"
+        text = ("Подписки пользователя на YouTube-каналы:\n" + "\n".join(f"- {c}" for c in channels)
+                + "\n\nЕго плейлисты на YouTube:\n" + "\n".join(f"- {p}" for p in playlists))
+        if not target.exists() or target.read_text(encoding="utf-8") != text:
+            target.write_text(text, encoding="utf-8")
+            created.append(target.name)
+    return created
 
 
 def unpacked(import_dir: Path) -> list[Path]:

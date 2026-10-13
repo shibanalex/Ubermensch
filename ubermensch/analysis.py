@@ -441,9 +441,13 @@ class Investigation:
         since = datetime.now() - timedelta(days=TAKEOUT_DAYS)
         try:
             added = self.store.add_events(await asyncio.to_thread(takeout.collect, fresh, since))
+            documents_out = await asyncio.to_thread(takeout.extract_documents, fresh,
+                                                    self.import_dir)
         except Exception:
             log.exception("Импорт Google Takeout не удался")
             return 0
+        if documents_out:
+            log.info("Из Takeout в папку импорта: %s", ", ".join(documents_out))
         for path in fresh:
             key = takeout.archive_key(path) if path.is_file() else f"takeout-dir:{path}"
             self.store.record_import(path.name, key, "done", f"Takeout: событий {added}")
