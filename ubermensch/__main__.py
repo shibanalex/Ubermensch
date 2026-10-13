@@ -67,6 +67,7 @@ async def _serve(settings: config.Settings) -> None:
     # Фоновые сервисы: упавший перезапускается надсмотрщиком, ядро продолжает работать.
     services = core.supervisor
     services.add("напоминания", core.reminder_loop)
+    services.add("окно в мир", core.world_loop)
     services.add("импорт документов", core.import_loop)
     services.add("трекер активности", ActivityTracker(store).run)
     services.add("сбор данных", core.investigation.collect_loop)

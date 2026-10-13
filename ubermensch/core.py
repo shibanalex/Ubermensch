@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import actions, config, ingest, mail, metrics
+from . import actions, config, ingest, mail, metrics, world
 from .analysis import SOURCES
 from .assistant import ONBOARDING_EVENT, Assistant, Outcome
 from .brain import BrainError
@@ -35,6 +35,8 @@ if TYPE_CHECKING:
     from .analysis import Investigation
 
 log = logging.getLogger(__name__)
+
+WORLD_EVERY = 3 * 3600  # погода, курсы и новости — раз в 3 часа
 
 APPROVAL_TIMEOUT = 10 * 60  # секунд ждём «да/нет», потом считаем отказом
 
@@ -352,6 +354,15 @@ class Core:
             except Exception:
                 log.exception("Ошибка при импорте документов")
             await asyncio.sleep(300)
+
+    async def world_loop(self) -> None:
+        """Окно в мир: погода, курсы и новости для контекста Ани — раз в WORLD_EVERY."""
+        while True:
+            try:
+                await asyncio.to_thread(world.refresh, self.assistant.workspace / "world.json")
+            except Exception:
+                log.exception("Окно в мир не обновилось")
+            await asyncio.sleep(WORLD_EVERY)
 
     async def reminder_loop(self) -> None:
         while True:

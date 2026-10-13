@@ -19,22 +19,20 @@ from PySide6.QtGui import (QContextMenuEvent, QCursor, QFont, QGuiApplication, Q
 from PySide6.QtWidgets import QApplication, QMenu
 
 from ..system import windows
-from . import behavior, console
+from . import behavior, console, face
 from .bubble import ReplyBubble
 from .client import Api
 from .console import BG, BORDER, DIM, GREEN, MONO, TITLE_H, plain
 
 FACE = GREEN
-TALK = ("o", "3", "O", "3")  # «3» рисуется повёрнутой — это рот :3
-DOT = "•"  # глаз-точка рисуется кружком
-EYE_DX = 34  # глаза от центра
+TALK = ("w", "open", "w", "o")  # рот, пока говорит
 PEEK = 30  # сколько маскота видно, когда она спряталась за край экрана
 CHEERS = ("умничка :3", "минус одна, горжусь тобой", "вот это мой человек", "засчитано ♥",
           "кайф. дальше?")
 
 
 def icon_pixmap(size: int) -> QPixmap:
-    """Иконка для трея: маленькое чёрное окошко с зелёным :3."""
+    """Иконка для трея: маленькое чёрное окошко с мордочкой Ани."""
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     p = QPainter(pixmap)
@@ -42,9 +40,9 @@ def icon_pixmap(size: int) -> QPixmap:
     p.setPen(QPen(BORDER, max(1, size // 32)))
     p.setBrush(BG)
     p.drawRoundedRect(QRectF(1, 1, size - 2, size - 2), size / 6, size / 6)
-    p.setPen(FACE)
-    p.setFont(QFont(MONO, int(size * 0.34), QFont.Weight.Bold))
-    p.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, ":3")
+    scale = size / 120  # лицо рассчитано на ширину ~120
+    p.scale(scale, scale)
+    face.draw(p, 60, 58, 92, face.FaceState(), FACE)
     p.end()
     return pixmap
 
@@ -220,22 +218,36 @@ class Mascot(console.ConsoleWindow):
             return "sleep"
         return "idle"
 
-    def _face(self, mood: str) -> tuple[str, str, str]:
-        """Левый глаз, правый глаз, рот."""
-        eye = "-" if self._ms < self._blink_until else DOT
-        return {
-            "drag": (">", "<", "o"),
-            "dizzy": ("@", "@", "~"),
-            "offline": ("x", "x", "3"),
-            "surprised": ("O", "O", "o"),
-            "happy": ("^", "^", "3"),
-            "thinking": (DOT, DOT, "3"),
-            "talk": (eye, eye, TALK[(self._ms // 140) % len(TALK)]),
-            "sleep": ("-", "-", "3"),
-            "hum": ("^", "^", "o" if (self._ms // 450) % 2 else "3"),
-            "yawn": ("-", "-", "O" if 0.2 < self.behavior.progress(self._ms) < 0.8 else "o"),
-            "bored": ("=", "=", "~"),
-        }.get(mood, (eye, eye, "3"))
+    def _face(self, mood: str) -> face.FaceState:
+        """Эмоция → состояние лица."""
+        t = self._ms
+        blink = t < self._blink_until
+        state = face.FaceState(eyes="closed" if blink else "open", t=t)
+        if mood == "drag":
+            state.eyes, state.mouth, state.brows = "chevron", "o", -3
+        elif mood == "dizzy":
+            state.eyes, state.mouth = "dizzy", "wave"
+        elif mood == "offline":
+            state.eyes, state.mouth = "x", "wave"
+        elif mood == "surprised":
+            state.eyes, state.mouth, state.brows = "wide", "o", 6
+        elif mood == "happy":  # радуется, гладят — «^ ^» и румянец
+            state.eyes, state.blush, state.brows = "happy", True, 2
+        elif mood == "thinking":
+            state.brow_tilt = 5
+        elif mood == "talk":
+            state.mouth = TALK[(t // 140) % len(TALK)]
+        elif mood == "sleep":
+            state.eyes, state.brows = "closed", -2
+        elif mood == "hum":
+            state.eyes, state.blush = "happy", True
+            state.mouth = "o" if (t // 450) % 2 else "w"
+        elif mood == "yawn":
+            state.eyes = "closed"
+            state.mouth = "O" if 0.2 < self.behavior.progress(t) < 0.8 else "o"
+        elif mood == "bored":
+            state.eyes, state.mouth, state.brows = "half", "wave", -3
+        return state
 
     def _look(self, mood: str) -> QPointF:
         if mood == "thinking":
@@ -256,11 +268,11 @@ class Mascot(console.ConsoleWindow):
 
     def paint_body(self, p: QPainter) -> None:
         mood = self._mood()
-        left, right, mouth = self._face(mood)
-        look = self._look(mood)
+        state = self._face(mood)
+        state.look = self._look(mood)
         color = DIM if mood == "offline" else FACE
         cx, body_h = self.W / 2, self.H - TITLE_H
-        eyes_y, mouth_y = TITLE_H + body_h * 0.38, TITLE_H + body_h * 0.66
+        eyes_y, mouth_y = TITLE_H + body_h * 0.42, TITLE_H + body_h * 0.78
 
         p.save()
         if mood == "drag":  # покачивается в руке
@@ -275,27 +287,7 @@ class Mascot(console.ConsoleWindow):
             p.translate(cx, TITLE_H + body_h / 2)
             p.rotate(math.sin(self._ms / 300) * 5)
             p.translate(-cx, -(TITLE_H + body_h / 2))
-        p.setPen(color)
-        for dx, glyph in ((-EYE_DX, left), (EYE_DX, right)):
-            p.save()
-            p.translate(cx + dx + look.x(), eyes_y + look.y())
-            if glyph == DOT:  # глаз-точка, как двоеточие в :3
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(color)
-                p.drawEllipse(QPointF(0, 0), 6.5, 6.5)
-            else:
-                if mood == "dizzy":
-                    p.rotate((self._ms * 0.6) % 360)
-                p.setFont(QFont(MONO, 30 if glyph == "O" else 26))
-                p.drawText(QRectF(-30, -30, 60, 60), Qt.AlignmentFlag.AlignCenter, glyph)
-            p.restore()
-        p.save()
-        p.translate(cx, mouth_y)
-        if mouth == "3":
-            p.rotate(90)  # «3» на боку — рот :3
-        p.setFont(QFont(MONO, 32))
-        p.drawText(QRectF(-30, -30, 60, 60), Qt.AlignmentFlag.AlignCenter, mouth)
-        p.restore()
+        face.draw(p, cx, eyes_y, mouth_y, state, color)
         p.restore()
 
         self._paint_extras(p, mood, color)

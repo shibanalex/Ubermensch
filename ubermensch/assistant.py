@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import actions, config, ingest
+from . import actions, config, ingest, world
 from .brain import MCP_SERVER, Answer, Brain, BrainError
 from .config import Settings
 from .store import AREAS, Store
@@ -27,7 +27,7 @@ CHAT_TOOLS = ("WebSearch", "WebFetch", "Read", "Glob", "Grep")
 READ_DIRS = (Path.home() / "Desktop", Path.home() / "Documents", Path.home() / "Downloads",
              Path("D:/"))
 ACTION_TIMEOUT = 900  # с запасом на «да/нет» пользователя внутри инструмента
-TG_MODEL, TG_EFFORT = "sonnet", "low"  # в Telegram — быстро и легко
+TG_MODEL, TG_EFFORT = "sonnet", "medium"  # в Telegram — быстро, но с размышлением
 HISTORY_LIMIT = 20
 FACTS_LIMIT = 150
 PEOPLE_LIMIT = 40
@@ -528,6 +528,8 @@ class Assistant:
         utc_offset = now.strftime("%z")
         parts = [f"Сейчас: {now:%Y-%m-%d %H:%M}, {WEEKDAYS[now.weekday()]} "
                  f"(UTC{utc_offset[:3]}:{utc_offset[3:]})"]
+        if outside := world.render(self.workspace / "world.json"):  # погода, курсы, новости
+            parts.append(outside)
 
         goals = self.store.goals()
         parts.append("<goals>\n" + ("\n".join(
