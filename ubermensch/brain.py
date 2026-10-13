@@ -96,6 +96,7 @@ class Brain:
         self.claude_bin = settings.claude_bin
         self._blocked_until: datetime | None = None  # лимит или слетевший вход
         self._blocked_by: BrainError | None = None
+        self._auth_failures = 0  # подряд; первая после пробуждения часто ложная — сеть не поднялась
 
     def _resolve_binary(self) -> str:
         """Путь к claude.exe меняется при обновлении расширения VS Code — ищем заново."""
@@ -117,9 +118,12 @@ class Brain:
                 pause = (e.reset_at - datetime.now() + timedelta(minutes=1) if e.reset_at
                          else LIMIT_FALLBACK if e.kind == "limit" else AUTH_PAUSE)
                 self._blocked_until, self._blocked_by = datetime.now() + pause, e
-                self.health.report("brain", e.friendly())
+                self._auth_failures = self._auth_failures + 1 if e.kind == "auth" else 0
+                if e.kind != "auth" or self._auth_failures > 1:
+                    self.health.report("brain", e.friendly())
             raise
         self._blocked_until = self._blocked_by = None
+        self._auth_failures = 0
         self.health.clear("brain", "Claude снова на связи.")
         return answer
 
