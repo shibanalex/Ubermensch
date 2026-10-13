@@ -25,6 +25,11 @@ AUTH_WORDS = ("login", "log in", "authenticat", "unauthorized", "401", "oauth", 
 MISSING = "Claude Code не найден"
 TIMEOUT = "нет ответа за"
 RESET_AT = re.compile(r"(?i)resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?")
+# недельный лимит: «resets Oct 20, 10am»; старый формат Claude Code: «limit reached|1760000000»
+RESET_DATE = re.compile(r"(?i)resets?\s+(?:on\s+)?([a-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(?:at\s+)?"
+                        r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?")
+RESET_EPOCH = re.compile(r"limit reached\|(\d{10})")
+MONTHS = {m: i for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split(), 1)}
 AUTH_PAUSE = timedelta(minutes=5)  # после ошибки входа не дёргаем Claude каждую секунду
 LIMIT_FALLBACK = timedelta(minutes=30)  # если время сброса лимита неизвестно
 
@@ -52,19 +57,29 @@ class BrainError(RuntimeError):
 
     @property
     def reset_at(self) -> datetime | None:
-        """Когда лимит сбросится: Claude Code пишет «resets 10pm (Europe/Moscow)»."""
-        match = RESET_AT.search(str(self))
+        """Когда лимит сбросится. Claude Code пишет «resets 10pm (Europe/Moscow)», для недельного
+        лимита — «resets Oct 20, 10am», в старых версиях — «limit reached|<unix-время>»."""
+        text, now = str(self), datetime.now()
+        if match := RESET_EPOCH.search(text):
+            return datetime.fromtimestamp(int(match[1]))
+        if (match := RESET_DATE.search(text)) and match[1].lower() in MONTHS:
+            hour = _hour(int(match[3]), match[5])
+            if hour is None:
+                return None
+            try:
+                moment = datetime(now.year, MONTHS[match[1].lower()], int(match[2]), hour,
+                                  int(match[4] or 0))
+            except ValueError:
+                return None
+            return moment if moment > now - timedelta(days=1) else moment.replace(year=now.year + 1)
+        match = RESET_AT.search(text)
         if not match:
             return None
-        hour, minute, half = int(match[1]), int(match[2] or 0), (match[3] or "").lower()
-        if half == "pm" and hour != 12:
-            hour += 12
-        elif half == "am" and hour == 12:
-            hour = 0
-        if hour > 23:
+        hour = _hour(int(match[1]), match[3])
+        if hour is None:
             return None
-        moment = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
-        return moment if moment > datetime.now() else moment + timedelta(days=1)
+        moment = now.replace(hour=hour, minute=int(match[2] or 0), second=0, microsecond=0)
+        return moment if moment > now else moment + timedelta(days=1)
 
     def friendly(self) -> str:
         """Человеческое объяснение для пользователя: что случилось и что сделать."""
@@ -81,6 +96,16 @@ class BrainError(RuntimeError):
         if kind == "timeout":
             return "Claude думал слишком долго и не ответил. Попробуй ещё раз."
         return f"Не получилось достучаться до Claude: {self}"
+
+
+def _hour(hour: int, half: str | None) -> int | None:
+    """12-часовое время («10pm») → 24-часовое; None, если час невозможный."""
+    half = (half or "").lower()
+    if half == "pm" and hour != 12:
+        hour += 12
+    elif half == "am" and hour == 12:
+        hour = 0
+    return hour if hour <= 23 else None
 
 
 @dataclass(frozen=True)
@@ -126,6 +151,16 @@ class Brain:
         self._auth_failures = 0
         self.health.clear("brain", "Claude снова на связи.")
         return answer
+
+    async def wait_out(self, error: BrainError) -> bool:
+        """Для фоновой работы: ждать, пока Claude снова доступен (лимит — до сброса, вход и
+        программа — проверка раз в 5 минут). False — ошибка не из тех, что проходят сами."""
+        if error.kind not in ("limit", "auth", "missing"):
+            return False
+        until = self._blocked_until or datetime.now() + AUTH_PAUSE
+        log.info("Фоновая работа ждёт Claude до %s (%s)", f"{until:%d.%m %H:%M}", error.kind)
+        await asyncio.sleep(max(30.0, (until - datetime.now()).total_seconds()))
+        return True
 
     async def _ask(self, prompt: str, *, system_prompt_file: Path, schema: dict,
                    tools: tuple[str, ...] = (), model: str | None = None,

@@ -53,6 +53,7 @@ THINKING_CHARS = 40_000
 CATEGORIZE_EVERY = 20 * 3600  # разметка программ и сайтов — не чаще раза в сутки  # его реплики в разговорах с ИИ — как он рассуждает
 MAX_ATTEMPTS = 3
 RETRY_PAUSE = 5 * 60
+RETRY_FAILED_AFTER = timedelta(hours=12)  # упавшие порции (сеть, сон) — снова в очередь
 DOSSIER_DIR = config.DATA_DIR / "dossier"
 SOURCES = {"telegram": "Telegram", "gmail": "Почта", "chrome": "Браузер",
            "ai_chat": "Разговоры с ИИ", "activity": "Активность за компьютером",
@@ -275,6 +276,9 @@ def plan(store: Store) -> int:
     recent_from = (today - timedelta(days=RECENT_DAYS)).isoformat()
     added = 0
     store.drop_legacy_jobs()  # не начатые порции старого размера — перепланировать крупнее
+    retried = store.retry_failed_jobs((datetime.now() - RETRY_FAILED_AFTER).isoformat())
+    if retried:
+        log.info("Снова в очереди упавших порций: %d", retried)
     size = f"@{CHUNK_CHARS}"
 
     # статистика по месяцам — с первого месяца, где есть переписка или браузер

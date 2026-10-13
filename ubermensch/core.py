@@ -242,7 +242,8 @@ class Core:
                  dropped)
         try:
             with self._brain_busy():
-                outcome, summary = await self.assistant.distill(path.name, text)
+                outcome, summary = await self.assistant.distill(path.name, text,
+                                                                progress=f"distill:{digest}")
         except BrainError as e:
             log.error("Глубокий импорт %s не удался: %s", path.name, e)
             self.store.record_import(path.name, digest, "failed", str(e))
@@ -260,6 +261,7 @@ class Core:
             except OSError:
                 log.warning("Не удалось положить конспект в Obsidian (%s)", config.OBSIDIAN_DIR)
         self.store.record_import(path.name, digest, "done", outcome.reply)
+        self.store.delete_cursor(f"distill:{digest}")
         self.notify(f"📥 {outcome.reply}\nНового в памяти: {len(outcome.changes)}.{note}")
         return f"📥 {path.name}: изменений в памяти — {len(outcome.changes)}"
 

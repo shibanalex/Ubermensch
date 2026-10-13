@@ -402,6 +402,16 @@ class Store:
         row = self.db.execute("SELECT value FROM cursors WHERE source = ?", (source,)).fetchone()
         return row["value"] if row else None
 
+    def delete_cursor(self, source: str) -> None:
+        self.db.execute("DELETE FROM cursors WHERE source = ?", (source,))
+
+    def retry_failed_jobs(self, older_than: str) -> int:
+        """Порции, упавшие из-за сети или сна (не лимита — лимит разбор пережидает), —
+        снова в очередь, если упали раньше older_than."""
+        return self.db.execute(
+            "UPDATE analysis_jobs SET status = 'pending' WHERE status = 'failed' AND done_at < ?",
+            (older_than,)).rowcount
+
     def set_cursor(self, source: str, value: str) -> None:
         self.db.execute(
             "INSERT INTO cursors (source, value, updated_at) VALUES (?, ?, ?) "

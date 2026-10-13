@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import actions, config, ingest
-from .brain import MCP_SERVER, Brain
+from .brain import MCP_SERVER, Answer, Brain, BrainError
 from .config import Settings
 from .store import AREAS, Store
 
@@ -579,57 +579,80 @@ class Assistant:
                 self.store.set_message_notes(reply_id, outcome.changes + outcome.done)
             return outcome
 
+    async def _patient_ask(self, build_prompt, **kwargs) -> Answer:
+        """Вызов для фоновой работы: кончился лимит (или слетел вход) — ждём и повторяем, а не
+        бросаем начатое. Промпт собирается заново после ожидания: память могла измениться."""
+        while True:
+            try:
+                async with self._analysis_lock:  # фоновая очередь — чат не ждёт
+                    return await self.brain.ask(build_prompt(), model=ANALYSIS_MODEL,
+                                                system_prompt_file=self.analysis_prompt_file,
+                                                **kwargs)
+            except BrainError as e:
+                if not await self.brain.wait_out(e):
+                    raise
+                log.info("Claude снова доступен — продолжаю с того же места")
+
     async def ingest(self, name: str, text: str) -> Outcome:
         """Импорт документа: факты и цели из него — в память. Без интернета: документ — чужие данные."""
-        async with self._analysis_lock:  # фоновая очередь — чат не ждёт
-            parts = ingest.split(text)
-            summaries, changes = [], []
-            for number, part in enumerate(parts, start=1):
-                prompt = (f"{self._profile_context(part)}\n\n"
-                          f'<data source="{name}" part="{number}/{len(parts)}">\n{part}\n</data>\n\n'
-                          f"<message>\n{INGEST_TASK.format(name=name)}\n</message>")
-                answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
-                                              schema=self.ingest_schema,
-                                              model=ANALYSIS_MODEL)
-                summaries.append(str(answer.data.get("reply", "")).strip())
-                changes += self._apply_memory(answer.data.get("memory") or [], f"import:{name}")
-                changes += self._apply_goals(answer.data.get("goals") or [])
-            outcome = Outcome(reply="\n\n".join(s for s in summaries if s) or f"Импортировал «{name}».",
-                              changes=changes)
-            reply_id = self.store.add_message("assistant", f"📥 {outcome.reply}", "import")
-            if changes:
-                self.store.set_message_notes(reply_id, changes)
-            return outcome
-
-    async def distill(self, name: str, text: str) -> tuple[Outcome, str]:
-        """Глубокий импорт: из каждой части — только новое относительно всей памяти (Sonnet),
-        затем один сжатый конспект новых сведений. Возвращает (итог, конспект в Markdown)."""
         parts = ingest.split(text)
-        notes, changes = [], []
+        summaries, changes = [], []
         for number, part in enumerate(parts, start=1):
+            answer = await self._patient_ask(
+                lambda part=part, number=number: (
+                    f"{self._profile_context(part)}\n\n"
+                    f'<data source="{name}" part="{number}/{len(parts)}">\n{part}\n</data>\n\n'
+                    f"<message>\n{INGEST_TASK.format(name=name)}\n</message>"),
+                schema=self.ingest_schema)
+            summaries.append(str(answer.data.get("reply", "")).strip())
+            changes += self._apply_memory(answer.data.get("memory") or [], f"import:{name}")
+            changes += self._apply_goals(answer.data.get("goals") or [])
+        outcome = Outcome(reply="\n\n".join(s for s in summaries if s) or f"Импортировал «{name}».",
+                          changes=changes)
+        reply_id = self.store.add_message("assistant", f"📥 {outcome.reply}", "import")
+        if changes:
+            self.store.set_message_notes(reply_id, changes)
+        return outcome
+
+    async def distill(self, name: str, text: str,
+                      progress: str | None = None) -> tuple[Outcome, str]:
+        """Глубокий импорт: из каждой части — только новое относительно всей памяти (Sonnet),
+        затем один сжатый конспект новых сведений. Возвращает (итог, конспект в Markdown).
+        progress — ключ, под которым после каждой части сохраняется, докуда дошли: после
+        лимита, перезапуска или сна работа продолжается с той же части."""
+        parts = ingest.split(text)
+        state = json.loads(self.store.cursor(progress) or "{}") if progress else {}
+        done, notes, changes = state.get("done", 0), state.get("notes", []), state.get("changes", [])
+        if done:
+            log.info("Глубокий импорт %s: продолжаю с части %d из %d", name, done + 1, len(parts))
+        for number, part in enumerate(parts, start=1):
+            if number <= done:
+                continue
             label = f"{number}/{len(parts)}"
-            async with self._analysis_lock:  # по части за раз: чат успевает вклиниться
-                # память перечитывается к каждой части — найденное в прошлых частях не повторится
-                prompt = (f"{self._profile_context(part)}\n\n"
-                          f'<data source="{name}" part="{label}">\n{part}\n</data>\n\n'
-                          f"<message>\n{DISTILL_TASK.format(name=name, part=label)}\n</message>")
-                answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
-                                              schema=self.distill_schema, model=ANALYSIS_MODEL)
+            # память перечитывается к каждой части — найденное в прошлых частях не повторится
+            answer = await self._patient_ask(
+                lambda part=part, label=label: (
+                    f"{self._profile_context(part)}\n\n"
+                    f'<data source="{name}" part="{label}">\n{part}\n</data>\n\n'
+                    f"<message>\n{DISTILL_TASK.format(name=name, part=label)}\n</message>"),
+                schema=self.distill_schema)
             data = answer.data
             changes += self._apply_memory(data.get("memory") or [], f"import:{name}")
             changes += self._apply_goals(data.get("goals") or [])
             changes += self._apply_people(data.get("people") or [])
             if str(data.get("notes", "")).strip():
                 notes.append(f"## Часть {label}\n{data['notes'].strip()}")
+            if progress:
+                self.store.set_cursor(progress, json.dumps(
+                    {"done": number, "notes": notes, "changes": changes}, ensure_ascii=False))
             log.info("Глубокий импорт %s, часть %s: изменений всего %d", name, label, len(changes))
         if not notes:
             return Outcome(reply=f"В «{name}» нового для меня не нашлось.", changes=changes), ""
         joined = "\n\n".join(notes)
-        async with self._analysis_lock:
-            prompt = (f'<data source="конспекты частей">\n{joined}\n</data>\n\n'
-                      f"<message>\n{DISTILL_MERGE_TASK.format(name=name)}\n</message>")
-            answer = await self.brain.ask(prompt, system_prompt_file=self.analysis_prompt_file,
-                                          schema=DISTILL_MERGE_SCHEMA, model=ANALYSIS_MODEL)
+        answer = await self._patient_ask(
+            lambda: (f'<data source="конспекты частей">\n{joined}\n</data>\n\n'
+                     f"<message>\n{DISTILL_MERGE_TASK.format(name=name)}\n</message>"),
+            schema=DISTILL_MERGE_SCHEMA)
         outcome = Outcome(reply=str(answer.data.get("reply", "")).strip()
                           or f"Разобрал «{name}».", changes=changes)
         reply_id = self.store.add_message("assistant", f"📥 {outcome.reply}", "import")
