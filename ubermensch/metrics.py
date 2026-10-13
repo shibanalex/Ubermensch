@@ -1,4 +1,4 @@
-"""Метрики для окна «метрики»: насколько Освальд изучил пользователя и что пользователь делает.
+"""Метрики для окна «метрики»: насколько Аня изучила пользователя и что пользователь делает.
 
 Всё считается из базы на лету, без вызовов Claude. Единственное, что делает Claude, —
 раз в сутки размечает новые программы и сайты по категориям (analysis.Investigation).
@@ -57,7 +57,7 @@ def _spread(start: datetime, seconds: int):
 
 def learning(store: Store, status: dict, labels: dict[str, str], voice_at: str | None,
              style_at: str | None) -> dict:
-    """Как далеко Освальд продвинулся в изучении пользователя. labels — названия источников."""
+    """Как далеко Аня продвинулась в изучении пользователя. labels — названия источников."""
     by_source = store.jobs_by_source()
     done = sum(d for _, d, _ in by_source)
     total = sum(t for _, _, t in by_source)

@@ -1,4 +1,4 @@
-"""Документы Word и таблицы Excel: Освальд создаёт их сам, пользователь открывает в Office."""
+"""Документы Word и таблицы Excel: Аня создаёт их сам, пользователь открывает в Office."""
 from __future__ import annotations
 
 import re

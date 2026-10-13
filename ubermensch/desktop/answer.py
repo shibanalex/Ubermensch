@@ -10,7 +10,7 @@ from . import console
 from .client import Api
 from .console import BRIGHT, DIM, FG, GREEN, MONO, RED, TITLE_H, plain
 
-PROMPT = r"C:\oswald> "
+PROMPT = r"C:\anya> "
 CHARS_PER_TICK = 6  # скорость «печати»: ~375 символов в секунду
 SPINNER = "|/-\\"
 
@@ -25,7 +25,7 @@ class AnswerConsole(console.ConsoleWindow):
     typing = Signal(bool)  # маскот «говорит», пока идёт печать
 
     def __init__(self, api: Api):
-        super().__init__("oswald.exe — история")
+        super().__init__("anya.exe — история")
         self.resize(560, 420)
         self.setMinimumSize(380, 220)
         self.api = api

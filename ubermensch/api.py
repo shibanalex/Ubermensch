@@ -96,7 +96,7 @@ def create_app(core: Core, token: str) -> web.Application:
         return web.json_response({"started": True})
 
     async def post_voice(request: web.Request) -> web.Response:
-        """Пересобрать стиль переписки и голос Освальда сейчас, не дожидаясь недели."""
+        """Пересобрать стиль переписки и голос Ани сейчас, не дожидаясь недели."""
         asyncio.create_task(core.investigation.refresh_voice())
         return web.json_response({"started": True})
 

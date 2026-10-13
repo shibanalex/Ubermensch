@@ -31,14 +31,14 @@ class PromptWindow(console.ConsoleWindow):
     open_history = Signal()
 
     def __init__(self):
-        super().__init__("oswald.exe — запрос")
+        super().__init__("anya.exe — запрос")
         self.resize(WIDTH, HEIGHT)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, TITLE_H + 8, 12, 8)
         layout.setSpacing(4)
 
         row = QHBoxLayout()
-        prompt = QLabel(r"C:\oswald>")
+        prompt = QLabel(r"C:\anya>")
         prompt.setFont(QFont(MONO, 10.5))
         prompt.setStyleSheet(f"color: {GREEN.name()};")
         self.edit = PromptEdit()

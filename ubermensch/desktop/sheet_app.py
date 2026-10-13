@@ -14,7 +14,7 @@ from .sheet import TaskSheet
 def main() -> int:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    app.setApplicationName("oswald.exe — задачи")
+    app.setApplicationName("anya.exe — задачи")
     app.setFont(QFont(theme.FONT, 10))
     if link.is_running(link.SHEET):
         return link.ALREADY_RUNNING

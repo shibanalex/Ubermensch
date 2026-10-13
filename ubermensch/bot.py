@@ -226,7 +226,7 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
         c = store.counts()
         uptime = int(time.monotonic() - started_at)
         await send(message.bot, message.chat.id, "\n".join([
-            "**Освальд (oswald.exe)**",
+            "**Аня (anya.exe)**",
             f"Работает: {uptime // 3600} ч {uptime % 3600 // 60} мин",
             f"Модель: {settings.claude_model}; вызовов из Telegram: {stats['calls']}, "
             f"последний: {stats['last_ms'] / 1000:.1f} с",

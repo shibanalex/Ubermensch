@@ -138,7 +138,7 @@ def _session_opener():
 
 
 def read(url: str) -> dict:
-    """Одна страница или документ кабинета (для инструмента Освальда)."""
+    """Одна страница или документ кабинета (для инструмента Ани)."""
     if urllib.parse.urlparse(url).hostname != HOST:
         raise ValueError("Это не личный кабинет")
     page = _get(url, _session_opener())
@@ -214,7 +214,7 @@ def main() -> None:
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
     print("Сейчас откроется окно личного кабинета — войди как обычно, окно закроется само.")
     login(interactive=True)
-    print("Готово: Освальд сохранил сессию кабинета.")
+    print("Готово: Аня сохранила сессию кабинета.")
 
 
 if __name__ == "__main__":

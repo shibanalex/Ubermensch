@@ -106,7 +106,7 @@ async def find_files(name_part: str, folder: str | None = None, limit: int = 30)
 async def run_powershell(command: str, reason: str) -> str:
     """Выполнить команду PowerShell — сразу, в том числе меняющую настройки. Подтверждение
     нужно только опасным: диски, загрузка, выключение, учётные записи, антивирус, системные
-    папки, память и код Освальда. reason — зачем это нужно."""
+    папки, память и код Ани. reason — зачем это нужно."""
     if shell.is_dangerous(command) and \
             not await _ask("Опасная команда PowerShell", f"{reason}\n\n{command}"):
         return "Пользователь не разрешил выполнить команду."
@@ -114,7 +114,7 @@ async def run_powershell(command: str, reason: str) -> str:
 
 
 async def _may_write(target: Path, preview: str) -> bool:
-    """Освальд пишет сам где угодно, кроме системных папок, своей памяти и кода — там «да»."""
+    """Аня пишет сама где угодно, кроме системных папок, своей памяти и кода — там «да»."""
     if not config.is_protected(target):
         return True
     verb = "Перезаписать файл" if target.exists() else "Создать файл"
@@ -124,7 +124,7 @@ async def _may_write(target: Path, preview: str) -> bool:
 @mcp.tool()
 async def write_file(path: str, content: str) -> str:
     """Создать или перезаписать текстовый файл (.md, .txt …) — сразу. Свои заметки — в зонах
-    (Obsidian, «Документы\\Oswald»); системные папки и память Освальда — только с «да»."""
+    (Obsidian, «Документы\\Аня»); системные папки и память Ани — только с «да»."""
     target = Path(path).expanduser().resolve()
     if not await _may_write(target, content):
         return "Пользователь не разрешил запись."
@@ -149,7 +149,7 @@ async def append_file(path: str, text: str) -> str:
 @mcp.tool()
 async def write_word(path: str, title: str, markdown: str) -> str:
     """Создать документ Word (.docx) из простого Markdown (# заголовки, - списки, **жирный**).
-    Сразу; свои документы — в «Документы\\Oswald»."""
+    Сразу; свои документы — в «Документы\\Аня»."""
     target = Path(path).expanduser().resolve().with_suffix(".docx")
     if not await _may_write(target, markdown):
         return "Пользователь не разрешил запись."
@@ -160,7 +160,7 @@ async def write_word(path: str, title: str, markdown: str) -> str:
 @mcp.tool()
 async def write_excel(path: str, sheet: str, rows: list[list], append: bool = False) -> str:
     """Записать лист таблицы Excel (.xlsx): rows — строки, первая — заголовки. append=true — дописать
-    строки в конец листа (например, расходы). Сразу; свои таблицы — в «Документы\\Oswald»."""
+    строки в конец листа (например, расходы). Сразу; свои таблицы — в «Документы\\Аня»."""
     target = Path(path).expanduser().resolve().with_suffix(".xlsx")
     if not await _may_write(target, "\n".join(map(str, rows[:20]))):
         return "Пользователь не разрешил запись."
@@ -219,9 +219,9 @@ async def calendar_add(title: str, start: str, end: str | None = None, descripti
 
 @mcp.tool()
 async def calendar_delete(event_id: str) -> str:
-    """Удалить событие. Свои (добавленные Освальдом) — сразу, чужие — после подтверждения."""
+    """Удалить событие. Свои (добавленные Аней) — сразу, чужие — после подтверждения."""
     current = await asyncio.to_thread(google_calendar.event, event_id)
-    if google_calendar.MARK not in (current.get("description") or "") and not await _ask(
+    if not google_calendar.is_own(current.get("description")) and not await _ask(
             "Удалить событие из календаря", f"{current.get('summary', '')}\n"
             f"{current['start'].get('dateTime', current['start'].get('date'))}"):
         return "Пользователь не разрешил удаление."
@@ -231,7 +231,7 @@ async def calendar_delete(event_id: str) -> str:
 
 @mcp.tool()
 async def move_path(source: str, destination: str) -> str:
-    """Переместить или переименовать файл/папку — сразу (из системных папок и памяти Освальда
+    """Переместить или переименовать файл/папку — сразу (из системных папок и памяти Ани
     и туда — только с «да»)."""
     if (config.is_protected(Path(source)) or config.is_protected(Path(destination))) and \
             not await _ask("Переместить в защищённой папке", f"{source}\n→ {destination}"):
@@ -244,7 +244,7 @@ async def move_path(source: str, destination: str) -> str:
 @mcp.tool()
 async def delete_to_recycle_bin(path: str) -> str:
     """Удалить файл или папку в Корзину (восстановимо) — сразу; в системных папках и памяти
-    Освальда — только с «да»."""
+    Ани — только с «да»."""
     if config.is_protected(Path(path)) and not await _ask("Удалить в Корзину из защищённой "
                                                           "папки", path):
         return "Пользователь не разрешил удаление."

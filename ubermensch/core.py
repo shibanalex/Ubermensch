@@ -146,13 +146,13 @@ class Core:
 
     # --- действия от имени пользователя (всё внешнее — только после «да») ---
 
-    # --- вход в Telegram: Освальд входит сам, номер, код и пароль присылают в бота ---
+    # --- вход в Telegram: Аня входит сама, номер, код и пароль присылают в бота ---
 
     async def start_tg_login(self, account: str = "personal") -> str:
         """Начать вход (сессии нет или она слетела). Возвращает, что сказать пользователю."""
         tg = self.tg(account)
         if await tg.authorized():
-            return f"В {tg.profile.label} Telegram я уже вошёл."
+            return f"В {tg.profile.label} Telegram я уже вошла."
         if self.login and self.login["account"] == account:
             return self._login_prompt()
         phone = os.getenv(tg.profile.phone_env, "").strip()
@@ -207,7 +207,7 @@ class Core:
         key = "telegram" if tg.profile.personal else f"telegram_{tg.profile.key}"
         self.health.clear(key, f"{tg.profile.label.capitalize()} Telegram снова на связи.")
         asyncio.create_task(self.investigation.collect())  # сразу собрать переписки
-        return f"✅ Вошёл в {tg.profile.label} Telegram. Начинаю читать чаты."
+        return f"✅ Вошла в {tg.profile.label} Telegram. Начинаю читать чаты."
 
     def tg(self, account: str = "personal") -> TelegramAccount:
         if account not in self.telegrams:
@@ -297,7 +297,7 @@ class Core:
         return results
 
     def metrics(self) -> dict:
-        """Окно метрик: как далеко Освальд изучил пользователя и что пользователь делает."""
+        """Окно метрик: как далеко Аня изучила пользователя и что пользователь делает."""
         def mtime(name: str) -> str | None:
             path = self.assistant.workspace / name
             return (datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="minutes")
@@ -305,7 +305,7 @@ class Core:
 
         labels = {**SOURCES, "person": "Портреты отношений", "stats": "Статистика по месяцам"}
         learning = metrics.learning(self.store, self.investigation.status(), labels,
-                                    mtime("oswald_persona.md"), mtime("tg_style.md"))
+                                    mtime("anya_persona.md"), mtime("tg_style.md"))
         if self.assistant.helper is not None:
             learning["openai"] = self.assistant.helper.status()
         return {"learning": learning,

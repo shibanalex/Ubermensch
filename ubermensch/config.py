@@ -17,15 +17,17 @@ API_HOST = "127.0.0.1"
 API_PORT = int(os.getenv("API_PORT", "8765"))
 API_TOKEN_FILE = DATA_DIR / "secrets" / "api_token"
 
-# Свободные зоны Освальда: здесь он создаёт и правит файлы сам, без подтверждения.
-# Всё остальное на дисках — только после «да» пользователя.
-OBSIDIAN_DIR = Path(os.getenv("OSWALD_OBSIDIAN", r"D:\Aleksey\Aleksey\Oswald"))
-DOCUMENTS_DIR = Path(os.getenv("OSWALD_DOCUMENTS", str(Path.home() / "Documents" / "Oswald")))
+# Свободные зоны Ани: здесь она создаёт и правит файлы сама, без подтверждения.
+OBSIDIAN_DIR = Path(os.getenv("OSWALD_OBSIDIAN", r"D:\Aleksey\Aleksey\Аня"))
+DOCUMENTS_DIR = Path(os.getenv("OSWALD_DOCUMENTS", str(Path.home() / "Documents" / "Аня")))
+# Раньше помощника звали Освальд — его папки переименовываются в «Аня» при запуске.
+LEGACY_ZONES = {OBSIDIAN_DIR: OBSIDIAN_DIR.with_name("Oswald"),
+                DOCUMENTS_DIR: DOCUMENTS_DIR.with_name("Oswald")}
 FREE_ZONES = (DATA_DIR / "workspace", OBSIDIAN_DIR, DOCUMENTS_DIR)
 
 
-# С ПК и системой Освальд работает без подтверждения. Исключение — места, где ошибка ломает
-# Windows, программы или самого Освальда (его память, ключи и код): там — «да/нет».
+# С ПК и системой Аня работает без подтверждения. Исключение — места, где ошибка ломает
+# Windows, программы или самой Ани (её память, ключи и код): там — «да/нет».
 PROTECTED = (Path(os.environ.get("SystemRoot", r"C:\Windows")),
              Path(os.environ.get("ProgramFiles", r"C:\Program Files")),
              Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")),
@@ -33,7 +35,7 @@ PROTECTED = (Path(os.environ.get("SystemRoot", r"C:\Windows")),
 
 
 def is_protected(path: Path) -> bool:
-    """Системные папки, память и код Освальда — кроме его свободных зон (рабочая папка и т. п.)."""
+    """Системные папки, память и код Ани — кроме её свободных зон (рабочая папка и т. п.)."""
     target = path.expanduser().resolve()
     if in_free_zone(target):
         return False
@@ -116,6 +118,12 @@ def load() -> Settings:
         claude_model=os.getenv("CLAUDE_MODEL", "opus"),
         claude_timeout=int(os.getenv("CLAUDE_TIMEOUT", "300")),
     )
+    for new, old in LEGACY_ZONES.items():
+        if old.is_dir() and not new.exists():
+            try:
+                old.rename(new)
+            except OSError:
+                pass  # папка открыта в другой программе — переедет при следующем запуске
     for d in (settings.db_path.parent, settings.workspace, settings.logs_dir, *FREE_ZONES):
         try:
             d.mkdir(parents=True, exist_ok=True)

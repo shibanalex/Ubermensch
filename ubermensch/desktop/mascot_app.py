@@ -1,4 +1,4 @@
-"""Процесс маскота (oswald.exe): мордочка, реплики-пузыри, окно запроса, история, трей.
+"""Процесс маскота (anya.exe): мордочка, реплики-пузыри, окно запроса, история, трей.
 
 Запускается присмотром (python -m ubermensch.desktop). «Выход» закрывает приложение целиком:
 код 0 говорит присмотру, что это решение пользователя, а не падение.
@@ -24,7 +24,7 @@ PLAN_DAY = ("Спланируй мой сегодняшний день: пред
 def main() -> int:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    app.setApplicationName("oswald.exe")
+    app.setApplicationName("anya.exe")
     app.setFont(QFont(theme.FONT, 10))
     if link.is_running(link.MASCOT):
         link.send("show")  # второй запуск просто показывает уже живого маскота
@@ -82,7 +82,7 @@ def main() -> int:
     icon = QIcon(icon_pixmap(64))
     app.setWindowIcon(icon)
     tray = QSystemTrayIcon(icon)
-    tray.setToolTip("oswald.exe")
+    tray.setToolTip("anya.exe")
     menu = QMenu()
     menu.addAction("Спросить", lambda: prompt.popup(anchor()))
     menu.addAction("История ответов", lambda: answer.open(anchor()))
@@ -103,7 +103,7 @@ def main() -> int:
     tray.activated.connect(on_tray_click)
     tray.show()
     mascot.hidden_to_tray.connect(lambda: tray.showMessage(
-        "oswald.exe", "Я спрятался в трей — значок :3 у часов (возможно, под стрелкой ^). "
+        "anya.exe", "Я спряталась в трей — значок :3 у часов (возможно, под стрелкой ^). "
         "Кликни по нему, чтобы вернуть меня.", icon, 8000))
 
     mascot.show()

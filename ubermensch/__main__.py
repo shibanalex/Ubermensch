@@ -58,7 +58,7 @@ async def _serve(settings: config.Settings) -> None:
     core.health.bind(asyncio.get_running_loop())
     core.investigation = Investigation(store, assistant, core.notify, core.telegrams, core.health)
 
-    async def login_required(account: str) -> None:  # сессии нет — Освальд сам просит код
+    async def login_required(account: str) -> None:  # сессии нет — Аня сама просит код
         if core.login is None:
             core.notify(await core.start_tg_login(account))
 

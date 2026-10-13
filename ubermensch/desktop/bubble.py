@@ -29,7 +29,7 @@ class ReplyBubble(console.ConsoleWindow):
     open_history = Signal()
 
     def __init__(self):
-        super().__init__("oswald.exe")
+        super().__init__("anya.exe")
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self._tail_x = 40
         self._queue: list[tuple[str, QTextCharFormat]] = []
@@ -66,7 +66,7 @@ class ReplyBubble(console.ConsoleWindow):
     # --- показ ---
 
     def show_text(self, text: str, anchor: QWidget, *, notes: list[str] = (),
-                  title: str = "oswald.exe", color: QColor = FG, typewriter: bool = True,
+                  title: str = "anya.exe", color: QColor = FG, typewriter: bool = True,
                   hold_seconds: float | None = None) -> None:
         self.title = title
         metrics = QFontMetrics(self.view.font())

@@ -42,7 +42,7 @@ class Profile:
     id_env: str
     hash_env: str
     login_bat: str
-    phone_env: str  # номер для входа; нет в .env — Освальд спросит в боте
+    phone_env: str  # номер для входа; нет в .env — Аня спросит в боте
 
     @property
     def configured(self) -> bool:
@@ -147,7 +147,7 @@ class TelegramAccount:
                                             f"запусти {self.profile.login_bat}")
             return self._client
 
-    # --- вход (Освальд входит сам, код пользователь присылает в бота) ---
+    # --- вход (Аня входит сама, код пользователь присылает в бота) ---
 
     async def _connected(self) -> TelegramClient:
         if self._client is None:

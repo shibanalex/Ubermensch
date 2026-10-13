@@ -28,9 +28,9 @@ FACE = GREEN
 TALK = ("o", "3", "O", "3")  # «3» рисуется повёрнутой — это рот :3
 DOT = "•"  # глаз-точка рисуется кружком
 EYE_DX = 34  # глаза от центра
-PEEK = 30  # сколько маскота видно, когда он спрятался за край экрана
-CHEERS = ("кайф. минус одна", "закрыто :3", "вот это темп", "красота. дальше?",
-          "засчитано)")
+PEEK = 30  # сколько маскота видно, когда она спряталась за край экрана
+CHEERS = ("умничка :3", "минус одна, горжусь тобой", "вот это мой человек", "засчитано ♥",
+          "кайф. дальше?")
 
 
 def icon_pixmap(size: int) -> QPixmap:
@@ -60,7 +60,7 @@ class Mascot(console.ConsoleWindow):
     TICK_MS = 50
 
     def __init__(self, api: Api):
-        super().__init__("oswald.exe")
+        super().__init__("anya.exe")
         self.resize(self.W, self.H)
         self.setToolTip("Клик — спросить. Перетащи меня. Поводи курсором — погладишь :3")
         self.api = api
@@ -147,7 +147,7 @@ class Mascot(console.ConsoleWindow):
 
     # --- реакции на ядро и приложение ---
 
-    def say(self, text: str, seconds: float | None = None, title: str = "oswald.exe",
+    def say(self, text: str, seconds: float | None = None, title: str = "anya.exe",
             notes: list[str] = ()) -> None:
         self.bubble.show_text(text, self, notes=notes, title=title, hold_seconds=seconds)
 
@@ -307,7 +307,7 @@ class Mascot(console.ConsoleWindow):
             p.setFont(QFont(MONO, 8))
             p.setPen(DIM)
             p.drawText(QRect(10, self.H - 20, self.W - 16, 16), Qt.AlignmentFlag.AlignVCenter,
-                       rf"C:\oswald> {status}")
+                       rf"C:\anya> {status}")
 
     def _paint_extras(self, p: QPainter, mood: str, color) -> None:
         t = self._ms

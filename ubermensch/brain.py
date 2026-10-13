@@ -86,10 +86,10 @@ class BrainError(RuntimeError):
         kind = self.kind
         if kind == "limit":
             when = f" до {self.reset_at:%H:%M}" if self.reset_at else ""
-            return f"Упёрся в лимит подписки Claude{when}. Как сбросится — вернусь."
+            return f"Упёрлась в лимит подписки Claude{when}. Как сбросится — вернусь."
         if kind == "auth":
             return ("Claude разлогинился. Открой терминал, запусти claude и выполни /login "
-                    "(или войди в расширении Claude Code в VS Code) — дальше подхвачу сам.")
+                    "(или войди в расширении Claude Code в VS Code) — дальше подхвачу сама.")
         if kind == "missing":
             return ("Не нахожу Claude Code. Установи его (claude.ai/code) или обнови расширение "
                     "в VS Code — я найду его сам.")

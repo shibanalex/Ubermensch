@@ -1,8 +1,8 @@
-"""Google Календарь пользователя: Освальд сам ставит события и дедлайны (они сразу на телефоне).
+"""Google Календарь пользователя: Аня сама ставит события и дедлайны (они сразу на телефоне).
 
 Доступ — только к событиям (scope calendar.events), не ко всему аккаунту. Ключи OAuth и токен
 лежат в D:\\Ubermensch\\secrets. Первый вход: google_login.bat (см. docs/OPERATIONS.md).
-События, созданные Освальдом, помечаются в описании — их он может удалять сам, чужие только с «да».
+События, созданные Аней, помечаются в описании — их она может удалять сама, чужие только с «да».
 """
 from __future__ import annotations
 
@@ -13,7 +13,12 @@ from . import config
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 CLIENT_FILE = config.DATA_DIR / "secrets" / "google_oauth_client.json"
 TOKEN_FILE = config.DATA_DIR / "secrets" / "google_token.json"
-MARK = "— добавил Освальд"
+MARK = "— добавила Аня"
+MARKS = (MARK, "— добавил Освальд")  # события, поставленные ещё Освальдом, — тоже свои
+
+
+def is_own(description: str | None) -> bool:
+    return any(m in (description or "") for m in MARKS)
 
 
 class CalendarNotConnected(RuntimeError):
@@ -58,7 +63,7 @@ def upcoming(days: int = 14) -> list[dict]:
     return [{"id": e["id"], "title": e.get("summary", ""),
              "start": e["start"].get("dateTime", e["start"].get("date")),
              "end": e["end"].get("dateTime", e["end"].get("date")),
-             "by_oswald": MARK in (e.get("description") or "")} for e in items]
+             "by_anya": is_own(e.get("description"))} for e in items]
 
 
 def add(title: str, start: str, end: str | None = None, description: str = "",
@@ -93,7 +98,7 @@ def login() -> None:
     flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_FILE), SCOPES)
     creds = flow.run_local_server(port=0, prompt="consent")
     TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
-    print("Готово: Освальд подключён к Google Календарю.")
+    print("Готово: Аня подключена к Google Календарю.")
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ MUTATING = re.compile(
     r"|>|\|\s*(sh|bash|cmd)\b")
 
 
-# Команды, которые могут сломать систему, данные или доступ: их Освальд выполняет только с «да».
+# Команды, которые могут сломать систему, данные или доступ: их Аня выполняет только с «да».
 DANGEROUS = re.compile(
     r"(?i)\b(format|diskpart|bcdedit|vssadmin|wbadmin|cipher\s+/w|bootrec|sfc|dism|"
     r"shutdown|logoff)\b"
@@ -37,7 +37,7 @@ def is_read_only(command: str) -> bool:
 
 def is_dangerous(command: str) -> bool:
     """Опасно: ломает систему или доступ — или меняет что-то в системных папках, памяти и
-    коде Освальда. Остальное (в том числе меняющее) Освальд делает сам."""
+    коде Ани. Остальное (в том числе меняющее) Аня делает сама."""
     return bool(DANGEROUS.search(command)) or (
         not is_read_only(command) and bool(PROTECTED_WORDS.search(command)))
 

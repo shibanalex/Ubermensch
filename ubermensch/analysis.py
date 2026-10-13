@@ -555,7 +555,7 @@ class Investigation:
             if message:
                 self.notify(f"🎓 {message}")
         elif not old:
-            self.notify(f"🎓 Прочитал твой личный кабинет вуза: {len(new)} страниц. Дальше буду "
+            self.notify(f"🎓 Прочитала твой личный кабинет вуза: {len(new)} страниц. Дальше буду "
                         "смотреть его раз в день и писать, если что-то важное изменится.")
         lk.save_snapshot(new)
         log.info("Личный кабинет: страниц %d, новых и изменившихся %d", len(new), len(diff))
@@ -581,10 +581,10 @@ class Investigation:
         """По просьбе: стиль и голос сейчас, а не по расписанию."""
         summary = await self._update_style(force=True)
         if summary:
-            self.notify(f"🗣 Обновил свой голос: {summary}")
+            self.notify(f"🗣 Обновила свой голос: {summary}")
 
     async def _update_style(self, force: bool = False) -> str:
-        """Раз в неделю: стиль переписки пользователя, затем голос Освальда — «он, но лучше»."""
+        """Раз в неделю: стиль переписки пользователя, затем голос Ани — «он, но лучше»."""
         if not force and not self._due("style", STYLE_EVERY):
             return ""
         messages = self.store.my_telegram_messages(STYLE_SAMPLE)
@@ -607,7 +607,7 @@ class Investigation:
                         + _sample(self.store.my_ai_messages(400), THINKING_CHARS // 2)).strip()
             summary = await self.assistant.describe_persona(thinking)
             self._mark("style")
-            log.info("Голос Освальда обновлён: %s", summary)
+            log.info("Голос Ани обновлён: %s", summary)
             return summary
         except BrainError as e:
             log.warning("Стиль и голос не обновлены: %s", e)

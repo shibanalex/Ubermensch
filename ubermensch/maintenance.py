@@ -5,7 +5,7 @@
 без него архив не открыть, поэтому хранить его нужно отдельно от ноутбука.
 
 Архивы лежат в D:\\Ubermensch\\backups (последние 7) и копируются на внешний диск или флешку,
-если в корне носителя есть папка OswaldBackup (последние 14). Сессия Telegram и ключи из .env
+если в корне носителя есть папка AnyaBackup (последние 14). Сессия Telegram и ключи из .env
 в архив не входят: их проще пересоздать, чем рисковать утечкой.
 """
 from __future__ import annotations
@@ -28,7 +28,8 @@ log = logging.getLogger(__name__)
 
 SEVEN_ZIP = Path(r"C:\Program Files\7-Zip\7z.exe")
 LOCAL_DIR = config.DATA_DIR / "backups"
-MARKER = "OswaldBackup"  # папка в корне внешнего носителя: сюда копировать архивы
+MARKER = "AnyaBackup"  # папка в корне внешнего носителя: сюда копировать архивы
+MARKERS = (MARKER, "OswaldBackup")  # старое имя тоже понимаем
 KEEP_LOCAL, KEEP_EXTERNAL = 7, 14
 CHECK_EVERY = 10 * 60
 NIGHT = range(2, 6)  # бэкап ночью, когда компьютер свободен…
@@ -38,16 +39,18 @@ MIN_FREE_GB = 5
 
 
 def _archives(folder: Path) -> list[Path]:
-    return sorted(folder.glob("oswald-*.7z"))
+    return sorted([*folder.glob("anya-*.7z"), *folder.glob("oswald-*.7z")],
+                  key=lambda p: p.name.split("-", 1)[1])  # по дате, независимо от имени
 
 
 def _external_folders() -> list[Path]:
-    """Подключённые носители с папкой OswaldBackup (кроме системного C: и D: с данными)."""
+    """Подключённые носители с папкой AnyaBackup (кроме системного C: и D: с данными)."""
     folders = []
     for letter in string.ascii_uppercase:
         if letter in "CD":
             continue
-        folder = Path(f"{letter}:/{MARKER}")
+        folder = next((Path(f"{letter}:/{m}") for m in MARKERS
+                       if Path(f"{letter}:/{m}").is_dir()), Path(f"{letter}:/{MARKER}"))
         try:
             if folder.is_dir():
                 folders.append(folder)
@@ -95,7 +98,7 @@ class Maintenance:
                                r"(C:\Program Files\7-Zip).")
             return None
         LOCAL_DIR.mkdir(parents=True, exist_ok=True)
-        archive = LOCAL_DIR / f"oswald-{datetime.now():%Y-%m-%d_%H-%M}.7z"
+        archive = LOCAL_DIR / f"anya-{datetime.now():%Y-%m-%d_%H-%M}.7z"
         with tempfile.TemporaryDirectory() as tmp:
             snapshot = Path(tmp) / "ubermensch.db"
             source = sqlite3.connect(self.db_path)
@@ -105,7 +108,7 @@ class Maintenance:
             target.close()
             parts = [str(snapshot)]
             workspace = config.DATA_DIR / "workspace"
-            for extra in (workspace / "tg_style.md", workspace / "oswald_persona.md",
+            for extra in (workspace / "tg_style.md", workspace / "anya_persona.md",
                           config.DATA_DIR / "dossier"):
                 if extra.exists():
                     parts.append(str(extra))

@@ -1,4 +1,4 @@
-"""Окно метрик: «Освальд обо мне» — насколько он меня изучил, «Мои действия» — время за ПК,
+"""Окно метрик: «Аня обо мне» — насколько он меня изучил, «Мои действия» — время за ПК,
 полезное и отвлекающее, задачи и цели. Псевдографика в консоли, данные — GET /api/metrics."""
 from __future__ import annotations
 
@@ -55,10 +55,10 @@ def _when(iso: str | None) -> str | None:
 
 
 class MetricsWindow(console.ConsoleWindow):
-    TABS = (("learning", "Освальд обо мне"), ("activity", "Мои действия"))
+    TABS = (("learning", "Аня обо мне"), ("activity", "Мои действия"))
 
     def __init__(self, api: Api):
-        super().__init__("oswald.exe — метрики")
+        super().__init__("anya.exe — метрики")
         self.resize(640, 600)
         self.setMinimumSize(460, 300)
         self.api = api
@@ -201,7 +201,7 @@ class MetricsWindow(console.ConsoleWindow):
         self._w(empty, DIM)
         self._ln(f"  {tail}", FG)
 
-    # --- «Освальд обо мне» ---
+    # --- «Аня обо мне» ---
 
     def _learning(self, d: dict) -> None:
         filled, empty = _bar(d["mastery"], 100, 30)
@@ -235,7 +235,7 @@ class MetricsWindow(console.ConsoleWindow):
         self._head("Вехи")
         for label, value, missing in (
                 ("Досье", _when(d["dossier_at"]), "ещё нет — соберётся после свежих 30 дней"),
-                ("Голос Освальда", _when(d["voice_at"]), "ещё нет"),
+                ("Голос Ани", _when(d["voice_at"]), "ещё нет"),
                 ("Твой стиль письма", _when(d["style_at"]), "ещё нет")):
             self._w(f"  {label:<{LABEL_W - 2}}", FG)
             self._ln(value or missing, BRIGHT if value else DIM)
