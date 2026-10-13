@@ -14,6 +14,7 @@ from . import link, theme
 from .answer import AnswerConsole
 from .cat import Mascot, icon_pixmap
 from .client import Api
+from .metrics import MetricsWindow
 from .prompt import PromptWindow
 
 PLAN_DAY = ("Спланируй мой сегодняшний день: предложи 3–5 задач под мои цели "
@@ -32,9 +33,10 @@ def main() -> int:
     api = Api()
     answer = AnswerConsole(api)
     prompt = PromptWindow()
+    metrics = MetricsWindow(api)
     mascot = Mascot(api)
     mascot.answer_visible = answer.isVisible
-    mascot.engaged = lambda: prompt.isVisible() or answer.isVisible()
+    mascot.engaged = lambda: prompt.isVisible() or answer.isVisible() or metrics.isVisible()
 
     def anchor():
         return mascot.frameGeometry()
@@ -58,6 +60,7 @@ def main() -> int:
 
     mascot.clicked.connect(lambda: prompt.toggle(anchor()))
     mascot.open_history.connect(lambda: answer.open(anchor()))
+    mascot.open_metrics.connect(lambda: metrics.open(anchor()))
     mascot.quit_requested.connect(app.quit)
     prompt.submitted.connect(ask)
     prompt.open_history.connect(lambda: answer.open(anchor()))
@@ -65,7 +68,7 @@ def main() -> int:
 
     commands = {"show": show_mascot, "prompt": lambda: prompt.popup(anchor()),
                 "history": lambda: answer.open(anchor()),
-                "plan": lambda: ask(PLAN_DAY)}
+                "plan": lambda: ask(PLAN_DAY), "metrics": lambda: metrics.open(anchor())}
     link.serve(link.MASCOT, app, lambda command: commands[command]())
 
     def on_event(event: dict) -> None:
@@ -83,6 +86,7 @@ def main() -> int:
     menu = QMenu()
     menu.addAction("Спросить", lambda: prompt.popup(anchor()))
     menu.addAction("История ответов", lambda: answer.open(anchor()))
+    menu.addAction("Метрики", lambda: metrics.open(anchor()))
     menu.addAction("Показать маскота", show_mascot)
     menu.addSeparator()
     menu.addAction("Выход", app.quit)

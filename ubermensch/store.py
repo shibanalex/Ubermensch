@@ -138,6 +138,14 @@ MIGRATIONS = [
     """
     ALTER TABLE people ADD COLUMN merged_into INTEGER REFERENCES people (id);
     """,
+    """
+    -- категории программ и сайтов для метрики «полезное / отвлекающее»
+    CREATE TABLE activity_categories (
+        key TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -459,6 +467,66 @@ class Store:
         ).fetchall()
 
     # --- люди ---
+
+    # --- метрики ---
+
+    def activity_sessions(self, start: str, end: str) -> list[tuple[str, str, str, int]]:
+        """Сессии за компьютером: (начало, программа, заголовок окна, секунд)."""
+        return [(r[0], r[1] or "", r[2], int(json.loads(r[3] or "{}").get("seconds", 0)))
+                for r in self.db.execute(
+                    "SELECT ts, thread, text, meta FROM events WHERE source = 'activity' "
+                    "AND ts >= ? AND ts < ? ORDER BY ts", (start, end))]
+
+    def activity_categories(self) -> dict[str, str]:
+        return {r[0]: r[1] for r in self.db.execute("SELECT key, category FROM activity_categories")}
+
+    def set_activity_categories(self, categories: dict[str, str]) -> None:
+        ts = now()
+        self.db.executemany(
+            "INSERT INTO activity_categories (key, category, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (key) DO UPDATE SET category = excluded.category, "
+            "updated_at = excluded.updated_at",
+            [(key, category, ts) for key, category in categories.items()])
+
+    def fact_areas(self) -> dict[str, int]:
+        return {r[0]: r[1] for r in self.db.execute(
+            "SELECT area, COUNT(*) FROM facts WHERE active = 1 GROUP BY area")}
+
+    def facts_by_day(self, since: str) -> dict[str, int]:
+        return {r[0]: r[1] for r in self.db.execute(
+            "SELECT substr(created_at, 1, 10), COUNT(*) FROM facts WHERE created_at >= ? "
+            "GROUP BY 1", (since,))}
+
+    def jobs_by_source(self) -> list[tuple[str, int, int]]:
+        """(источник, разобрано, всего) — пропущенные пустые порции считаются разобранными."""
+        return [(r[0], r[1], r[2]) for r in self.db.execute(
+            "SELECT source, SUM(status IN ('done', 'skipped')), COUNT(*) FROM analysis_jobs "
+            "GROUP BY source ORDER BY COUNT(*) DESC")]
+
+    def analyzed_chars(self) -> int:
+        return self.db.execute(
+            "SELECT COALESCE(SUM(chars), 0) FROM analysis_jobs WHERE status = 'done'").fetchone()[0]
+
+    def task_stats(self, today: str, week_start: str) -> dict:
+        one = lambda sql, *args: self.db.execute(sql, args).fetchone()[0]  # noqa: E731
+        done_days = {r[0] for r in self.db.execute(
+            "SELECT DISTINCT substr(done_at, 1, 10) FROM tasks WHERE status = 'done'")}
+        return {
+            "open": one("SELECT COUNT(*) FROM tasks WHERE status = 'open'"),
+            "overdue": one("SELECT COUNT(*) FROM tasks WHERE status = 'open' AND due < ?", today),
+            "done_today": one("SELECT COUNT(*) FROM tasks WHERE status = 'done' AND done_at >= ?",
+                              today),
+            "done_week": one("SELECT COUNT(*) FROM tasks WHERE status = 'done' AND done_at >= ?",
+                             week_start),
+            "done_days": sorted(done_days),
+        }
+
+    def goal_progress(self) -> list[tuple[str, int, int]]:
+        """Активные цели: (название, задач выполнено, задач всего)."""
+        return [(r[0], r[1] or 0, r[2]) for r in self.db.execute(
+            "SELECT g.title, SUM(t.status = 'done'), COUNT(t.id) FROM goals g "
+            "LEFT JOIN tasks t ON t.goal_id = g.id AND t.status != 'dropped' "
+            "WHERE g.status = 'active' GROUP BY g.id ORDER BY g.area, g.id")]
 
     def people(self, limit: int = 200) -> list[sqlite3.Row]:
         return self.db.execute(

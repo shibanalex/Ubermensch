@@ -17,10 +17,12 @@ import hashlib
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import actions, config, ingest, mail
+from . import actions, config, ingest, mail, metrics
+from .analysis import SOURCES
 from .assistant import ONBOARDING_EVENT, Assistant, Outcome
 from .brain import BrainError
 from .collectors.telegram import TelegramAccount
@@ -217,6 +219,18 @@ class Core:
             self.store.record_import(path.name, digest, "done", outcome.reply)
             results.append(f"📥 {path.name}: фактов и целей — {len(outcome.changes)}")
         return results
+
+    def metrics(self) -> dict:
+        """Окно метрик: как далеко Освальд изучил пользователя и что пользователь делает."""
+        def mtime(name: str) -> str | None:
+            path = self.assistant.workspace / name
+            return (datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="minutes")
+                    if path.exists() else None)
+
+        labels = {**SOURCES, "person": "Портреты отношений", "stats": "Статистика по месяцам"}
+        return {"learning": metrics.learning(self.store, self.investigation.status(), labels,
+                                             mtime("oswald_persona.md"), mtime("tg_style.md")),
+                "activity": metrics.activity(self.store)}
 
     async def deep_import(self, path: Path, digest: str | None = None) -> str:
         """Чат с ИИ целиком: без повторов, только новое относительно памяти; сжатый конспект

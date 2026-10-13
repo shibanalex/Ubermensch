@@ -84,6 +84,9 @@ class Api(QObject):
     def set_task(self, task_id: int, status: str) -> None:
         self._post(f"/api/tasks/{task_id}", {"status": status})
 
+    def metrics(self, callback: Callback) -> None:
+        self._get("/api/metrics", callback)
+
     def decide(self, action_id: int, approve: bool, callback: Callback) -> None:
         self._post(f"/api/actions/{action_id}", {"approve": approve}, callback)
 

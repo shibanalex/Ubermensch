@@ -12,7 +12,8 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 MASCOT = "ubermensch-mascot"
 SHEET = "ubermensch-sheet"
-COMMANDS = ("show", "prompt", "history", "plan")  # показать маскота, спросить, история, план дня
+# показать маскота, спросить, история, план дня, метрики
+COMMANDS = ("show", "prompt", "history", "plan", "metrics")
 ALREADY_RUNNING = 3  # код выхода второго экземпляра: присмотр не считает его падением
 
 

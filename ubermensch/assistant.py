@@ -72,6 +72,16 @@ DISTILL_MERGE_TASK = (
     "пользователя: что нового ты узнал из документа и что противоречит известному."
 )
 
+CATEGORIZE_TASK = (
+    "[Системная задача: разметка времени за компьютером.] В блоке <data> — программы и сайты, "
+    "на которые пользователь тратит время: минуты за две недели и примеры заголовков окон. "
+    "Отнеси каждый ровно к одной категории: учёба, работа, музыка, развитие, общение, быт, "
+    "система, развлечения. Учитывай, кто он и какие у него цели (<context>): нотный редактор "
+    "у композитора — музыка, редактор кода у разработчика — работа. Видеосайты и соцсети "
+    "суди по заголовкам: лекции, курсы, разборы — развитие или учёба; остальное — развлечения. "
+    "Проводник, настройки, диспетчер задач — система. Ключи (key) повторяй в точности."
+)
+
 ONBOARDING_EVENT = (
     "[Системное событие: пользователь впервые открыл бота. Коротко представься "
     "(2–3 предложения: кто ты и чем будешь полезен) и начни знакомство с одного вопроса.]"
@@ -165,6 +175,21 @@ DISTILL_MERGE_SCHEMA = {
     "additionalProperties": False,
     "required": ["reply", "summary"],
     "properties": {"reply": {"type": "string"}, "summary": {"type": "string"}},
+}
+CATEGORIZE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["items"],
+    "properties": {"items": {"type": "array", "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["key", "category"],
+        "properties": {
+            "key": {"type": "string"},
+            "category": {"type": "string", "enum": ["учёба", "работа", "музыка", "развитие",
+                                                    "общение", "быт", "система", "развлечения"]},
+        },
+    }}},
 }
 STYLE_SCHEMA = {
     "type": "object",
@@ -394,6 +419,19 @@ class Assistant:
             if persona:
                 self.persona_file.write_text(persona, encoding="utf-8")
             return str(answer.data.get("reply", "")).strip()
+
+    async def categorize(self, items: list[dict]) -> dict[str, str]:
+        """Категории программ и сайтов для метрики «полезное / отвлекающее» (Sonnet)."""
+        lines = "\n".join(f"- key: {i['key']} | {i['minutes']} мин | " + " / ".join(i["titles"])
+                          for i in items)
+        async with self._analysis_lock:
+            prompt = (f"{self._profile_context()}\n\n<data source=\"время за компьютером\">\n"
+                      f"{lines}\n</data>\n\n<message>\n{CATEGORIZE_TASK}\n</message>")
+            answer = await self.brain.ask(prompt, system_prompt_file=self.system_prompt_file,
+                                          schema=CATEGORIZE_SCHEMA, model=ANALYSIS_MODEL)
+        wanted = {i["key"] for i in items}
+        return {i["key"]: i["category"] for i in answer.data.get("items") or []
+                if i.get("key") in wanted}
 
     async def describe_style(self, sample: str) -> str:
         """Инструкция «как пишет пользователь» по его же сообщениям в Telegram."""

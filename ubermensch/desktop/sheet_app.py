@@ -25,6 +25,7 @@ def main() -> int:
     sheet.show_mascot.connect(lambda: link.send("show"))
     sheet.open_prompt.connect(lambda: link.send("prompt"))
     sheet.open_history.connect(lambda: link.send("history"))
+    sheet.open_metrics.connect(lambda: link.send("metrics"))
     sheet.show()
     return app.exec()
 

@@ -105,6 +105,7 @@ class TaskSheet(QWidget):
     show_mascot = Signal()
     open_prompt = Signal()
     open_history = Signal()
+    open_metrics = Signal()
 
     def __init__(self, api: Api):
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
@@ -210,6 +211,7 @@ class TaskSheet(QWidget):
         menu.addAction("✦ Спланировать день", self.plan_day.emit)
         menu.addAction("Спросить ИИ", self.open_prompt.emit)
         menu.addAction("История ответов", self.open_history.emit)
+        menu.addAction("Метрики", self.open_metrics.emit)
         menu.addAction("Показать маскота", self.show_mascot.emit)
         menu.exec(event.globalPos())
 

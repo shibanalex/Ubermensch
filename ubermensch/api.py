@@ -108,6 +108,9 @@ def create_app(core: Core, token: str) -> web.Application:
         asyncio.create_task(core.deep_import(path))
         return web.json_response({"started": True})
 
+    async def get_metrics(request: web.Request) -> web.Response:
+        return web.json_response(core.metrics())
+
     async def get_investigation(request: web.Request) -> web.Response:
         return web.json_response(core.investigation.status())
 
@@ -179,6 +182,7 @@ def create_app(core: Core, token: str) -> web.Application:
         web.get("/api/events", get_events),
         web.post("/api/collect", post_collect),
         web.get("/api/investigation", get_investigation),
+        web.get("/api/metrics", get_metrics),
         web.post("/api/voice", post_voice),
         web.post("/api/import/deep", post_deep_import),
         web.get("/api/health", get_health),

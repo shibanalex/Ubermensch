@@ -52,6 +52,7 @@ def icon_pixmap(size: int) -> QPixmap:
 class Mascot(console.ConsoleWindow):
     clicked = Signal()  # открыть окно запроса
     open_history = Signal()  # открыть консоль ответов
+    open_metrics = Signal()  # окно метрик
     quit_requested = Signal()
     hidden_to_tray = Signal()
 
@@ -417,6 +418,7 @@ class Mascot(console.ConsoleWindow):
         menu = QMenu(self)
         menu.addAction("Спросить", self.clicked.emit)
         menu.addAction("История ответов", self.open_history.emit)
+        menu.addAction("Метрики", self.open_metrics.emit)
         menu.addAction("Спрятать в трей", self.hide_to_tray)
         menu.addSeparator()
         menu.addAction("Выход", self.quit_requested.emit)

@@ -17,7 +17,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
-from . import config, ingest
+from . import config, ingest, metrics
 from .assistant import Assistant
 from .brain import BrainError
 from .collectors import ai_chats, chrome, creative, documents, gmail, notifications, takeout
@@ -43,7 +43,8 @@ AUTH_WAIT = 5 * 60  # Claude разлогинен или не найден — �
 TELEGRAM_WAIT = timedelta(hours=24)
 STYLE_EVERY = 7 * 24 * 3600
 STYLE_SAMPLE, STYLE_CHARS = 2500, 35_000  # свежие сообщения пользователя для описания стиля
-THINKING_CHARS = 40_000  # его реплики в разговорах с ИИ — как он рассуждает
+THINKING_CHARS = 40_000
+CATEGORIZE_EVERY = 20 * 3600  # разметка программ и сайтов — не чаще раза в сутки  # его реплики в разговорах с ИИ — как он рассуждает
 MAX_ATTEMPTS = 3
 RETRY_PAUSE = 5 * 60
 DOSSIER_DIR = config.DATA_DIR / "dossier"
@@ -395,6 +396,7 @@ class Investigation:
                     await asyncio.to_thread(notifications.collect))
             except Exception:
                 log.exception("Сбор уведомлений Windows не удался")
+            await self._update_categories()
 
             found["takeout"] = await self._collect_takeout()
             found["ai_export"] = await self._collect_ai_exports()
@@ -454,6 +456,22 @@ class Investigation:
             self.store.record_import(path.name, key(path), "done", f"Чаты с ИИ: реплик {added}")
         log.info("Выгрузки чатов с ИИ: %d файл(ов), новых реплик %d", len(fresh), added)
         return added
+
+    async def _update_categories(self) -> None:
+        """Новые программы и сайты, на которые ушло время, — по категориям (для метрик)."""
+        if not self._due("categories", CATEGORIZE_EVERY):
+            return
+        items = metrics.uncategorized(self.store)
+        if not items:
+            return
+        try:
+            categories = await self.assistant.categorize(items)
+        except BrainError as e:
+            log.warning("Разметка программ и сайтов не удалась: %s", e)
+            return
+        self.store.set_activity_categories(categories)
+        self._mark("categories")
+        log.info("Размечено программ и сайтов: %d из %d", len(categories), len(items))
 
     async def refresh_voice(self) -> None:
         """По просьбе: стиль и голос сейчас, а не по расписанию."""
