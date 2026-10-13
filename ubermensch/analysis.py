@@ -26,6 +26,7 @@ from .collectors.telegram import TelegramAccount, TelegramLoginRequired
 from .health import Health
 from .store import Store
 from .system import windows
+from .university import lk, site
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,9 @@ TELEGRAM_WAIT = timedelta(hours=24)
 STYLE_EVERY = 7 * 24 * 3600
 STYLE_SAMPLE, STYLE_CHARS = 2500, 35_000  # свежие сообщения пользователя для описания стиля
 THINKING_CHARS = 40_000
-CATEGORIZE_EVERY = 20 * 3600  # разметка программ и сайтов — не чаще раза в сутки  # его реплики в разговорах с ИИ — как он рассуждает
+CATEGORIZE_EVERY = 20 * 3600
+UNIVERSITY_EVERY = 20 * 3600  # новости вуза и личный кабинет — раз в сутки
+NEWS_SEEN = 300  # сколько адресов уже просмотренных новостей помнить  # разметка программ и сайтов — не чаще раза в сутки  # его реплики в разговорах с ИИ — как он рассуждает
 MAX_ATTEMPTS = 3
 RETRY_PAUSE = 5 * 60
 RETRY_FAILED_AFTER = timedelta(hours=12)  # упавшие порции (сеть, сон) — снова в очередь
@@ -59,7 +62,7 @@ SOURCES = {"telegram": "Telegram", "gmail": "Почта", "chrome": "Брауз�
            "ai_chat": "Разговоры с ИИ", "activity": "Активность за компьютером",
            "document": "Документы", "creative": "Творчество", "notification": "Уведомления",
            "youtube": "YouTube", "google_search": "Поиск Google",
-           "google_activity": "Действия в сервисах Google"}
+           "google_activity": "Действия в сервисах Google", "lk": "Личный кабинет вуза"}
 TAKEOUT_DAYS = 2 * 365  # из Google Takeout берём два года: интересы видны в динамике
 GROUP_LINES = 700  # строк на сервис в месяц (просмотры, запросы, уведомления) — дальше шум
 PERSON_MIN_MESSAGES, PERSON_TOP = 300, 15  # портреты отношений: личные чаты от 300 сообщений
@@ -119,6 +122,9 @@ def _units(store: Store, source: str, start: str, end: str) -> list[str]:
                          f"От: {e['author']} <{meta.get('from', '')}>; кому: {meta.get('to', '')}\n"
                          f"{e['text'][:3000]}")
         return units
+    if source == "lk":
+        return [f"### Личный кабинет вуза: {e['thread']} (снимок {_dm(e['ts'])}.{e['ts'][:4]})\n"
+                f"{e['text'][:15_000]}" for e in events]
     if source == "document":
         return [f"### Документ: {json.loads(e['meta'] or '{}').get('path', e['thread'])} "
                 f"(изменён {_dm(e['ts'])}.{e['ts'][:4]})\n{e['text'][:12_000]}" for e in events]
@@ -412,6 +418,7 @@ class Investigation:
             except Exception:
                 log.exception("Сбор уведомлений Windows не удался")
             await self._update_categories()
+            found["lk"] = await self._collect_university()
 
             found["takeout"] = await self._collect_takeout()
             found["ai_export"] = await self._collect_ai_exports()
@@ -474,6 +481,74 @@ class Investigation:
         for path in fresh:
             self.store.record_import(path.name, key(path), "done", f"Чаты с ИИ: реплик {added}")
         log.info("Выгрузки чатов с ИИ: %d файл(ов), новых реплик %d", len(fresh), added)
+        return added
+
+    async def _collect_university(self) -> int:
+        """Раз в сутки: новости вуза и личный кабинет. Важное — сообщением пользователю,
+        страницы кабинета (новые и изменившиеся) — событиями для разбора."""
+        if not self._due("university", UNIVERSITY_EVERY):
+            return 0
+        added, ok = 0, True
+        try:
+            await self._university_news()
+        except BrainError as e:
+            ok = False
+            log.warning("Новости вуза не разобраны: %s", e)
+        except Exception as e:
+            ok = False
+            log.warning("Новости вуза не прочитаны: %s", e)
+        if lk.credentials() or lk.SESSION.exists():
+            try:
+                added = await self._university_lk()
+                self.health.clear("lk", "Личный кабинет вуза снова читается.")
+            except lk.LkUnavailable as e:
+                ok = False  # сбой у вуза — попробуем при следующем сборе, без тревоги
+                log.info("Личный кабинет недоступен: %s", e)
+            except lk.LkLoginFailed as e:
+                ok = False
+                self.health.report("lk", f"Не могу войти в личный кабинет вуза: {e}")
+            except BrainError as e:
+                ok = False
+                log.warning("Изменения в ЛК не разобраны: %s", e)
+        if ok:
+            self._mark("university")
+        return added
+
+    async def _university_news(self) -> None:
+        items = await asyncio.to_thread(site.news, 2)
+        seen = json.loads(self.store.cursor("university:news") or "null")
+        fresh = [i for i in items if seen is not None and i["url"] not in seen]
+        if fresh:  # в первый раз только запоминаем: старые новости — не новость
+            data = "\n\n".join(f"### {i['title']} ({i['date']})\n{i['text']}\n{i['url']}"
+                                for i in fresh)
+            message = await self.assistant.university_digest("свежие новости сайта вуза", data)
+            if message:
+                self.notify(f"🎓 {message}")
+        urls = [i["url"] for i in items] + [u for u in (seen or []) if u not in
+                                            {i["url"] for i in items}]
+        self.store.set_cursor("university:news", json.dumps(urls[:NEWS_SEEN]))
+
+    async def _university_lk(self) -> int:
+        old = lk.load_snapshot()
+        new = await asyncio.to_thread(lk.crawl)
+        diff = lk.changes(old, new)
+        now = datetime.now().isoformat(timespec="seconds")
+        added = self.store.add_events([{
+            "source": "lk", "external_id": f"{d['url']}|{new[d['url']]['hash']}", "ts": now,
+            "thread": d["title"] or d["url"], "text": d["text"], "meta": {"url": d["url"]},
+        } for d in diff])
+        if old and diff:
+            data = "\n\n".join(f"### {'Новая страница' if d['new'] else 'Изменилась'}: "
+                                f"{d['title']}\n{d['url']}\n{d['text'][:4000]}" for d in diff)
+            message = await self.assistant.university_digest(
+                "изменения в его личном кабинете студента", data)
+            if message:
+                self.notify(f"🎓 {message}")
+        elif not old:
+            self.notify(f"🎓 Прочитал твой личный кабинет вуза: {len(new)} страниц. Дальше буду "
+                        "смотреть его раз в день и писать, если что-то важное изменится.")
+        lk.save_snapshot(new)
+        log.info("Личный кабинет: страниц %d, новых и изменившихся %d", len(new), len(diff))
         return added
 
     async def _update_categories(self) -> None:

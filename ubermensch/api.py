@@ -14,6 +14,7 @@ from datetime import date
 from aiohttp import web
 
 from . import ingest
+from .university import lk
 from .brain import BrainError
 from .core import Core
 
@@ -145,6 +146,13 @@ def create_app(core: Core, token: str) -> web.Application:
         return await tool_call(request, lambda d: core.send_telegram(
             int(d["chat_id"]), str(d["text"])))
 
+    async def post_lk_find(request: web.Request) -> web.Response:
+        return await tool_call(request, lambda d: asyncio.to_thread(
+            lk.find, str(d["query"]), int(d.get("limit", 5))))
+
+    async def post_lk_read(request: web.Request) -> web.Response:
+        return await tool_call(request, lambda d: asyncio.to_thread(lk.read, str(d["url"])))
+
     async def post_email_send(request: web.Request) -> web.Response:
         return await tool_call(request, lambda d: core.send_email(
             str(d["to"]), str(d["subject"]), str(d["body"])))
@@ -191,6 +199,8 @@ def create_app(core: Core, token: str) -> web.Application:
         web.post("/api/tg/history", post_tg_history),
         web.post("/api/tg/send", post_tg_send),
         web.post("/api/email/send", post_email_send),
+        web.post("/api/lk/find", post_lk_find),
+        web.post("/api/lk/read", post_lk_read),
     ])
     return app
 
