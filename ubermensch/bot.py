@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import html
 import logging
 import re
@@ -37,6 +38,7 @@ COMMANDS = [
     BotCommand(command="reminders", description="Напоминания"),
     BotCommand(command="cancel", description="Отменить напоминание: /cancel 3"),
     BotCommand(command="status", description="Состояние системы"),
+    BotCommand(command="login", description="Войти в Telegram: /login или /login work"),
 ]
 
 
@@ -235,8 +237,30 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
             *_health_lines(core),
         ]))
 
+    @owner.message(Command("login"))
+    async def on_login(message: Message, command: CommandObject) -> None:
+        account = (command.args or "personal").strip().lower()
+        account = {"личный": "personal", "рабочий": "work"}.get(account, account)
+        try:
+            await send(message.bot, message.chat.id, await core.start_tg_login(account))
+        except ValueError as e:
+            await message.answer(str(e))
+
+    @owner.message(Command("login_cancel"))
+    async def on_login_cancel(message: Message) -> None:
+        core.login = None
+        await message.answer("Вход отменён.")
+
     @owner.message(F.text & ~F.text.startswith("/"))
     async def on_text(message: Message) -> None:
+        if core.login is not None:  # идёт вход в Telegram: это номер, код или пароль
+            secret = core.login["step"] in ("code", "password")
+            reply = await core.login_input(message.text)
+            if secret:  # код и пароль не оставляем в чате
+                with contextlib.suppress(Exception):
+                    await message.delete()
+            await send(message.bot, message.chat.id, reply)
+            return
         await think(message.bot, message.text)
 
     @owner.message()

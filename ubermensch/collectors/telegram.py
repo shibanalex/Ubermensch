@@ -17,7 +17,9 @@ from datetime import datetime
 from pathlib import Path
 
 from telethon import TelegramClient
-from telethon.errors import AuthKeyUnregisteredError, SessionRevokedError, UserDeactivatedError
+from telethon.errors import (AuthKeyUnregisteredError, PasswordHashInvalidError,
+                             PhoneCodeExpiredError, PhoneCodeInvalidError, PhoneNumberInvalidError,
+                             SessionPasswordNeededError, SessionRevokedError, UserDeactivatedError)
 from telethon.tl.types import (InputMessagesFilterMyMentions, MessageMediaDocument,
                                MessageMediaGeo, MessageMediaPhoto, MessageMediaPoll, User)
 
@@ -40,6 +42,7 @@ class Profile:
     id_env: str
     hash_env: str
     login_bat: str
+    phone_env: str  # номер для входа; нет в .env — Освальд спросит в боте
 
     @property
     def configured(self) -> bool:
@@ -51,9 +54,9 @@ class Profile:
 
 
 PERSONAL = Profile("personal", "личный", SESSION, "TG_API_ID", "TG_API_HASH",
-                   "telegram_login.bat")
+                   "telegram_login.bat", "TG_PHONE")
 WORK = Profile("work", "рабочий", config.DATA_DIR / "secrets" / "telegram_work",
-               "TG_WORK_API_ID", "TG_WORK_HASH", "telegram_work_login.bat")
+               "TG_WORK_API_ID", "TG_WORK_HASH", "telegram_work_login.bat", "TG_WORK_PHONE")
 PROFILES = {p.key: p for p in (PERSONAL, WORK)}
 
 
@@ -91,6 +94,10 @@ class TelegramLoginRequired(RuntimeError):
     """Нет входа: сессия не создана, завершена в настройках Telegram или удалена."""
 
 
+class LoginStepError(RuntimeError):
+    """Шаг входа не прошёл (неверный номер, код или пароль) — текст для пользователя."""
+
+
 def _sender_name(sender) -> str:
     name = getattr(sender, "first_name", None) or getattr(sender, "title", None) or "кто-то"
     if getattr(sender, "last_name", None):
@@ -108,6 +115,7 @@ class TelegramAccount:
         self.profile = profile
         self._client: TelegramClient | None = None
         self._lock = asyncio.Lock()
+        self._login: tuple[str, str] | None = None  # (номер, phone_code_hash) — идёт вход
 
     def _thread(self, name: str, kind: str) -> str:
         """Имя чата в данных; рабочие помечены, чтобы разбор понимал контекст."""
@@ -138,6 +146,62 @@ class TelegramAccount:
                 raise TelegramLoginRequired(f"нет входа в {self.profile.label} Telegram — "
                                             f"запусти {self.profile.login_bat}")
             return self._client
+
+    # --- вход (Освальд входит сам, код пользователь присылает в бота) ---
+
+    async def _connected(self) -> TelegramClient:
+        if self._client is None:
+            self._client = client(self.profile)
+        if not self._client.is_connected():
+            await self._client.connect()
+        return self._client
+
+    async def authorized(self) -> bool:
+        async with self._lock:
+            try:
+                return await (await self._connected()).is_user_authorized()
+            except (AuthKeyUnregisteredError, SessionRevokedError, UserDeactivatedError):
+                return False
+
+    async def send_code(self, phone: str) -> None:
+        """Шаг 1: Telegram присылает код в приложение (или SMS)."""
+        async with self._lock:
+            tg = await self._connected()
+            try:
+                sent = await tg.send_code_request(phone)
+            except PhoneNumberInvalidError:
+                raise LoginStepError("Telegram не принял номер — пришли его в формате +79991234567")
+            self._login = (phone, sent.phone_code_hash)
+
+    async def enter_code(self, code: str) -> bool:
+        """Шаг 2: код. True — вошли, False — нужен облачный пароль."""
+        if self._login is None:
+            raise LoginStepError("Код уже не нужен — вход не начат")
+        phone, code_hash = self._login
+        async with self._lock:
+            tg = await self._connected()
+            try:
+                await tg.sign_in(phone=phone, code=code, phone_code_hash=code_hash)
+            except SessionPasswordNeededError:
+                return False
+            except PhoneCodeInvalidError:
+                raise LoginStepError("Код не подошёл — проверь и пришли ещё раз (с пробелами)")
+            except PhoneCodeExpiredError:
+                self._login = None
+                raise LoginStepError("Код устарел — Telegram мог сбросить его, если он ушёл в "
+                                     "чат целиком. Начну вход заново: /login")
+        self._login = None
+        return True
+
+    async def enter_password(self, password: str) -> None:
+        """Шаг 3: облачный пароль (двухэтапная проверка)."""
+        async with self._lock:
+            tg = await self._connected()
+            try:
+                await tg.sign_in(password=password)
+            except PasswordHashInvalidError:
+                raise LoginStepError("Пароль не подошёл — пришли ещё раз")
+        self._login = None
 
     # --- действия ---
 

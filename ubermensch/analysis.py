@@ -352,6 +352,7 @@ class Investigation:
         self.store = store
         self.assistant = assistant
         self.telegrams = telegrams  # личный и рабочий
+        self.on_login_required = None  # ядро: начать вход в аккаунт (код — через бота)
         self.health = health
         self.import_dir = config.DATA_DIR / "raw" / "import"
         self.notify = notify  # сообщение пользователю (маскот + Telegram)
@@ -412,9 +413,10 @@ class Investigation:
                     found[key], _ = await account.collect(self.store, since)
                     self.health.clear(key, f"{profile.label.capitalize()} Telegram снова на связи.")
                 except TelegramLoginRequired:
-                    self.health.report(key, f"Нет входа в {profile.label} Telegram (сессия не "
-                                       f"создана, завершена или удалена). Запусти "
-                                       f"{profile.login_bat} в папке проекта.")
+                    self.health.report(key, f"Нет входа в {profile.label} Telegram — вхожу сам, "
+                                       "жду код в боте (или /login).")
+                    if self.on_login_required:
+                        await self.on_login_required(profile.key)
                 except Exception:
                     log.exception("Сбор Telegram (%s) не удался", profile.label)
             if any(a.profile.configured for a in self.telegrams.values()):

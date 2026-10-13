@@ -24,6 +24,22 @@ DOCUMENTS_DIR = Path(os.getenv("OSWALD_DOCUMENTS", str(Path.home() / "Documents"
 FREE_ZONES = (DATA_DIR / "workspace", OBSIDIAN_DIR, DOCUMENTS_DIR)
 
 
+# С ПК и системой Освальд работает без подтверждения. Исключение — места, где ошибка ломает
+# Windows, программы или самого Освальда (его память, ключи и код): там — «да/нет».
+PROTECTED = (Path(os.environ.get("SystemRoot", r"C:\Windows")),
+             Path(os.environ.get("ProgramFiles", r"C:\Program Files")),
+             Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")),
+             DATA_DIR, PROJECT_DIR)
+
+
+def is_protected(path: Path) -> bool:
+    """Системные папки, память и код Освальда — кроме его свободных зон (рабочая папка и т. п.)."""
+    target = path.expanduser().resolve()
+    if in_free_zone(target):
+        return False
+    return any(p.resolve() == target or p.resolve() in target.parents for p in PROTECTED)
+
+
 def in_free_zone(path: Path) -> bool:
     target = path.expanduser().resolve()
     return any(zone.resolve() == target or zone.resolve() in target.parents for zone in FREE_ZONES)

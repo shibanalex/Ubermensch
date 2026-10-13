@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,7 +26,7 @@ from . import actions, config, ingest, mail, metrics
 from .analysis import SOURCES
 from .assistant import ONBOARDING_EVENT, Assistant, Outcome
 from .brain import BrainError
-from .collectors.telegram import PROFILES, TelegramAccount
+from .collectors.telegram import PROFILES, LoginStepError, TelegramAccount
 from .health import Health
 from .services import Supervisor
 from .store import Store
@@ -73,6 +74,7 @@ class Core:
         self.telegram = self.telegrams["personal"]
         self._brain_calls = 0  # счётчик, а не флаг: вызовы могут стоять в очереди друг за другом
         self._approvals: dict[int, asyncio.Future] = {}  # действия, ждущие «да/нет»
+        self.login: dict | None = None  # идёт вход в Telegram: {"account", "step"}
 
     @property
     def thinking(self) -> bool:
@@ -143,6 +145,69 @@ class Core:
             self._approvals.pop(action_id, None)
 
     # --- действия от имени пользователя (всё внешнее — только после «да») ---
+
+    # --- вход в Telegram: Освальд входит сам, номер, код и пароль присылают в бота ---
+
+    async def start_tg_login(self, account: str = "personal") -> str:
+        """Начать вход (сессии нет или она слетела). Возвращает, что сказать пользователю."""
+        tg = self.tg(account)
+        if await tg.authorized():
+            return f"В {tg.profile.label} Telegram я уже вошёл."
+        if self.login and self.login["account"] == account:
+            return self._login_prompt()
+        phone = os.getenv(tg.profile.phone_env, "").strip()
+        self.login = {"account": account, "step": "phone"}
+        if phone:
+            return await self.login_input(phone, from_env=True)
+        return self._login_prompt()
+
+    def _login_prompt(self) -> str:
+        label = self.telegrams[self.login["account"]].profile.label
+        return {
+            "phone": f"🔑 Нужен вход в {label} Telegram. Пришли номер этого аккаунта "
+                     "(+79991234567).",
+            "code": f"🔑 Telegram прислал код для входа в {label} аккаунт. Пришли его сюда "
+                    "**с пробелами или дефисами** (например, 1 2 3 4 5) — целый код Telegram "
+                    "сбросит. Отмена — /login_cancel.",
+            "password": f"🔑 Этот аккаунт ({label}) защищён облачным паролем. Пришли его одним "
+                        "сообщением — "
+                        "я сразу удалю его из чата.",
+        }[self.login["step"]]
+
+    async def login_input(self, text: str, from_env: bool = False) -> str:
+        """Очередной шаг входа: номер, код или пароль."""
+        tg = self.tg(self.login["account"])
+        step = self.login["step"]
+        try:
+            if step == "phone":
+                phone = "+" + re.sub(r"\D", "", text)
+                if not 11 <= len(phone) <= 16:
+                    return "Не похоже на номер — пришли в формате +79991234567."
+                await tg.send_code(phone)
+                self.login["step"] = "code"
+            elif step == "code":
+                code = re.sub(r"\D", "", text)
+                if not 5 <= len(code) <= 6:
+                    return "Не похоже на код — пришли цифры кода (5–6 штук) с пробелами."
+                if not await tg.enter_code(code):
+                    self.login["step"] = "password"
+                    return self._login_prompt()
+                return await self._login_done(tg)
+            else:
+                await tg.enter_password(text.strip())
+                return await self._login_done(tg)
+        except LoginStepError as e:
+            if "заново" in str(e):
+                self.login = None
+            return f"⚠️ {e}"
+        return self._login_prompt()
+
+    async def _login_done(self, tg: TelegramAccount) -> str:
+        self.login = None
+        key = "telegram" if tg.profile.personal else f"telegram_{tg.profile.key}"
+        self.health.clear(key, f"{tg.profile.label.capitalize()} Telegram снова на связи.")
+        asyncio.create_task(self.investigation.collect())  # сразу собрать переписки
+        return f"✅ Вошёл в {tg.profile.label} Telegram. Начинаю читать чаты."
 
     def tg(self, account: str = "personal") -> TelegramAccount:
         if account not in self.telegrams:

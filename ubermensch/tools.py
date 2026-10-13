@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import urllib.request
 from pathlib import Path
 from typing import Literal
@@ -27,8 +28,9 @@ Account = Literal["personal", "work"]  # личный или рабочий Tele
 mcp = MCPServer(
     "ubermensch",
     instructions="Инструменты для действий на компьютере пользователя и от его имени. "
-                 "Отправка сообщений и писем, изменение файлов и системы требуют подтверждения "
-                 "пользователя — инструмент сам спросит его и вернёт результат.",
+                 "С ПК и файлами работай сам. Подтверждения пользователя требуют только "
+                 "сообщения и письма людям и опасное для системы (диски, учётные записи, "
+                 "системные папки) — инструмент сам спросит его и вернёт результат.",
 )
 
 
@@ -102,26 +104,27 @@ async def find_files(name_part: str, folder: str | None = None, limit: int = 30)
 
 @mcp.tool()
 async def run_powershell(command: str, reason: str) -> str:
-    """Выполнить команду PowerShell. Команды только на чтение (Get-*, Test-Path …) выполняются сразу,
-    всё, что меняет систему, — после подтверждения пользователя. reason — зачем это нужно."""
-    if not shell.is_read_only(command) and \
-            not await _ask("Выполнить команду PowerShell", f"{reason}\n\n{command}"):
+    """Выполнить команду PowerShell — сразу, в том числе меняющую настройки. Подтверждение
+    нужно только опасным: диски, загрузка, выключение, учётные записи, антивирус, системные
+    папки, память и код Освальда. reason — зачем это нужно."""
+    if shell.is_dangerous(command) and \
+            not await _ask("Опасная команда PowerShell", f"{reason}\n\n{command}"):
         return "Пользователь не разрешил выполнить команду."
     return await asyncio.to_thread(shell.powershell, command)
 
 
 async def _may_write(target: Path, preview: str) -> bool:
-    """В своих зонах Освальд пишет сам, в остальных местах — после «да» пользователя."""
-    if config.in_free_zone(target):
+    """Освальд пишет сам где угодно, кроме системных папок, своей памяти и кода — там «да»."""
+    if not config.is_protected(target):
         return True
     verb = "Перезаписать файл" if target.exists() else "Создать файл"
-    return await _ask(f"{verb} {target}", preview[:1500])
+    return await _ask(f"{verb} в защищённой папке: {target}", preview[:1500])
 
 
 @mcp.tool()
 async def write_file(path: str, content: str) -> str:
-    """Создать или перезаписать текстовый файл (.md, .txt …). В своих зонах (заметки Obsidian,
-    «Документы\\Oswald», рабочая папка) — сразу, в остальных местах — после подтверждения."""
+    """Создать или перезаписать текстовый файл (.md, .txt …) — сразу. Свои заметки — в зонах
+    (Obsidian, «Документы\\Oswald»); системные папки и память Освальда — только с «да»."""
     target = Path(path).expanduser().resolve()
     if not await _may_write(target, content):
         return "Пользователь не разрешил запись."
@@ -146,7 +149,7 @@ async def append_file(path: str, text: str) -> str:
 @mcp.tool()
 async def write_word(path: str, title: str, markdown: str) -> str:
     """Создать документ Word (.docx) из простого Markdown (# заголовки, - списки, **жирный**).
-    В «Документы\\Oswald» — сразу, в остальных местах — после подтверждения."""
+    Сразу; свои документы — в «Документы\\Oswald»."""
     target = Path(path).expanduser().resolve().with_suffix(".docx")
     if not await _may_write(target, markdown):
         return "Пользователь не разрешил запись."
@@ -157,7 +160,7 @@ async def write_word(path: str, title: str, markdown: str) -> str:
 @mcp.tool()
 async def write_excel(path: str, sheet: str, rows: list[list], append: bool = False) -> str:
     """Записать лист таблицы Excel (.xlsx): rows — строки, первая — заголовки. append=true — дописать
-    строки в конец листа (например, расходы). В «Документы\\Oswald» — сразу, иначе — с подтверждением."""
+    строки в конец листа (например, расходы). Сразу; свои таблицы — в «Документы\\Oswald»."""
     target = Path(path).expanduser().resolve().with_suffix(".xlsx")
     if not await _may_write(target, "\n".join(map(str, rows[:20]))):
         return "Пользователь не разрешил запись."
@@ -228,18 +231,22 @@ async def calendar_delete(event_id: str) -> str:
 
 @mcp.tool()
 async def move_path(source: str, destination: str) -> str:
-    """Переместить или переименовать файл/папку — после подтверждения пользователя."""
-    if not await _ask("Переместить", f"{source}\n→ {destination}"):
+    """Переместить или переименовать файл/папку — сразу (из системных папок и памяти Освальда
+    и туда — только с «да»)."""
+    if (config.is_protected(Path(source)) or config.is_protected(Path(destination))) and \
+            not await _ask("Переместить в защищённой папке", f"{source}\n→ {destination}"):
         return "Пользователь не разрешил перемещение."
     Path(destination).parent.mkdir(parents=True, exist_ok=True)
-    Path(source).rename(destination)
+    await asyncio.to_thread(shutil.move, source, destination)  # и между дисками
     return f"Перемещено в {destination}"
 
 
 @mcp.tool()
 async def delete_to_recycle_bin(path: str) -> str:
-    """Удалить файл или папку в Корзину (восстановимо) — после подтверждения пользователя."""
-    if not await _ask("Удалить в Корзину", path):
+    """Удалить файл или папку в Корзину (восстановимо) — сразу; в системных папках и памяти
+    Освальда — только с «да»."""
+    if config.is_protected(Path(path)) and not await _ask("Удалить в Корзину из защищённой "
+                                                          "папки", path):
         return "Пользователь не разрешил удаление."
     await asyncio.to_thread(shell.to_recycle_bin, path)
     return f"В Корзине: {path}"

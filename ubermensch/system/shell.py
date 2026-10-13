@@ -18,8 +18,28 @@ MUTATING = re.compile(
     r"|>|\|\s*(sh|bash|cmd)\b")
 
 
+# Команды, которые могут сломать систему, данные или доступ: их Освальд выполняет только с «да».
+DANGEROUS = re.compile(
+    r"(?i)\b(format|diskpart|bcdedit|vssadmin|wbadmin|cipher\s+/w|bootrec|sfc|dism|"
+    r"shutdown|logoff)\b"
+    r"|\b(Format-Volume|Clear-Disk|Initialize-Disk|Remove-Partition|Resize-Partition|"
+    r"Stop-Computer|Restart-Computer|Remove-LocalUser|Set-LocalUser|New-LocalUser|"
+    r"Add-LocalGroupMember|Set-MpPreference|Add-MpPreference|Set-ExecutionPolicy|"
+    r"Disable-ComputerRestore|Set-Service|Remove-Service)\b"
+    r"|\bnet\s+(user|localgroup)\b|\breg\s+(delete|import)\b|Remove-Item\s+.*HKLM:"
+    r"|\bTurnOff|DisableAntiSpyware|DisableRealtimeMonitoring")
+PROTECTED_WORDS = re.compile(r"(?i)\\Windows\b|Program Files|Ubermensch|Übermensch|\.env\b")
+
+
 def is_read_only(command: str) -> bool:
     return not MUTATING.search(command)
+
+
+def is_dangerous(command: str) -> bool:
+    """Опасно: ломает систему или доступ — или меняет что-то в системных папках, памяти и
+    коде Освальда. Остальное (в том числе меняющее) Освальд делает сам."""
+    return bool(DANGEROUS.search(command)) or (
+        not is_read_only(command) and bool(PROTECTED_WORDS.search(command)))
 
 
 def powershell(command: str, timeout: int = 120) -> str:
