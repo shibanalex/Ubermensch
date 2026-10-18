@@ -16,11 +16,12 @@ from .analysis import Investigation
 from .assistant import Assistant
 from .brain import Brain
 from .openai_brain import OpenAIBrain
-from .collectors import notifications
+from .collectors import listening, notifications
 from .collectors.activity import ActivityTracker
 from .core import Core
 from .maintenance import Maintenance
 from .observer import ScreenObserver
+from .interview import Interviewer
 from .profiling import Profiler
 from .store import Store
 from .system import session
@@ -79,6 +80,8 @@ async def _serve(settings: config.Settings) -> None:
     services.add("обслуживание", Maintenance(settings.db_path, core.health).run)
     core.profiler = Profiler(settings, store, assistant, core.investigation, core.notify)
     services.add("профиль", core.profiler.run)
+    core.interviewer = Interviewer(store, core.notify)
+    services.add("интервью", core.interviewer.run)
 
     runner = await api.start(core, config.api_token(create=True), config.API_HOST, config.API_PORT)
     services.start()
@@ -119,7 +122,7 @@ def main() -> None:
     settings = config.load()
     _setup_logging(settings)
     lock = _single_instance(settings)  # noqa: F841 — держим файл открытым до выхода
-    session.start(notifications.FOLDER)  # активное окно, простой, уведомления
+    session.start(notifications.FOLDER, listening.FOLDER)  # окно, простой, уведомления, музыка
     logging.info("Старт. Данные: %s, Claude: %s", settings.data_dir, settings.claude_bin)
     asyncio.run(_serve(settings))
 

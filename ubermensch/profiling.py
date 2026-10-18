@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import behavior, config
+from . import behavior, config, interview
 from .brain import BrainError
 from .personalization import (AnalysisClaim, AnalysisSection, EvidenceQuote, SupportRule,
                               UserProfile, load_profile, render_report, save_profile)
@@ -85,7 +85,7 @@ CONFIDENCE = ("high", "medium", "low")
 # Источники, которые читаются целиком; остальное — только собственные реплики пользователя.
 MAPPED_SOURCES = {"telegram", "ai_chat", "gmail", "document", "creative", "notification",
                   "screen", "messages", "facts", "people", "goals", "tasks", "job_summaries",
-                  "metrics", "imports", "obsidian"}
+                  "metrics", "imports", "obsidian", "feedback"}
 BY_MONTH = {"telegram", "gmail", "ai_chat", "notification", "messages", "obsidian"}
 VIA_SUMMARIES = ("youtube", "google_activity", "google_search", "chrome", "activity")
 LABELS = {"telegram": "Telegram", "ai_chat": "разговоры с ИИ", "gmail": "почта",
@@ -94,7 +94,8 @@ LABELS = {"telegram": "Telegram", "ai_chat": "разговоры с ИИ", "gmai
           "people": "память Ани: люди", "goals": "цели", "tasks": "задачи",
           "job_summaries": "сводки прежнего разбора", "metrics": "поведение в цифрах",
           "imports": "импортированные файлы", "youtube": "свои комментарии на YouTube",
-          "obsidian": "его заметки и дневник в Obsidian"}
+          "obsidian": "его заметки и дневник в Obsidian",
+          "feedback": "его поправки к прошлому профилю"}
 
 MAP_TASK = (
     "[Системная задача: наблюдения для профиля.] В <data> — порция записей; у каждой номер в "
@@ -366,6 +367,11 @@ def _claims_listing(sections: list[AnalysisSection]) -> str:
     return "\n".join(lines)
 
 
+def _derive(db) -> list[dict]:
+    """Производные записи снимка: метрики поведения и поправки пользователя к профилю."""
+    return behavior.derive(db) + interview.feedback_evidence()
+
+
 class Profiler:
     """Фоновая служба: строит и раз в неделю обновляет профиль пользователя."""
 
@@ -489,7 +495,7 @@ class Profiler:
         for old in (self.base / "corpus").glob("*") if (self.base / "corpus").is_dir() else ():
             await asyncio.to_thread(shutil.rmtree, old, True)
         manifest = await asyncio.to_thread(prepare_corpus, self.settings.db_path,
-                                           corpus_dir, derive=behavior.derive)
+                                           corpus_dir, derive=_derive)
         windows = await asyncio.to_thread(build_windows, corpus_dir)
         self.state = {"stage": "наблюдения", "done": 0, "total": len(windows)}
         log.info("Профиль: снимок %s, окон %d", manifest["corpus_id"][:8], len(windows))
@@ -514,9 +520,16 @@ class Profiler:
                 sections.append(AnalysisSection(id=dimension[0], title=dimension[1],
                                                 unknowns=["В данных нет наблюдений по этому измерению."]))
                 continue
+            rejected = [f"- {i['claim']}" + (f" (он: {i['comment']})" if i.get("comment") else "")
+                        for i in interview.feedback() if i["verdict"] == "wrong"
+                        and i["claim_id"].split(".")[0] == dimension[0]]
+            rejected_block = ("\n\n<rejected note=\"он сказал, что это про него неверно: не "
+                              "повторяй без новых, более сильных оснований\">\n"
+                              + "\n".join(rejected) + "\n</rejected>") if rejected else ""
             await self._turn()
             data = await self._ask(
-                f"<data source=\"наблюдения: {dimension[1]}\">\n{listing}\n</data>\n\n<message>\n"
+                f"<data source=\"наблюдения: {dimension[1]}\">\n{listing}\n</data>{rejected_block}"
+                f"\n\n<message>\n"
                 f"{SECTION_TASK.format(title=dimension[1], focus=dimension[2])}\n</message>",
                 SECTION_SCHEMA)
             sections.append(build_section(dimension, data, by_id))

@@ -217,11 +217,58 @@ def _volume(db: sqlite3.Connection) -> dict[str, str]:
     return result
 
 
+def _music(db: sqlite3.Connection) -> dict[str, str]:
+    """Что слушал: самые частые исполнители и треки за месяц (по журналу плееров)."""
+    artists: dict[str, Counter] = defaultdict(Counter)
+    tracks: dict[str, Counter] = defaultdict(Counter)
+    for month, text in db.execute("SELECT substr(ts,1,7), text FROM events WHERE source='music'"):
+        tracks[month][text] += 1
+        if " — " in text:
+            artists[month][text.split(" — ", 1)[0]] += 1
+    result = {}
+    for month, counter in sorted(tracks.items()):
+        line = f"Прослушиваний (треков и видео в плеерах): {sum(counter.values())}."
+        if artists[month]:
+            line += " Чаще всего: " + ", ".join(f"{a} ({n})" for a, n in artists[month].most_common(TOP)) + "."
+        line += " Треки: " + "; ".join(f"{t} ({n})" for t, n in counter.most_common(TOP)) + "."
+        result[month] = line
+    return result
+
+
+def _laptop_sleep(db: sqlite3.Connection) -> dict[str, str]:
+    """Сон ноутбука по системному журналу: точные «не за компьютером»."""
+    nights: dict[str, list[tuple[datetime, datetime]]] = defaultdict(list)
+    naps: Counter = Counter()
+    for ts, meta in db.execute("SELECT ts, meta FROM events WHERE source='power'"):
+        start = _parse(ts)
+        try:
+            until = _parse(json.loads(meta or "{}").get("until", ""))
+        except ValueError:
+            until = None
+        if not start or not until:
+            continue
+        if until - start >= timedelta(hours=3) and (start.hour >= 18 or start.hour < 9):
+            nights[ts[:7]].append((start, until))
+        else:
+            naps[ts[:7]] += 1
+    result = {}
+    for month in sorted(set(nights) | set(naps)):
+        line = f"Ноутбук засыпал днём ненадолго {naps[month]} раз."
+        if nights.get(month):
+            starts = [_clock(s, 12) for s, _ in nights[month]]
+            ends = [_clock(u) for _, u in nights[month]]
+            line = (f"Ночной сон ноутбука (журнал): {len(nights[month])} ночей, уснул — медиана "
+                    f"{_hm(median(starts) + 720)}, проснулся — {_hm(median(ends))}. " + line)
+        result[month] = line
+    return result
+
+
 def derive(db: sqlite3.Connection) -> list[dict]:
     """Записи-метрики для корпуса профиля."""
     moments = _moments(db)
     kinds = (("rhythm", "Ритм дня и сна", _rhythm(moments, _youtube_nights(db))), ("screen", "Экранное время", _screen(db)),
-             ("social", "Общение", _social(db)), ("volume", "Внимание и творчество", _volume(db)))
+             ("social", "Общение", _social(db)), ("volume", "Внимание и творчество", _volume(db)),
+             ("music", "Музыка", _music(db)), ("laptop", "Сон ноутбука", _laptop_sleep(db)))
     items = []
     for kind, title, months in kinds:
         for month, text in months.items():

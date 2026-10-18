@@ -24,7 +24,7 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from . import actions, config, ingest, mail, metrics, world
+from . import actions, config, ingest, interview, mail, metrics, world
 from .analysis import SOURCES
 from .assistant import ONBOARDING_EVENT, Assistant, Outcome
 from .brain import BrainError
@@ -74,6 +74,7 @@ class Core:
         self.bus = Bus()
         self.investigation: Investigation  # подключается при запуске, до старта API
         self.profiler = None  # profiling.Profiler, подключается при запуске
+        self.interviewer = None  # interview.Interviewer, подключается при запуске
         self.health = Health(self.notify)  # известные проблемы и что с ними делать
         self.supervisor = Supervisor(self.health)  # фоновые сервисы с перезапуском
         # один клиент на сессию: и для сбора, и для действий; личный и рабочий аккаунты
@@ -110,6 +111,8 @@ class Core:
 
     async def chat(self, text: str, channel: str, *, from_user: bool = True) -> Outcome:
         self.investigation.touch()  # фоновый разбор притихнет и не съест лимит разговора
+        if from_user:
+            interview.record_answer(text)  # ответ на вопрос интервью, если он был
         with self._brain_busy():
             outcome = await self.assistant.handle(text, channel=channel, from_user=from_user)
             if outcome.emotion and outcome.emotion != "neutral":

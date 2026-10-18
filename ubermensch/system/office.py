@@ -62,3 +62,25 @@ def read_excel(path: Path, max_rows: int = 200) -> dict[str, list[list]]:
     book = load_workbook(path, read_only=True, data_only=True)
     return {name: [list(r) for r in book[name].iter_rows(values_only=True)][:max_rows]
             for name in book.sheetnames}
+
+
+def excel_text(path: Path, max_rows: int = 2000) -> str:
+    """Таблица текстом для разбора: лист → строки «ячейка | ячейка», пустые строки пропущены,
+    даты — ГГГГ-ММ-ДД."""
+    book = load_workbook(path, read_only=True, data_only=True)
+    parts = []
+    for name in book.sheetnames:
+        lines = []
+        for row in book[name].iter_rows(values_only=True):
+            cells = ["" if v is None else v.date().isoformat() if hasattr(v, "date") and
+                     callable(v.date) and hasattr(v, "hour") else str(v) for v in row]
+            while cells and not cells[-1]:
+                cells.pop()
+            if any(cells):
+                lines.append(" | ".join(cells))
+            if len(lines) >= max_rows:
+                break
+        if lines:
+            parts.append(f"## Лист «{name}»\n" + "\n".join(lines))
+    book.close()
+    return "\n\n".join(parts)

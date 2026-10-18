@@ -49,8 +49,9 @@ _state = _State()
 
 # --- в ядре ---
 
-def start(notifications_dir: Path | None = None) -> None:
-    """Поднять сенсоры в этом процессе: D-Bus-сервис, скрипт KWin, простой, уведомления."""
+def start(notifications_dir: Path | None = None, music_dir: Path | None = None) -> None:
+    """Поднять сенсоры в этом процессе: D-Bus-сервис, скрипт KWin, простой, уведомления,
+    музыка (что играет в плеерах MPRIS)."""
     if _state.running:
         return
     _state.running = True
@@ -61,6 +62,9 @@ def start(notifications_dir: Path | None = None) -> None:
     if notifications_dir:
         threading.Thread(target=_watch_notifications, args=(notifications_dir,),
                          name="session-notifications", daemon=True).start()
+    if music_dir:
+        threading.Thread(target=_watch_music, args=(music_dir,), name="session-music",
+                         daemon=True).start()
     _load_kwin_script()
 
 
@@ -233,6 +237,35 @@ def _watch_notifications(folder: Path) -> None:
                 journal.write(json.dumps(record, ensure_ascii=False) + "\n")
         except OSError:
             log.warning("Сеанс: не удалось записать уведомление", exc_info=True)
+
+
+MUSIC_EVERY = 15  # с, опрос плееров: трек короче этого не попадёт — и ладно
+
+
+def _watch_music(folder: Path) -> None:
+    """Каждый новый трек, который играет (не на паузе), — строка в <folder>/ГГГГ-ММ-ДД.jsonl."""
+    from . import plasma  # plasma импортирует этот модуль
+
+    last: dict[str, str] = {}  # плеер → последний записанный трек
+    while True:
+        try:
+            playing = plasma.now_playing()
+        except Exception:
+            playing = []
+        for item in playing:
+            track = f"{item['artist']} — {item['title']}" if item["artist"] else item["title"]
+            if item["status"] != "Playing" or not item["title"] or last.get(item["player"]) == track:
+                continue
+            last[item["player"]] = track
+            now = datetime.now()
+            try:
+                folder.mkdir(parents=True, exist_ok=True)
+                with open(folder / f"{now:%Y-%m-%d}.jsonl", "a", encoding="utf-8") as journal:
+                    journal.write(json.dumps({"ts": now.isoformat(timespec="seconds"), **item},
+                                             ensure_ascii=False) + "\n")
+            except OSError:
+                log.warning("Сеанс: не удалось записать трек", exc_info=True)
+        time.sleep(MUSIC_EVERY)
 
 
 def _local_idle() -> float:

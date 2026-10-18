@@ -39,6 +39,7 @@ COMMANDS = [
     BotCommand(command="cancel", description="Отменить напоминание: /cancel 3"),
     BotCommand(command="status", description="Состояние системы"),
     BotCommand(command="profile", description="Мой профиль: /profile или /profile обновить"),
+    BotCommand(command="question", description="Задай мне вопрос обо мне"),
     BotCommand(command="login", description="Войти в Telegram: /login или /login work"),
 ]
 
@@ -258,6 +259,12 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
         else:
             lines.append("Готового профиля пока нет.")
         await send(message.bot, message.chat.id, "\n".join(lines))
+
+    @owner.message(Command("question"))
+    async def on_question(message: Message) -> None:
+        if core.interviewer is None or core.interviewer.ask() is None:
+            await send(message.bot, message.chat.id, "Вопросов пока нет: профиль ещё строится "
+                       "или я уже обо всём спросила. Загляну в данные — появятся новые.")
 
     @owner.message(Command("login"))
     async def on_login(message: Message, command: CommandObject) -> None:

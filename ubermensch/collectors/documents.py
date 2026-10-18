@@ -1,4 +1,4 @@
-"""Документы пользователя: docx, pdf, txt, md из личных папок.
+"""Документы пользователя: docx, pdf, txt, md, xlsx из личных папок.
 
 Папки проектов (где есть .git, package.json, pyproject.toml) пропускаются целиком:
 там README и код, а не жизнь пользователя.
@@ -14,7 +14,7 @@ from .. import config
 from . import local_iso
 
 ROOTS = [*config.PERSONAL_DIRS, *config.EXTRA_ROOTS]
-EXTENSIONS = {".docx", ".pdf", ".txt", ".md"}
+EXTENSIONS = {".docx", ".pdf", ".txt", ".md", ".xlsx"}
 SKIP_DIRS = {"node_modules", ".venv", "venv", "__pycache__", "site-packages", "AppData", "dist",
              "build", ".idea", ".vscode", ".cache", "snap", "Übermensch_Project", "Messenger", "gallery-admin"}
 PROJECT_MARKERS = {".git", "package.json", "pyproject.toml", "requirements.txt"}
@@ -32,6 +32,9 @@ def _read(path: Path) -> str:
         for table in document.tables:
             parts += [" | ".join(cell.text for cell in row.cells) for row in table.rows]
         return "\n".join(parts)
+    if suffix == ".xlsx":
+        from ..system.office import excel_text
+        return excel_text(path)
     if suffix == ".pdf":
         from pypdf import PdfReader
         reader = PdfReader(str(path))

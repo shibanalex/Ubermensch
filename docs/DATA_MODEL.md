@@ -300,6 +300,7 @@ SQLite ID локален для одной БД. UUID `run_id` инструме�
   raw/import/                 входящие файлы и экспорты
   raw/lk/snapshot.json        снимок личного кабинета
   raw/notifications/          уведомления с D-Bus по дням (ГГГГ-ММ-ДД.jsonl, 30 дней)
+  raw/listening/              что играло в плеерах, по дням (ГГГГ-ММ-ДД.jsonl, 60 дней)
   workspace/
     mcp.json                  генерируемая конфигурация MCP
     system_prompt*.md         генерируемые промпты
@@ -318,6 +319,8 @@ SQLite ID локален для одной БД. UUID `run_id` инструме�
     versions/<id>/            profile.json, profile.md, manifest.json (неизменяемы)
     corpus/<время>/           последний снимок для профиля: snapshot.db, evidence.sqlite
     map/<sha256>.json         кеш наблюдений по окнам
+    interview.json            заданные вопросы и ответы
+    feedback.json             поправки пользователя к выводам профиля
 
 <OBSIDIAN_VAULT>/             хранилище пользователя: Аня читает (кроме 99 Assets, 90 Templates)
   08 AI/Reports/              её отчёты: Профиль.md, Досье.md, Конспекты/, заметки

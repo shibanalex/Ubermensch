@@ -365,6 +365,48 @@ def render_context(profile: UserProfile, query: str = "", max_chars: int = CONTE
     return _context_json(view)
 
 
+def apply_feedback(profile: UserProfile, items: list[dict]) -> UserProfile:
+    """Поправки пользователя поверх опубликованной версии (последняя оценка главнее):
+    неверные выводы и правила, опирающиеся на них, убираются; устаревшие помечаются;
+    подтверждённые получают высокую уверенность."""
+    verdicts = {i["claim_id"]: i for i in items if i.get("profile_id") == profile.profile_id}
+    if not verdicts:
+        return profile
+    sections = []
+    for section in profile.sections:
+        claims = []
+        for claim in section.claims:
+            item = verdicts.get(claim.id)
+            if item is None:
+                claims.append(claim)
+            elif item["verdict"] == "right":
+                claims.append(claim.model_copy(update={"confidence": "high",
+                                                       "needs_confirmation": False}))
+            elif item["verdict"] == "outdated":
+                note = "Пользователь: это устарело" + (f" — {item['comment']}" if item.get("comment") else "")
+                claims.append(claim.model_copy(update={
+                    "contradictions": [*claim.contradictions, note][:50],
+                    "needs_confirmation": False}))
+        sections.append(section.model_copy(update={"claims": claims}))
+    kept = {c.id for s in sections for c in s.claims}
+    rules = [r for r in profile.support_rules if set(r.basis_claim_ids) <= kept]
+    corrections = [f"Пользователь: «{i['claim']}» — неверно" + (f"; на самом деле: {i['comment']}"
+                   if i.get("comment") else "") for i in verdicts.values() if i["verdict"] == "wrong"]
+    return profile.model_copy(update={
+        "sections": sections, "support_rules": rules,
+        "recent_changes": [*corrections, *profile.recent_changes][:200]})
+
+
+def read_feedback(data_dir: Path) -> list[dict]:
+    try:
+        items = json.loads((Path(data_dir) / "personalization" / "feedback.json").read_text("utf-8"))
+        return items if isinstance(items, list) else []
+    except (OSError, ValueError):
+        return []
+
+
 def context_for(data_dir: Path, query: str = "", max_chars: int = CONTEXT_CHARS) -> str:
     profile = load_profile(data_dir)
-    return render_context(profile, query, max_chars) if profile is not None else ""
+    if profile is None:
+        return ""
+    return render_context(apply_feedback(profile, read_feedback(data_dir)), query, max_chars)

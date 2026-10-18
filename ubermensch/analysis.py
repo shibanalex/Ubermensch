@@ -21,8 +21,8 @@ from datetime import date, datetime, timedelta
 from . import config, ingest, metrics
 from .assistant import HELPER_SOURCES, Assistant
 from .brain import BrainError
-from .collectors import (ai_chats, chrome, creative, documents, gmail, notifications, obsidian,
-                         takeout)
+from .collectors import (ai_chats, chrome, creative, documents, gmail, listening, notifications,
+                         obsidian, power, takeout)
 from .collectors.telegram import TelegramAccount, TelegramLoginRequired
 from .health import Health
 from .store import Store
@@ -66,7 +66,7 @@ SOURCES = {"telegram": "Telegram", "gmail": "Почта", "chrome": "Брауз�
            "document": "Документы", "creative": "Творчество", "notification": "Уведомления",
            "youtube": "YouTube", "google_search": "Поиск Google",
            "google_activity": "Действия в сервисах Google", "lk": "Личный кабинет вуза",
-           "obsidian": "Заметки и дневник (Obsidian)"}
+           "obsidian": "Заметки и дневник (Obsidian)", "music": "Что слушал (плееры)"}
 TAKEOUT_DAYS = 2 * 365  # из Google Takeout берём два года: интересы видны в динамике
 GROUP_LINES = 700  # строк на сервис в месяц (просмотры, запросы, уведомления) — дальше шум
 PERSON_MIN_MESSAGES, PERSON_TOP = 300, 15  # портреты отношений: личные чаты от 300 сообщений
@@ -151,7 +151,7 @@ def _units(store: Store, source: str, start: str, end: str) -> list[str]:
         sites = [f"- {host}: {len(days[host])} дн. — " + "; ".join(titles[host]) for host in top]
         return ["### Поисковые запросы\n" + "\n".join(searches[:800]),
                 "### Сайты (дней с посещениями) и что там открывалось\n" + "\n".join(sites)]
-    if source in ("youtube", "google_search", "google_activity", "notification"):
+    if source in ("youtube", "google_search", "google_activity", "notification", "music"):
         groups: dict[str, dict[str, str]] = defaultdict(dict)  # сервис → текст → первая дата
         for e in events:
             groups[e["thread"] or "?"].setdefault(e["text"][:300], _dm(e["ts"]))
@@ -439,6 +439,15 @@ class Investigation:
 
             found["takeout"] = await self._collect_takeout()
             found["ai_export"] = await self._collect_ai_exports()
+
+            try:  # сон ноутбука (журнал) и музыка (журнал плееров) — дёшево, каждый сбор
+                last = self.store.cursor("power")
+                start = datetime.fromisoformat(last) - timedelta(days=1) if last else since
+                found["power"] = self.store.add_events(await asyncio.to_thread(power.collect, start))
+                self.store.set_cursor("power", datetime.now().isoformat(timespec="seconds"))
+                found["music"] = self.store.add_events(await asyncio.to_thread(listening.collect))
+            except Exception:
+                log.exception("Сбор сна ноутбука или музыки не удался")
 
             try:  # хранилище Obsidian — каждый сбор: он пишет туда постоянно
                 found["obsidian"] = self.store.sync_events(

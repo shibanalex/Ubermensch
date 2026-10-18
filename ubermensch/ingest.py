@@ -119,6 +119,9 @@ def read_document(path: Path) -> str | None:
         text = _pdf(path)
     elif suffix == ".docx":
         text = _docx(path)
+    elif suffix == ".xlsx":
+        from .system.office import excel_text
+        text = excel_text(path)
     else:
         raw = path.read_bytes().decode("utf-8", errors="replace").lstrip("﻿")
         try:
