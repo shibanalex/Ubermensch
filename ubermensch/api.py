@@ -248,7 +248,8 @@ def create_app(core: Core, token: str) -> web.Application:
 
 
 async def start(core: Core, token: str, host: str, port: int) -> web.AppRunner:
-    runner = web.AppRunner(create_app(core, token), access_log=None)
+    # SSE-соединения окон открыты всегда: без короткого таймаута остановка ждёт их 60 с
+    runner = web.AppRunner(create_app(core, token), access_log=None, shutdown_timeout=3)
     await runner.setup()
     await web.TCPSite(runner, host, port).start()
     log.info("API слушает http://%s:%s", host, port)
