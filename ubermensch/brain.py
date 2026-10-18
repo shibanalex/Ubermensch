@@ -162,6 +162,32 @@ class Brain:
         await asyncio.sleep(max(30.0, (until - datetime.now()).total_seconds()))
         return True
 
+    @staticmethod
+    async def _terminate(proc) -> None:
+        """Останавливаем и Claude, и его MCP-процессы до передачи запроса другому ИИ."""
+        if proc.returncode is not None:
+            return
+        if os.name == "nt":
+            try:
+                killer = await asyncio.create_subprocess_exec(
+                    "taskkill", "/PID", str(proc.pid), "/T", "/F",
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                try:
+                    await asyncio.wait_for(killer.wait(), 5)
+                except TimeoutError:
+                    killer.kill()
+                    await killer.wait()
+            except OSError:
+                log.warning("Не удалось вызвать taskkill для дерева Claude")
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        await proc.wait()
+
     async def _ask(self, prompt: str, *, system_prompt_file: Path, schema: dict,
                    tools: tuple[str, ...] = (), model: str | None = None,
                    effort: str | None = None, mcp_config: Path | None = None,
@@ -215,11 +241,10 @@ class Brain:
         try:
             out, err = await asyncio.wait_for(proc.communicate(prompt.encode("utf-8")), limit)
         except TimeoutError:
-            proc.kill()
-            await proc.wait()
+            await self._terminate(proc)
             raise BrainError(f"нет ответа за {limit} с") from None
         except asyncio.CancelledError:  # вызов отменили (сторож чата) — процесс не оставляем
-            proc.kill()
+            await self._terminate(proc)
             raise
 
         try:

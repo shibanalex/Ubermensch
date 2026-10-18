@@ -10,6 +10,7 @@ import hmac
 import json
 import logging
 from datetime import date
+from uuid import UUID
 
 from aiohttp import web
 
@@ -17,6 +18,7 @@ from . import ingest
 from .university import lk
 from .brain import BrainError
 from .core import Core
+from .capabilities.registry import ToolArgumentsError
 
 log = logging.getLogger(__name__)
 TASK_STATUSES = {"open", "done", "dropped"}
@@ -50,6 +52,31 @@ def create_app(core: Core, token: str) -> web.Application:
         if not isinstance(data, dict):
             raise web.HTTPBadRequest(text="ожидался JSON-объект")
         return data
+
+    async def get_tools(request: web.Request) -> web.Response:
+        return web.json_response({"tools": core.tool_definitions()})
+
+    async def post_tool(request: web.Request) -> web.Response:
+        data = await body(request)
+        name, arguments, run_id = data.get("name"), data.get("arguments"), data.get("run_id")
+        if (not isinstance(name, str) or not isinstance(arguments, dict)
+                or (run_id is not None and not isinstance(run_id, str))):
+            raise web.HTTPBadRequest(text="ожидались name, arguments и необязательный UUID run_id")
+        if not core.tool_registry.has(name):
+            return web.json_response({"error": "Неизвестный инструмент"}, status=404)
+        if run_id is not None:
+            try:
+                UUID(run_id)
+            except ValueError:
+                return web.json_response({"error": "run_id должен быть UUID"}, status=400)
+        try:
+            result = await core.call_tool(name, arguments, run_id)
+            return web.json_response({"result": result})
+        except ToolArgumentsError as error:
+            return web.json_response({"error": str(error)}, status=400)
+        except Exception:
+            log.exception("Не удалось выполнить инструмент %s", name)
+            return web.json_response({"error": f"Не удалось выполнить инструмент {name}"}, status=500)
 
     async def get_state(request: web.Request) -> web.Response:
         return web.json_response(core.state())
@@ -182,6 +209,8 @@ def create_app(core: Core, token: str) -> web.Application:
 
     app = web.Application(middlewares=[auth])
     app.add_routes([
+        web.get("/api/tools", get_tools),
+        web.post("/api/tools/call", post_tool),
         web.get("/api/state", get_state),
         web.post("/api/chat", post_chat),
         web.post("/api/onboard", post_onboard),

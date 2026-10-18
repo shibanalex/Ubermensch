@@ -20,7 +20,9 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
+from dataclasses import asdict
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
 from . import actions, config, ingest, mail, metrics, world
 from .analysis import SOURCES
@@ -30,6 +32,8 @@ from .collectors.telegram import PROFILES, LoginStepError, TelegramAccount
 from .health import Health
 from .services import Supervisor
 from .store import Store
+from .capabilities import load_registry
+from .runtime.tools import LocalToolGateway, ToolJournal
 
 if TYPE_CHECKING:
     from .analysis import Investigation
@@ -77,6 +81,16 @@ class Core:
         self._brain_calls = 0  # счётчик, а не флаг: вызовы могут стоять в очереди друг за другом
         self._approvals: dict[int, asyncio.Future] = {}  # действия, ждущие «да/нет»
         self.login: dict | None = None  # идёт вход в Telegram: {"account", "step"}
+        self.tool_registry = load_registry()
+
+    def tool_definitions(self) -> list[dict]:
+        return [asdict(tool) for tool in self.tool_registry.definitions()]
+
+    async def call_tool(self, name: str, arguments: dict, run_id: str | None = None):
+        # Клиент задаёт только UUID, никогда путь к файлу журнала.
+        identifier = UUID(run_id).hex if run_id is not None else uuid4().hex
+        journal = ToolJournal(config.DATA_DIR / "workspace" / "runs" / identifier / "tools.jsonl")
+        return await LocalToolGateway(self.tool_registry, journal).call(name, arguments)
 
     @property
     def thinking(self) -> bool:

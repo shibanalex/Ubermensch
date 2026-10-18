@@ -1,7 +1,8 @@
 """Второй ИИ — OpenAI API (платно, по токенам): фоновый разбор без личного и запасной ответ
 в чате, когда Claude в лимите или завис.
 
-Тот же интерфейс, что у Brain (ask → Answer по JSON-схеме), но без инструментов и действий.
+Тот же интерфейс, что у Brain (ask → Answer по JSON-схеме). В чате доступны общие
+инструменты через ToolGateway; фоновый разбор всегда без инструментов.
 Две модели: дешёвая для фона (много данных) и посильнее для запасного ответа в чате (ответов
 мало, качество важнее). Флагман (GPT-6 Astra) на бюджет в $10 не рассчитан: весь Takeout
 обошёлся бы в ~$58.
@@ -10,6 +11,7 @@ OPENAI_BUDGET_USD — стоп, всё возвращается на Claude. П�
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -21,6 +23,8 @@ import aiohttp
 from .brain import Answer, BrainError
 from .health import Health
 from .store import Store
+from .runtime.tools import ToolGateway
+from .runtime.http_tools import ToolExecutionUncertain
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +47,14 @@ PRICES = {"gpt-6-astra": (10.0, 50.0), "gpt-6.1-sol": (2.0, 10.0), "gpt-6-sol": 
           "gpt-4.1": (2.0, 8.0), "gpt-4o-mini": (0.15, 0.6)}
 UNKNOWN_PRICE = (10.0, 50.0)
 TIMEOUT = 240
+MAX_TOOL_ROUNDS = 12
+MAX_TOOL_RESULT = 60000
 PAUSE_AFTER_FAILURE = timedelta(hours=1)  # ключ, баланс или регион — не долбить каждую минуту
+
+
+class OpenAIError(BrainError):
+    def friendly(self) -> str:
+        return str(self)
 
 
 class OpenAIBrain:
@@ -86,7 +97,7 @@ class OpenAIBrain:
                     self._fail(resp.status, (data or {}).get("error") or {})
                 return data
         except (aiohttp.ClientError, TimeoutError) as e:
-            raise BrainError(f"OpenAI недоступен: {e.__class__.__name__}") from None
+            raise OpenAIError(f"OpenAI недоступен: {e.__class__.__name__}") from None
 
     def _fail(self, status: int, error: dict) -> None:
         code, message = error.get("code") or "", error.get("message") or ""
@@ -97,12 +108,12 @@ class OpenAIBrain:
         elif code == "unsupported_country_region_territory" or status == 403:
             text = f"OpenAI отказал в доступе ({status}): {message[:150]}"
         elif status == 429:
-            raise BrainError("OpenAI: слишком много запросов, попробую позже")
+            raise OpenAIError("OpenAI: слишком много запросов, попробую позже")
         else:
-            raise BrainError(f"OpenAI: ошибка {status} {code} {message[:200]}")
+            raise OpenAIError(f"OpenAI: ошибка {status} {code} {message[:200]}")
         self._blocked_until = datetime.now() + PAUSE_AFTER_FAILURE
         self.health.report("openai", text)
-        raise BrainError(text)
+        raise OpenAIError(text)
 
     async def _pick_model(self, session: aiohttp.ClientSession, role: str) -> str:
         """Модель для роли: из .env или первая доступная из PREFERRED; запоминается."""
@@ -111,28 +122,34 @@ class OpenAIBrain:
         available = {m["id"] for m in (await self._request(session, "GET", "/models"))["data"]}
         model = next((m for m in PREFERRED[role] if m in available), None)
         if not model:
-            raise BrainError("OpenAI: нет ни одной из моделей " + ", ".join(PREFERRED[role]))
+            raise OpenAIError("OpenAI: нет ни одной из моделей " + ", ".join(PREFERRED[role]))
         self._models[role] = model
         self.store.set_cursor(f"openai:model:{role}", model)
         log.info("OpenAI: для «%s» — модель %s", role, model)
         return model
 
     async def ask(self, prompt: str, *, system_prompt_file: Path, schema: dict,
-                  role: str = "background", **_ignored) -> Answer:
+                  role: str = "background", tool_gateway: ToolGateway | None = None,
+                  timeout: int | None = None, **_ignored) -> Answer:
         """Как Brain.ask: ответ JSON по схеме. role — background (дешёвая модель) или chat
-        (посильнее). Инструментов нет — лишние параметры игнорируются."""
+        (посильнее). Инструменты разрешены только для chat и только явно выданные."""
+        if role not in MODEL_ENV:
+            raise OpenAIError(f"OpenAI: неизвестная роль {role}")
+        if role != "chat" and tool_gateway is not None:
+            raise OpenAIError("Инструменты запрещены для фонового разбора")
         if not self.key:
-            raise BrainError("OpenAI не подключён")
+            raise OpenAIError("OpenAI не подключён")
         if self.spent >= self.budget:
-            raise BrainError(f"Бюджет OpenAI (${self.budget:g}) исчерпан")
+            raise OpenAIError(f"Бюджет OpenAI (${self.budget:g}) исчерпан")
         if self._blocked_until and datetime.now() < self._blocked_until:
-            raise BrainError("OpenAI временно недоступен")
+            raise OpenAIError("OpenAI временно недоступен")
         started = datetime.now()
-        timeout = aiohttp.ClientTimeout(total=TIMEOUT)
-        async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+        request_timeout = aiohttp.ClientTimeout(total=TIMEOUT)
+        async with aiohttp.ClientSession(timeout=request_timeout, trust_env=True) as session:
             model = await self._pick_model(session, role)
             body = {
                 "model": model,
+                "store": False,
                 "messages": [
                     {"role": "system", "content": system_prompt_file.read_text(encoding="utf-8")},
                     {"role": "user", "content": prompt}],
@@ -141,16 +158,79 @@ class OpenAIBrain:
             }
             if model.startswith(("gpt-5", "gpt-6", "o")):  # модели с рассуждением
                 body["reasoning_effort"] = EFFORT[role]  # фон — «low»: дешевле и быстрее
-            data = await self._request(session, "POST", "/chat/completions", body)
-        self._charge(model, data.get("usage") or {})
-        try:
-            answer = json.loads(data["choices"][0]["message"]["content"] or "")
-        except (KeyError, IndexError, ValueError):
-            raise BrainError("OpenAI: ответ не по схеме") from None
+            if tool_gateway is not None:
+                definitions = tool_gateway.definitions()
+                if definitions:
+                    body["tools"] = [{"type": "function", "function": {
+                        "name": tool.name, "description": tool.description,
+                        "parameters": tool.parameters, "strict": False,
+                    }} for tool in definitions]
+                    body["parallel_tool_calls"] = False
+            try:
+                async with asyncio.timeout(timeout or (900 if tool_gateway else TIMEOUT)):
+                    answer = await self._conversation(session, model, body, tool_gateway)
+            except TimeoutError:
+                raise OpenAIError("OpenAI: истекло время запроса; начатые действия не повторяются") from None
         self.health.clear("openai", "OpenAI снова работает.")
         ms = int((datetime.now() - started).total_seconds() * 1000)
         log.info("OpenAI %s: %d мс, потрачено всего $%.3f", model, ms, self.spent)
         return Answer(data=answer, duration_ms=ms)
+
+    async def _conversation(self, session, model: str, body: dict,
+                            gateway: ToolGateway | None) -> dict:
+        for turn in range(MAX_TOOL_ROUNDS + 1):
+            # Считаются все ответы, включая промежуточные вызовы функций.
+            if not self.usable:
+                raise OpenAIError("OpenAI: бюджет исчерпан или провайдер временно недоступен")
+            if turn == MAX_TOOL_ROUNDS and body.get("tools"):
+                body["tool_choice"] = "none"
+            data = await self._request(session, "POST", "/chat/completions", body)
+            self._charge(model, data.get("usage") or {})
+            try:
+                choice = data["choices"][0]
+                message = choice["message"]
+            except (KeyError, IndexError, TypeError):
+                raise OpenAIError("OpenAI: пустой ответ") from None
+            calls = message.get("tool_calls") or []
+            if not calls:
+                try:
+                    answer = json.loads(message.get("content") or "")
+                except (TypeError, ValueError):
+                    raise OpenAIError("OpenAI: ответ не по схеме") from None
+                required = body["response_format"]["json_schema"]["schema"].get("required", [])
+                if not isinstance(answer, dict) or any(key not in answer for key in required):
+                    raise OpenAIError("OpenAI: ответ не по схеме")
+                return answer
+            if gateway is None or not body.get("tools"):
+                raise OpenAIError("OpenAI попытался вызвать невыданный инструмент")
+            if turn == MAX_TOOL_ROUNDS or len(calls) > 16:
+                raise OpenAIError("OpenAI: превышен лимит вызовов инструментов")
+            body["messages"].append({"role": "assistant", "content": message.get("content"),
+                                     "tool_calls": calls})
+            allowed = {tool["function"]["name"] for tool in body["tools"]}
+            for call in calls:
+                if not self.usable:
+                    raise OpenAIError("OpenAI: бюджет исчерпан, следующие действия остановлены")
+                try:
+                    name = call["function"]["name"]
+                    if name not in allowed:
+                        raise ValueError("Инструмент не выдан этому запросу")
+                    arguments = json.loads(call["function"].get("arguments") or "{}")
+                    if not isinstance(arguments, dict):
+                        raise ValueError("Аргументы должны быть JSON-объектом")
+                    result = await gateway.call(name, arguments)
+                    content = json.dumps(result, ensure_ascii=False)
+                    if len(content) > MAX_TOOL_RESULT:
+                        content = json.dumps({"truncated": True, "text": content[:MAX_TOOL_RESULT]},
+                                             ensure_ascii=False)
+                except ToolExecutionUncertain:
+                    raise
+                except Exception as error:
+                    log.warning("Ошибка инструмента OpenAI: %s", type(error).__name__)
+                    content = json.dumps({"error": str(error)[:1500]}, ensure_ascii=False)
+                body["messages"].append({"role": "tool", "tool_call_id": call["id"],
+                                         "content": content})
+        raise OpenAIError("OpenAI: превышен лимит шагов")
 
     def _charge(self, model: str, usage: dict) -> None:
         matches = [name for name in PRICES if model.startswith(name)]
