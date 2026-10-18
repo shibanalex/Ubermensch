@@ -38,6 +38,7 @@ COMMANDS = [
     BotCommand(command="reminders", description="Напоминания"),
     BotCommand(command="cancel", description="Отменить напоминание: /cancel 3"),
     BotCommand(command="status", description="Состояние системы"),
+    BotCommand(command="profile", description="Мой профиль: /profile или /profile обновить"),
     BotCommand(command="login", description="Войти в Telegram: /login или /login work"),
 ]
 
@@ -236,6 +237,27 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
             *_investigation_lines(core),
             *_health_lines(core),
         ]))
+
+    @owner.message(Command("profile"))
+    async def on_profile(message: Message, command: CommandObject) -> None:
+        if core.profiler is None:
+            await send(message.bot, message.chat.id, "Профиль ещё не подключён.")
+            return
+        if (command.args or "").strip().lower() in ("обновить", "rebuild", "update"):
+            core.profiler.request()
+            await send(message.bot, message.chat.id,
+                       "Начинаю обновлять профиль: уже разобранное беру из кеша, новое разбираю "
+                       "в фоне, когда ты не занят. Напишу, когда будет готово.")
+            return
+        s = core.profiler.status()
+        lines = ["**Профиль**",
+                 f"Сейчас: {s['stage']}" + (f" ({s['done']} из {s['total']})" if s["total"] else "")]
+        if s["profile_id"]:
+            lines += [f"Последний: {s['built_at'] or '—'}, утверждений {s['claims']}, "
+                      f"правил поддержки {s['rules']}", f"Файл: {s['report']}"]
+        else:
+            lines.append("Готового профиля пока нет.")
+        await send(message.bot, message.chat.id, "\n".join(lines))
 
     @owner.message(Command("login"))
     async def on_login(message: Message, command: CommandObject) -> None:

@@ -142,6 +142,16 @@ def create_app(core: Core, token: str) -> web.Application:
     async def get_investigation(request: web.Request) -> web.Response:
         return web.json_response(core.investigation.status())
 
+    async def get_profile(request: web.Request) -> web.Response:
+        return web.json_response(core.profiler.status() if core.profiler else {"stage": "нет"})
+
+    async def post_profile_rebuild(request: web.Request) -> web.Response:
+        """Перестроить профиль сейчас (наблюдения по неизменным окнам берутся из кеша)."""
+        if core.profiler is None:
+            return web.json_response({"started": False}, status=503)
+        core.profiler.request()
+        return web.json_response({"started": True})
+
     async def get_health(request: web.Request) -> web.Response:
         return web.json_response({"problems": core.health.problems(),
                                   "services": core.supervisor.status()})
@@ -221,6 +231,8 @@ def create_app(core: Core, token: str) -> web.Application:
         web.post("/api/collect", post_collect),
         web.get("/api/investigation", get_investigation),
         web.get("/api/metrics", get_metrics),
+        web.get("/api/profile", get_profile),
+        web.post("/api/profile/rebuild", post_profile_rebuild),
         web.post("/api/voice", post_voice),
         web.post("/api/import/deep", post_deep_import),
         web.get("/api/health", get_health),

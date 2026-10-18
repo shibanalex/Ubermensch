@@ -51,6 +51,8 @@ aiohttp (`{id:\d+}`). Все штатные JSON-ответы ниже имею�
 | GET | `/api/health` | Неисправности и состояния служб |
 | GET | `/api/investigation` | Счётчики изучения данных |
 | GET | `/api/metrics` | Метрики изучения и активности |
+| GET | `/api/profile` | Состояние построения профиля и последний профиль |
+| POST | `/api/profile/rebuild` | Перестроить профиль сейчас |
 | POST | `/api/collect` | Запустить сбор сейчас |
 | POST | `/api/voice` | Запустить обновление стиля и голоса |
 | POST | `/api/import/deep` | Глубоко разобрать файл AI Studio |
@@ -271,6 +273,17 @@ Approval появляется в `/api/state` и SSE. Применение ра�
 `GET /api/health` возвращает `problems` (`key`, `message`, `since`) и `services`
 (`name`, `state`, `restarts`, `last_error`). Это состояние текущего процесса,
 а не сохранённая история инцидентов.
+
+`GET /api/profile`:
+
+```json
+{"stage": "наблюдения", "done": 12, "total": 114, "built_at": null, "profile_id": null,
+ "claims": 0, "rules": 0, "report": null}
+```
+
+`stage` — `ждёт`, `снимок данных`, `наблюдения`, `разделы`, `правила поддержки`, `готов`
+или `ошибка: …`; `done`/`total` — прогресс этапа. `POST /api/profile/rebuild` будит службу
+профиля (`{"started": true}`, без службы — 503); наблюдения неизменных окон берутся из кеша.
 
 `GET /api/metrics` возвращает `{learning, activity}`. Полный состав и смысл
 показателей описаны в [CLIENTS](CLIENTS.md); вычисление не вызывает модель.

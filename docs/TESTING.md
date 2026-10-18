@@ -11,7 +11,8 @@ git diff --check
 ```
 
 На момент сверки документации в [`tests/test_tool_runtime.py`](../tests/test_tool_runtime.py)
-**21 тест**. Используется стандартный unittest, включая `IsolatedAsyncioTestCase`.
+**21 тест** и в [`tests/test_profiling.py`](../tests/test_profiling.py) — **4** (окна профиля,
+проверка опор и цитат, метрики, полное построение с подставным мозгом и повтор из кеша). Используется стандартный unittest, включая `IsolatedAsyncioTestCase`.
 Специальных команд pytest, CI workflow и настроенного обязательного линтера в
 репозитории пока нет. `compileall` проверяет синтаксис и создаёт обычный
 `__pycache__`, но не подтверждает правильность выполнения программы.

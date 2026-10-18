@@ -21,6 +21,7 @@ from .collectors.activity import ActivityTracker
 from .core import Core
 from .maintenance import Maintenance
 from .observer import ScreenObserver
+from .profiling import Profiler
 from .store import Store
 from .system import session
 
@@ -76,6 +77,8 @@ async def _serve(settings: config.Settings) -> None:
     services.add("разбор данных", core.investigation.worker)
     services.add("взгляд на экран", ScreenObserver(core).run)
     services.add("обслуживание", Maintenance(settings.db_path, core.health).run)
+    core.profiler = Profiler(settings, store, assistant, core.investigation, core.notify)
+    services.add("профиль", core.profiler.run)
 
     runner = await api.start(core, config.api_token(create=True), config.API_HOST, config.API_PORT)
     services.start()

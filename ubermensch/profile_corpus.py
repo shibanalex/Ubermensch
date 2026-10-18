@@ -13,7 +13,7 @@ import sqlite3
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 SCHEMA_VERSION = 1
 MAX_IMPORT_BYTES = 50 * 1024 * 1024
@@ -359,8 +359,12 @@ def _write_chunks(evidence: _Evidence, output_dir: Path, limit: int) -> list[dic
 
 
 def prepare_corpus(db_path: Path, output_dir: Path, *, import_dir: Path | None = None,
-                   chunk_chars=60_000) -> dict:
+                   chunk_chars=60_000,
+                   derive: Callable[[sqlite3.Connection], list[dict]] | None = None) -> dict:
     """Prepare once; subsequent calls validate and return exactly the same snapshot.
+
+    derive(snapshot) may add computed evidence (e.g. behaviour metrics): items with
+    ref/source/text and optional ts/role/metadata, stored with role "derived" by default.
 
     An incomplete output directory is deliberately not overwritten. Start a new run
     directory after an interrupted preparation; completed corpora can always resume.
@@ -390,6 +394,11 @@ def prepare_corpus(db_path: Path, output_dir: Path, *, import_dir: Path | None =
     snapshot = _readonly(snapshot_path)
     try:
         counts = _load_database(snapshot, evidence)
+        if derive is not None:
+            counts["derived"] = sum(evidence.add(
+                item["ref"], item["source"], item["text"], ts=item.get("ts"),
+                role=item.get("role", "derived"), metadata=item.get("metadata") or {})
+                for item in derive(snapshot))
         imports, limits = _load_imports(import_dir, output_dir, snapshot, evidence)
         groups = evidence.group_duplicates()
         chunks = _write_chunks(evidence, output_dir, chunk_chars)
