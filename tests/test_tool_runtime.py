@@ -336,7 +336,8 @@ class ToolAPITests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test", "OPENAI_BUDGET_USD": "9"}):
             assistant.helper = OpenAIBrain(MemoryCursors(), Mock(), Mock())
         assistant.helper._models["chat"] = "gpt-4.1"
-        final = {"reply": "requested contents", "memory": [], "goals": [], "people": [],
+        final = {"reply": "requested contents", "emotion": "happy", "memory": [], "goals": [],
+                 "people": [],
                  "tasks": [{"op": "add", "title": "test task"}],
                  "actions": [{"kind": "reminder", "summary": "test", "params": {
                      "at": (datetime.now() + timedelta(hours=1)).isoformat(), "text": "test"}}]}
@@ -351,6 +352,7 @@ class ToolAPITests(unittest.IsolatedAsyncioTestCase):
         outcome = await assistant.handle("read, plan and remind", channel="desktop")
         self.assertEqual(outcome.engine, "openai")
         self.assertEqual(outcome.reply, "requested contents")
+        self.assertEqual(outcome.emotion, "happy")
         self.assertIn("requested contents", requests[1]["messages"][-1]["content"])
         self.assertEqual(len(assistant.store.tasks()), 1)
         self.assertEqual(len(assistant.store.pending_reminders()), 1)

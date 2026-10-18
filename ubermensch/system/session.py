@@ -15,8 +15,10 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import tempfile
 import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -39,6 +41,7 @@ class _State:
         self.window: dict | None = None
         self.idle_since: float | None = None  # monotonic: с какого момента нет ввода
         self.running = False
+        self.replies: dict[str, tuple[threading.Event, list]] = {}  # ответы разовых скриптов KWin
 
 
 _state = _State()
@@ -96,17 +99,58 @@ def _handle(message):
             return new_method_return(message, "s", (json.dumps(_state.window or {}),))
     if method == "IdleSeconds":
         return new_method_return(message, "d", (_local_idle(),))
+    if method == "Reply" and len(message.body) == 2:  # от разового скрипта kwin_eval
+        with _state.lock:
+            waiting = _state.replies.get(message.body[0])
+        if waiting:
+            waiting[1].append(message.body[1])
+            waiting[0].set()
+        return new_method_return(message)
     return new_error(message, "org.freedesktop.DBus.Error.UnknownMethod", "s", (str(method),))
+
+
+def _kwin(method: str, *args: str) -> str:
+    done = subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
+                           f"org.kde.kwin.Scripting.{method}", *args],
+                          capture_output=True, text=True, timeout=10)
+    return done.stdout.strip()
+
+
+def kwin_eval(body: str, timeout: float = 5) -> object:
+    """Выполнить кусок JS внутри KWin и получить результат: тело вызывает reply(значение).
+
+    Только в ядре (ответ приходит в его D-Bus-сервис). Скрипт одноразовый: выгружается сразу."""
+    if not _state.running:
+        raise RuntimeError("сенсоры сеанса не запущены")
+    token = uuid.uuid4().hex
+    done, result = threading.Event(), []
+    with _state.lock:
+        _state.replies[token] = (done, result)
+    script = Path(tempfile.gettempdir()) / f"ubermensch-kwin-{token}.js"
+    script.write_text(
+        f"function reply(value) {{ callDBus({json.dumps(SERVICE)}, {json.dumps(PATH)}, "
+        f"{json.dumps(IFACE)}, \"Reply\", {json.dumps(token)}, JSON.stringify(value)); }}\n"
+        f"try {{ {body} }} catch (e) {{ reply({{error: String(e)}}); }}\n", encoding="utf-8")
+    plugin = f"ubermensch-eval-{token[:12]}"
+    try:
+        _kwin("loadScript", str(script), plugin)
+        _kwin("start")
+        if not done.wait(timeout):
+            raise TimeoutError("KWin не ответил")
+        value = json.loads(result[0])
+        if isinstance(value, dict) and "error" in value:
+            raise RuntimeError(f"KWin: {value['error']}")
+        return value
+    finally:
+        _kwin("unloadScript", plugin)
+        script.unlink(missing_ok=True)
+        with _state.lock:
+            _state.replies.pop(token, None)
 
 
 def _load_kwin_script() -> None:
     """Перезагрузить скрипт: после перезапуска ядра он сразу сообщит текущее окно."""
-    def kwin(method: str, *args: str) -> str:
-        done = subprocess.run(["qdbus6", "org.kde.KWin", "/Scripting",
-                               f"org.kde.kwin.Scripting.{method}", *args],
-                              capture_output=True, text=True, timeout=10)
-        return done.stdout.strip()
-
+    kwin = _kwin
     try:
         if kwin("isScriptLoaded", KWIN_PLUGIN) == "true":
             kwin("unloadScript", KWIN_PLUGIN)

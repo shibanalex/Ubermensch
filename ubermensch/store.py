@@ -339,6 +339,28 @@ class Store:
 
     # --- сырые данные из источников ---
 
+    def sync_events(self, events: list[dict]) -> int:
+        """Как add_events, но запись с тем же source + external_id обновляется на месте, если
+        изменилась (заметки, которые правят): id сохраняется — ссылки на неё остаются верными.
+        Возвращает число новых и изменённых."""
+        before = self.db.total_changes
+        self.db.execute("BEGIN")
+        try:
+            self.db.executemany(
+                "INSERT INTO events (source, external_id, ts, thread, author, outgoing, text, meta) "
+                "VALUES (:source, :external_id, :ts, :thread, :author, :outgoing, :text, :meta) "
+                "ON CONFLICT (source, external_id) DO UPDATE SET ts=excluded.ts, "
+                "thread=excluded.thread, author=excluded.author, outgoing=excluded.outgoing, "
+                "text=excluded.text, meta=excluded.meta "
+                "WHERE events.text != excluded.text OR events.meta IS NOT excluded.meta",
+                [{"thread": None, "author": None, "outgoing": 0, **e,
+                  "meta": json.dumps(e.get("meta") or {}, ensure_ascii=False)} for e in events])
+        except Exception:
+            self.db.execute("ROLLBACK")
+            raise
+        self.db.execute("COMMIT")
+        return self.db.total_changes - before
+
     def add_events(self, events: list[dict]) -> int:
         """Добавляет события; уже собранные (тот же source + external_id) пропускает.
 

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QWidget
 
 from . import theme
 
-MONO = "Consolas"
+MONO = "Hack"  # моноширинный, похож на Consolas; запасной — любой моно из системы
 BG = QColor("#0c0c0c")
 FG = QColor("#cccccc")
 BRIGHT = QColor("#f2f2f2")

@@ -1,0 +1,14 @@
+{
+    "KPlugin": {
+        "Id": "org.ubermensch.tasks",
+        "Name": "Задачи Ани",
+        "Description": "Список задач Übermensch: отметить, вернуть, править, добавить",
+        "Icon": "view-task",
+        "Category": "Utilities",
+        "Authors": [{ "Name": "Übermensch" }],
+        "License": "MIT",
+        "Version": "1.0"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

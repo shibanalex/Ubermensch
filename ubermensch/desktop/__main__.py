@@ -1,8 +1,8 @@
 """Приложение на ПК: python -m ubermensch.desktop (ядро запускается отдельно).
 
-Это присмотр за двумя процессами: маскот (mascot_app — мордочка, пузыри, запрос, история,
-трей) и лист задач (sheet_app). Упал один — второй живёт, а упавший поднимается снова
-с растущей паузой. «Выход» у маскота (код 0) закрывает всё.
+Это присмотр за процессом маскота (mascot_app — мордочка, пузыри, запрос, история, трей):
+упал — поднимается снова с растущей паузой; «Выход» у маскота (код 0) закрывает всё.
+Список задач — отдельный виджет Plasma (plasmoid/, ставится scripts/install_widget.sh).
 """
 from __future__ import annotations
 
@@ -17,8 +17,7 @@ from logging.handlers import RotatingFileHandler
 from .. import config
 from .link import ALREADY_RUNNING
 
-CHILDREN = {"маскот": "ubermensch.desktop.mascot_app",
-            "лист задач": "ubermensch.desktop.sheet_app"}
+CHILDREN = {"маскот": "ubermensch.desktop.mascot_app"}  # задачи — виджет Plasma (plasmoid/)
 MAIN = "маскот"  # его «Выход» закрывает приложение
 BACKOFF = (2, 5, 15, 60)  # пауза перед перезапуском после 1-го, 2-го, ... падения подряд
 STABLE_S = 300  # проработал столько — счётчик падений сбрасывается

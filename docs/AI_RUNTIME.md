@@ -41,6 +41,11 @@ Assistant подставляет `AREAS`, описания старых стру
 20 сообщений. ID записей включаются в контекст для операций update/forget/merge.
 Контекст создаётся до сохранения текущей реплики; сама реплика добавляется отдельно.
 
+Если подключено хранилище Obsidian, в контекст входит `<user_notes>` (до 8 тыс. символов):
+`08 AI/Обо мне.md`, `08 AI/Сейчас.md`, `06 Life/Личные ориентиры.md` и две последние заметки
+`02 Journal/Daily` — то, что пользователь сам написал для ИИ и о себе сегодня
+(`collectors/obsidian.context_notes`, читается при каждом сообщении).
+
 Если опубликован профиль (`personalization/current.json`), в контекст входит блок
 `<user_profile>` до 16 тыс. символов: правила поддержки вместе с их утверждениями-основаниями,
 затем утверждения, ближе всего подходящие к реплике по словам, затем неизвестное и вопросы.
@@ -60,11 +65,12 @@ RAG-сервиса. Отбор — SQL, importance, свежесть и прог
 ## Структурированный ответ
 
 `Answer` содержит `data: dict` и `duration_ms`. В обычном чате `_schema()` требует
-все шесть полей:
+все семь полей:
 
 ```json
 {
   "reply": "Добавила тестовую задачу.",
+  "emotion": "happy",
   "memory": [],
   "goals": [],
   "tasks": [{"op": "add", "title": "Проверить отчёт", "due": "2026-10-20"}],
@@ -97,6 +103,11 @@ RAG-сервиса. Отбор — SQL, importance, свежесть и прог
   "params": {"at": "2026-10-20T10:00:00", "text": "Проверить отчёт"}
 }
 ```
+
+`emotion` — выражение мордочки маскота для этого ответа (`assistant.EMOTIONS`: neutral,
+happy, excited, embarrassed, annoyed, sad, confused, smug, wink, thinking). Неизвестное
+значение отбрасывается; всё, кроме neutral, Core публикует событием `emotion`
+(см. [CLIENTS](CLIENTS.md#эмоции-маскота)). В Telegram поле ни на что не влияет.
 
 Системные действия над файлами, компьютером и интеграциями выполняются tool calls
 во время работы модели. Не нужно добавлять их ещё раз в `actions` итогового JSON.
@@ -132,7 +143,8 @@ stdin и ожидает JSON. Существенные параметры ком
 
 Рабочая папка — workspace. Авторизация CLI внешняя по отношению к приложению.
 В обычном чате доступны встроенные `WebSearch`, `WebFetch`, `Read`, `Glob`, `Grep`
-и MCP-инструменты `ubermensch`. Встроенные Bash/Edit/Write не выдаются. Команды
+и MCP-инструменты `ubermensch`; в `--add-dir` — личные папки, `UBERMENSCH_ROOTS` и хранилище
+Obsidian (`OBSIDIAN_VAULT`). Встроенные Bash/Edit/Write не выдаются. Команды
 всё равно возможны через общий `run_shell`, с его собственной политикой.
 
 Модель desktop берётся из Settings; Telegram использует `sonnet` с effort medium,
@@ -285,6 +297,15 @@ JSON Schema всегда доступна через `/api/tools`. `account` п�
 | `media_key(action, times=1)` | play_pause, next, previous — плееру MPRIS (играющему или на паузе); volume_up/down, mute — PipeWire `wpctl` |
 | `screenshot()` | Проверить активное окно, снять Spectacle, сохранить `screens/request.jpg`, вернуть путь |
 | `lock_screen()` | `loginctl lock-session` сразу |
+| `system_status()` | Батарея (UPower), громкость, яркость, что играет (MPRIS), активное окно, простой, «не беспокоить» |
+| `desktop_notify(title, text, urgent=False)` | Уведомление Plasma от имени «Аня» сразу |
+| `windows_list()` | Окна программ через разовый скрипт KWin (`session.kwin_eval`): id, программа, заголовок |
+| `window_control(window_id, action)` | focus, minimize, maximize, restore, close (программа сама спросит про несохранённое), fullscreen — сразу |
+| `clipboard_read()` | Текст буфера (Klipper); описание просит читать только по просьбе: там бывают пароли |
+| `clipboard_write(text)` | Положить текст в буфер сразу |
+| `set_brightness(percent)` | Яркость встроенного экрана (`org.kde.ScreenBrightness`) сразу |
+| `do_not_disturb(minutes)` | `Notifications.Inhibit` на N минут (0 — снять); держится, пока жив процесс ядра |
+| `suspend_computer(reason)` | `systemctl suspend` только с подтверждением |
 
 bash работает с правами процесса пользователя (без пароля sudo). Определение опасной команды — эвристика,
 не парсер семантики произвольной программы и не sandbox. Она не гарантирует

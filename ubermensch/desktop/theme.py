@@ -14,8 +14,8 @@ RED_INK = "#a33a2c"  # красные чернила — акценты и тв�
 GREEN_INK = "#4f7a3a"
 TAPE = QColor(232, 219, 180, 200)
 
-FONT = "Segoe UI"  # «напечатанный» текст
-HAND = "Segoe Print"  # «от руки»
+FONT = "Noto Sans"  # «напечатанный» текст
+HAND = "Caveat"  # «от руки»: шрифт в desktop/fonts, регистрирует mascot_app
 
 SHADOW = 10  # поле под тень вокруг листа
 

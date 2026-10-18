@@ -1,7 +1,8 @@
-"""Связь процессов приложения: лист задач просит маскота (anya.exe) что-то сделать.
+"""Связь с маскотом (anya.exe): виджет задач и другие программы просят его что-то сделать.
 
 Команды идут строкой по локальному каналу Qt (сокет в каталоге сеанса, только этот
 пользователь этого компьютера). Канал маскота заодно не даёт запустить второго маскота.
+Из командной строки (так делает виджет Plasma): python -m ubermensch.desktop.link plan
 """
 from __future__ import annotations
 
@@ -11,7 +12,6 @@ from PySide6.QtCore import QObject
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 MASCOT = "ubermensch-mascot"
-SHEET = "ubermensch-sheet"
 # показать маскота, спросить, история, план дня, метрики
 COMMANDS = ("show", "prompt", "history", "plan", "metrics")
 ALREADY_RUNNING = 3  # код выхода второго экземпляра: присмотр не считает его падением
@@ -56,3 +56,15 @@ def send(command: str, key: str = MASCOT) -> bool:
     socket.waitForBytesWritten(500)
     socket.disconnectFromServer()
     return True
+
+
+if __name__ == "__main__":
+    import sys
+
+    from PySide6.QtCore import QCoreApplication
+
+    QCoreApplication(sys.argv)
+    command = sys.argv[1] if len(sys.argv) > 1 else "show"
+    if command not in COMMANDS:
+        sys.exit(f"Команды: {', '.join(COMMANDS)}")
+    sys.exit(0 if send(command) else 1)

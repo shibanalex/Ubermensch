@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 
 MAP_VERSION = 1  # меняется вместе с промптом наблюдений: старый кеш тогда не годится
 WINDOW_CHARS = 60_000
-ITEM_CHARS = {"document": 20_000, "imports": 20_000, "ai_chat": 3_000}
+ITEM_CHARS = {"document": 20_000, "imports": 20_000, "ai_chat": 3_000, "obsidian": 20_000}
 DEFAULT_ITEM_CHARS = 2_500
 REDUCE_CHARS = 150_000
 MAX_OBSERVATIONS = 30
@@ -85,15 +85,16 @@ CONFIDENCE = ("high", "medium", "low")
 # Источники, которые читаются целиком; остальное — только собственные реплики пользователя.
 MAPPED_SOURCES = {"telegram", "ai_chat", "gmail", "document", "creative", "notification",
                   "screen", "messages", "facts", "people", "goals", "tasks", "job_summaries",
-                  "metrics", "imports"}
-BY_MONTH = {"telegram", "gmail", "ai_chat", "notification", "messages"}
+                  "metrics", "imports", "obsidian"}
+BY_MONTH = {"telegram", "gmail", "ai_chat", "notification", "messages", "obsidian"}
 VIA_SUMMARIES = ("youtube", "google_activity", "google_search", "chrome", "activity")
 LABELS = {"telegram": "Telegram", "ai_chat": "разговоры с ИИ", "gmail": "почта",
           "document": "документы", "creative": "творчество", "notification": "уведомления",
           "screen": "экран", "messages": "разговоры с Аней", "facts": "память Ани: факты",
           "people": "память Ани: люди", "goals": "цели", "tasks": "задачи",
           "job_summaries": "сводки прежнего разбора", "metrics": "поведение в цифрах",
-          "imports": "импортированные файлы", "youtube": "свои комментарии на YouTube"}
+          "imports": "импортированные файлы", "youtube": "свои комментарии на YouTube",
+          "obsidian": "его заметки и дневник в Obsidian"}
 
 MAP_TASK = (
     "[Системная задача: наблюдения для профиля.] В <data> — порция записей; у каждой номер в "
@@ -392,7 +393,7 @@ class Profiler:
                 "profile_id": profile.profile_id if profile else None,
                 "claims": sum(len(s.claims) for s in profile.sections) if profile else 0,
                 "rules": len(profile.support_rules) if profile else 0,
-                "report": str(config.DOCUMENTS_DIR / "Профиль.md") if profile else None}
+                "report": str(config.OUTPUT_DIR / "Профиль.md") if profile else None}
 
     # --- расписание ---
 
@@ -484,6 +485,9 @@ class Profiler:
         stamp = started.strftime("%Y%m%d-%H%M%S-%f")
         corpus_dir = self.base / "corpus" / stamp
         self.state = {"stage": "снимок данных", "done": 0, "total": 0}
+        # прерванные построения оставляют снимки (~0,4 ГБ); разобранное хранит кеш наблюдений
+        for old in (self.base / "corpus").glob("*") if (self.base / "corpus").is_dir() else ():
+            await asyncio.to_thread(shutil.rmtree, old, True)
         manifest = await asyncio.to_thread(prepare_corpus, self.settings.db_path,
                                            corpus_dir, derive=behavior.derive)
         windows = await asyncio.to_thread(build_windows, corpus_dir)
@@ -557,10 +561,10 @@ class Profiler:
         target = await asyncio.to_thread(save_profile, config.DATA_DIR, profile,
                                          available_refs=used, report=report)
         try:
-            config.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
-            (config.DOCUMENTS_DIR / "Профиль.md").write_text(report, encoding="utf-8")
+            config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            (config.OUTPUT_DIR / "Профиль.md").write_text(report, encoding="utf-8")
         except OSError:
-            log.warning("Не удалось положить профиль в %s", config.DOCUMENTS_DIR)
+            log.warning("Не удалось положить профиль в %s", config.OUTPUT_DIR)
         self.store.set_cursor("profile_at", datetime.now().isoformat(timespec="seconds"))
         self.store.set_cursor("profile_events", str(sum(self.store.event_counts().values())))
         await asyncio.to_thread(self._cleanup, corpus_dir)
@@ -569,7 +573,7 @@ class Profiler:
                       "profile_id": profile.profile_id}
         self.notify(f"🧭 Профиль обновлён: {claims} утверждений, правил поддержки — "
                     f"{len(profile.support_rules)}.\n{data.get('summary', '')}\n"
-                    f"Файл: {config.DOCUMENTS_DIR / 'Профиль.md'}")
+                    f"Файл: {config.OUTPUT_DIR / 'Профиль.md'}")
         log.info("Профиль опубликован: %s (%s)", target, datetime.now() - started)
         return target
 

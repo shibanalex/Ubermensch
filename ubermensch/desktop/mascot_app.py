@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtGui import QFont, QFontDatabase, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from . import link, theme
@@ -25,6 +26,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("anya.exe")
+    QFontDatabase.addApplicationFont(str(Path(__file__).with_name("fonts") / "Caveat.ttf"))
     app.setFont(QFont(theme.FONT, 10))
     if link.is_running(link.MASCOT):
         link.send("show")  # второй запуск просто показывает уже живого маскота

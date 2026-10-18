@@ -52,7 +52,7 @@ Wayland) с одним
 | Исправить переключение ИИ | AI_RUNTIME, LIMITATIONS | `runtime/router.py`, `brain.py`, `openai_brain.py` |
 | Изменить задачи или память | DATA_MODEL, API | `store.py`, `assistant.py`, `core.py` |
 | Подключить источник данных | BACKGROUND, DATA_MODEL | `collectors/`, `analysis.py` |
-| Изменить виджет или лист задач | CLIENTS, API | `desktop/` |
+| Изменить маскота или виджет задач | CLIENTS, API | `desktop/`, `plasmoid/` |
 | Сделать клиент для телефона | API, SECURITY, EVOLUTION | Сначала решить аутентификацию устройств и доставку событий |
 | Разобраться с папкой данных и резервными копиями | DATA_MODEL, OPERATIONS | `config.py`, `maintenance.py` |
 

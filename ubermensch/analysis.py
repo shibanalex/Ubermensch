@@ -21,7 +21,8 @@ from datetime import date, datetime, timedelta
 from . import config, ingest, metrics
 from .assistant import HELPER_SOURCES, Assistant
 from .brain import BrainError
-from .collectors import ai_chats, chrome, creative, documents, gmail, notifications, takeout
+from .collectors import (ai_chats, chrome, creative, documents, gmail, notifications, obsidian,
+                         takeout)
 from .collectors.telegram import TelegramAccount, TelegramLoginRequired
 from .health import Health
 from .store import Store
@@ -64,7 +65,8 @@ SOURCES = {"telegram": "Telegram", "gmail": "Почта", "chrome": "Брауз�
            "ai_chat": "Разговоры с ИИ", "activity": "Активность за компьютером",
            "document": "Документы", "creative": "Творчество", "notification": "Уведомления",
            "youtube": "YouTube", "google_search": "Поиск Google",
-           "google_activity": "Действия в сервисах Google", "lk": "Личный кабинет вуза"}
+           "google_activity": "Действия в сервисах Google", "lk": "Личный кабинет вуза",
+           "obsidian": "Заметки и дневник (Obsidian)"}
 TAKEOUT_DAYS = 2 * 365  # из Google Takeout берём два года: интересы видны в динамике
 GROUP_LINES = 700  # строк на сервис в месяц (просмотры, запросы, уведомления) — дальше шум
 PERSON_MIN_MESSAGES, PERSON_TOP = 300, 15  # портреты отношений: личные чаты от 300 сообщений
@@ -127,6 +129,11 @@ def _units(store: Store, source: str, start: str, end: str) -> list[str]:
     if source == "lk":
         return [f"### Личный кабинет вуза: {e['thread']} (снимок {_dm(e['ts'])}.{e['ts'][:4]})\n"
                 f"{e['text'][:15_000]}" for e in events]
+    if source == "obsidian":
+        return [f"### Заметка Obsidian: {json.loads(e['meta'] or '{}').get('path', e['thread'])} "
+                f"({_dm(e['ts'])}.{e['ts'][:4]})"
+                + ("" if e["outgoing"] else " — вырезка из веба, не его слова")
+                + f"\n{e['text'][:12_000]}" for e in events]
     if source == "document":
         return [f"### Документ: {json.loads(e['meta'] or '{}').get('path', e['thread'])} "
                 f"(изменён {_dm(e['ts'])}.{e['ts'][:4]})\n{e['text'][:12_000]}" for e in events]
@@ -432,6 +439,12 @@ class Investigation:
 
             found["takeout"] = await self._collect_takeout()
             found["ai_export"] = await self._collect_ai_exports()
+
+            try:  # хранилище Obsidian — каждый сбор: он пишет туда постоянно
+                found["obsidian"] = self.store.sync_events(
+                    await asyncio.to_thread(obsidian.collect))
+            except Exception:
+                log.exception("Сбор Obsidian не удался")
 
             for source, module in (("document", documents), ("ai_chat", ai_chats),
                                    ("creative", creative)):
@@ -748,11 +761,11 @@ class Investigation:
         path = DOSSIER_DIR / f"dossier-{datetime.now():%Y-%m-%d_%H-%M}.md"
         path.write_text(text, encoding="utf-8")
         (DOSSIER_DIR / "latest.md").write_text(text, encoding="utf-8")
-        try:  # копия в папку Ани — пользователю под рукой
-            config.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
-            (config.DOCUMENTS_DIR / "Досье.md").write_text(text, encoding="utf-8")
+        try:  # копия в отчёты Ани — пользователю под рукой (в Obsidian, если он подключён)
+            config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            (config.OUTPUT_DIR / "Досье.md").write_text(text, encoding="utf-8")
         except OSError:
-            log.warning("Не удалось положить досье в %s", config.DOCUMENTS_DIR)
+            log.warning("Не удалось положить досье в %s", config.OUTPUT_DIR)
         self.store.set_cursor("dossier_at", datetime.now().isoformat(timespec="seconds"))
         pending = self.store.job_counts().get("pending", 0)
         tail = f" Остальной год ещё разбираю в фоне (осталось порций: {pending})." if pending else ""

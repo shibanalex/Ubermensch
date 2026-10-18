@@ -319,8 +319,9 @@ SQLite ID локален для одной БД. UUID `run_id` инструме�
     corpus/<время>/           последний снимок для профиля: snapshot.db, evidence.sqlite
     map/<sha256>.json         кеш наблюдений по окнам
 
-~/Документы/Аня/              ANYA_DOCUMENTS: заметки, Конспекты/, Досье.md, Word/Excel
-DIARY_DIR                     дневник пользователя в Obsidian (если задан), только чтение
+<OBSIDIAN_VAULT>/             хранилище пользователя: Аня читает (кроме 99 Assets, 90 Templates)
+  08 AI/Reports/              её отчёты: Профиль.md, Досье.md, Конспекты/, заметки
+~/Документы/Аня/              ANYA_DOCUMENTS: Word/Excel
 ```
 
 Дневник — отдельное хранилище пользователя. Он не становится частью `DATA_DIR`,
@@ -341,7 +342,7 @@ DIARY_DIR                     дневник пользователя в Obsidia
 - `workspace/tg_style.md` и `workspace/anya_persona.md`, если существуют.
 - Каталог `dossier`.
 
-**Не включены:** `personalization` (профиль перестраивается из базы), дневник, `~/Документы/Аня`, `raw/import`, `raw/notifications`, сессии и OAuth
+**Не включены:** `personalization` (профиль перестраивается из базы), хранилище Obsidian, `~/Документы/Аня`, `raw/import`, `raw/notifications`, сессии и OAuth
 из `secrets`, `.env`, рабочий стиль `tg_style_work.md`, остальные файлы workspace.
 Это существенная граница восстановления: архив приложения не равен полной копии
 всех данных владельца и всех исходников анализа.

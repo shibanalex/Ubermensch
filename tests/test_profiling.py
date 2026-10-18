@@ -87,7 +87,7 @@ class ProfilingTests(unittest.IsolatedAsyncioTestCase):
         self.store = Store(self.db_path)
         self.addCleanup(self.store.db.close)
         _seed(self.store)
-        for name, value in (("DATA_DIR", self.root), ("DOCUMENTS_DIR", self.root / "docs")):
+        for name, value in (("DATA_DIR", self.root), ("OUTPUT_DIR", self.root / "docs")):
             patcher = patch.object(config, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)

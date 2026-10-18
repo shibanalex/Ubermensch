@@ -9,6 +9,7 @@ import asyncio
 import hmac
 import json
 import logging
+import re
 from datetime import date
 from uuid import UUID
 
@@ -105,6 +106,22 @@ def create_app(core: Core, token: str) -> web.Application:
             raise web.HTTPBadRequest(text="пустая задача")
         due = data.get("due") or date.today().isoformat()
         return web.json_response({"id": core.add_task(title, due)})
+
+    async def get_tasks(request: web.Request) -> web.Response:
+        """Открытые задачи и выполненные сегодня — для виджета (легче, чем весь /api/state)."""
+        return web.json_response({"today": date.today().isoformat(),
+                                  "tasks": [dict(t) for t in core.store.tasks()]})
+
+    async def post_task_edit(request: web.Request) -> web.Response:
+        """Правка открытой задачи: {"title"?, "due"?: "YYYY-MM-DD", "notes"?}."""
+        data = await body(request)
+        title = str(data["title"]).strip() if "title" in data else None
+        due = str(data["due"]) if data.get("due") else None
+        if title == "" or (due is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", due)):
+            raise web.HTTPBadRequest(text="пустая задача или неверная дата")
+        notes = str(data["notes"]) if "notes" in data else None
+        return web.json_response({"ok": core.update_task(int(request.match_info["id"]),
+                                                         title, due, notes)})
 
     async def post_task_status(request: web.Request) -> web.Response:
         status = (await body(request)).get("status")
@@ -225,7 +242,9 @@ def create_app(core: Core, token: str) -> web.Application:
         web.post("/api/chat", post_chat),
         web.post("/api/onboard", post_onboard),
         web.post("/api/tasks", post_task),
+        web.get("/api/tasks", get_tasks),
         web.post(r"/api/tasks/{id:\d+}", post_task_status),
+        web.post(r"/api/tasks/{id:\d+}/edit", post_task_edit),
         web.post(r"/api/actions/{id:\d+}", post_decision),
         web.get("/api/events", get_events),
         web.post("/api/collect", post_collect),

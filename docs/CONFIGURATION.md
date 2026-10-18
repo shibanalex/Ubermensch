@@ -95,8 +95,8 @@ mkdir -p "$UBERMENSCH_DATA/db"
 | `TG_CHAT_ID` | Нет, обязательна; целое число | Чат владельца, фильтр доступа бота |
 | `UBERMENSCH_DATA` | `<папка проекта>/../Ubermensch` | База, workspace, raw, secrets, logs, backups |
 | `API_PORT` | `8765` | Порт HTTP ядра |
-| `ANYA_DOCUMENTS` | `<XDG DOCUMENTS>/Аня` (`~/Документы/Аня`) | Свободная зона Ани: заметки, конспекты, досье, Word/Excel |
-| `DIARY_DIR` | Нет | Дневник пользователя (Obsidian): Аня читает, но не правит |
+| `OBSIDIAN_VAULT` | Нет | Хранилище Obsidian: сбор, контекст чата, `--add-dir`; запись только в `08 AI/Reports` (туда же профиль, досье, конспекты), остальное хранилище защищено |
+| `ANYA_DOCUMENTS` | `<XDG DOCUMENTS>/Аня` (`~/Документы/Аня`) | Свободная зона Ани: Word/Excel; без хранилища — и заметки, профиль, досье |
 | `UBERMENSCH_ROOTS` | Нет | Дополнительные корни поиска и сбора файлов, через `:` |
 | `AI_CHATS_BACKUPS` | `~/Backups` | Архивы старой истории Claude Code (`wsl-*-home-*.tar.gz`) |
 | `CLAUDE_BIN` | Автопоиск | Явный путь к CLI |
@@ -163,7 +163,8 @@ OAuth Google и авторизованные сессии хранятся в `s
 
 ```bash
 ./run.sh                              # ядро, логи в терминале
-.venv/bin/python -m ubermensch.desktop  # в другом терминале — маскот и лист задач
+.venv/bin/python -m ubermensch.desktop  # в другом терминале — маскот
+./scripts/install_widget.sh            # один раз: виджет задач Plasma
 ```
 
 `start.sh` запускает ядро и desktop в фоне: через systemd, если установлен автозапуск,

@@ -111,7 +111,11 @@ class Core:
     async def chat(self, text: str, channel: str, *, from_user: bool = True) -> Outcome:
         self.investigation.touch()  # фоновый разбор притихнет и не съест лимит разговора
         with self._brain_busy():
-            return await self.assistant.handle(text, channel=channel, from_user=from_user)
+            outcome = await self.assistant.handle(text, channel=channel, from_user=from_user)
+            if outcome.emotion and outcome.emotion != "neutral":
+                # до «changed»: маскот начнёт печатать ответ уже с этим выражением
+                self.bus.publish({"type": "emotion", "emotion": outcome.emotion})
+        return outcome
 
     def notify(self, text: str) -> None:
         """Сообщение от системы: появится у маскота и придёт в Telegram."""
@@ -255,6 +259,13 @@ class Core:
         self.bus.publish({"type": "changed"})
         return task_id
 
+    def update_task(self, task_id: int, title: str | None, due: str | None,
+                    notes: str | None) -> bool:
+        changed = self.store.update_task(task_id, title, notes, due)
+        if changed:
+            self.bus.publish({"type": "changed"})
+        return changed
+
     def set_task_status(self, task_id: int, status: str) -> bool:
         changed = self.store.set_task_status(task_id, status)
         if changed:
@@ -347,7 +358,7 @@ class Core:
         note = ""
         if summary:
             try:
-                folder = config.DOCUMENTS_DIR / "Конспекты"
+                folder = config.OUTPUT_DIR / "Конспекты"
                 folder.mkdir(parents=True, exist_ok=True)
                 target = folder / f"{path.stem}.md"
                 if not summary.startswith("#"):  # заголовок модель обычно пишет сама
@@ -355,7 +366,7 @@ class Core:
                 target.write_text(summary + "\n", encoding="utf-8")
                 note = f"\nКонспект: {target}"
             except OSError:
-                log.warning("Не удалось положить конспект в %s", config.DOCUMENTS_DIR)
+                log.warning("Не удалось положить конспект в %s", config.OUTPUT_DIR)
         self.store.record_import(path.name, digest, "done", outcome.reply)
         self.store.delete_cursor(f"distill:{digest}")
         self.notify(f"📥 {outcome.reply}\nНового в памяти: {len(outcome.changes)}.{note}")

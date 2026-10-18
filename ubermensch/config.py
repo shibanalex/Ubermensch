@@ -42,11 +42,15 @@ PERSONAL_DIRS = tuple(dict.fromkeys(
 # Дополнительные места для поиска и сбора (диски с данными): через «:» в UBERMENSCH_ROOTS.
 EXTRA_ROOTS = tuple(Path(p).expanduser() for p in os.getenv("UBERMENSCH_ROOTS", "").split(":") if p)
 
-# Дневник пользователя (хранилище Obsidian). Аня его читает; пишет — только в свою папку.
-DIARY_DIR = Path(d).expanduser() if (d := os.getenv("DIARY_DIR")) else None
+# Хранилище Obsidian пользователя: дневник, ориентиры, проекты. Аня читает всё, кроме
+# вложений и шаблонов, а пишет только свои выводы — в «08 AI/Reports» (его правила для агента).
+VAULT_DIR = Path(v).expanduser() if (v := os.getenv("OBSIDIAN_VAULT")) else None
+REPORTS_DIR = VAULT_DIR / "08 AI" / "Reports" if VAULT_DIR else None
 # Свободные зоны Ани: здесь она создаёт и правит файлы сама, без подтверждения.
 DOCUMENTS_DIR = Path(os.getenv("ANYA_DOCUMENTS", str(USER_DOCUMENTS / "Аня"))).expanduser()
-FREE_ZONES = (DATA_DIR / "workspace", DOCUMENTS_DIR)
+# Куда класть отчёты (профиль, досье, конспекты): в хранилище, а без него — в папку Ани.
+OUTPUT_DIR = REPORTS_DIR or DOCUMENTS_DIR
+FREE_ZONES = (DATA_DIR / "workspace", DOCUMENTS_DIR, *((REPORTS_DIR,) if REPORTS_DIR else ()))
 
 
 # С ПК и системой Аня работает без подтверждения. Исключение — места, где ошибка ломает
@@ -54,7 +58,7 @@ FREE_ZONES = (DATA_DIR / "workspace", DOCUMENTS_DIR)
 PROTECTED = (*(Path(p) for p in ("/etc", "/boot", "/usr", "/bin", "/sbin", "/lib", "/lib64",
                                  "/opt", "/var", "/root", "/snap", "/sys", "/proc", "/dev")),
              Path.home() / ".ssh", Path.home() / ".gnupg", Path.home() / ".local" / "bin",
-             DATA_DIR, PROJECT_DIR)
+             DATA_DIR, PROJECT_DIR, *((VAULT_DIR,) if VAULT_DIR else ()))
 
 
 def is_protected(path: Path) -> bool:

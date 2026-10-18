@@ -27,6 +27,29 @@ from .console import BG, BORDER, DIM, GREEN, MONO, TITLE_H, plain
 
 FACE = GREEN
 TALK = ("w", "open", "w", "o")  # рот, пока говорит
+
+# Эмоции в духе аниме и манги: лицо (глаза, рот, брови, румянец, подмигивание), рот во время
+# речи и эффект вокруг. Эмоцию ответа выбирает мозг (поле emotion), ядро присылает событие.
+EMOTIONS = {
+    "happy": dict(eyes="happy", mouth="w", brows=2, blush=True, talk=("w", "open", "smile", "o")),
+    "excited": dict(eyes="sparkle", mouth="smile", brows=4, blush=True,
+                    talk=("smile", "open", "smile", "O"), effect="sparkles"),
+    "embarrassed": dict(eyes="chevron", mouth="pout", brows=-1, angle=-3, blush=True,
+                        talk=("pout", "o", "pout", "w"), effect="sweat"),
+    "annoyed": dict(eyes="flat", mouth="pout", brows=-2, angle=5,
+                    talk=("flat", "open", "pout", "o"), effect="anger"),
+    "sad": dict(eyes="teary", mouth="frown", brows=1, angle=-5,
+                talk=("frown", "o", "frown", "open"), effect="gloom"),
+    "confused": dict(eyes="open", mouth="o", tilt=6, talk=("o", "w", "o", "open"),
+                     effect="question"),
+    "smug": dict(eyes="half", mouth="w", brows=1, tilt=5, talk=("w", "open", "w", "tongue")),
+    "wink": dict(eyes="open", mouth="tongue", wink=True, blush=True,
+                 talk=("tongue", "open", "smile", "w"), effect="sparkle_one"),
+    "thinking": dict(eyes="open", mouth="w", tilt=5, talk=TALK, effect="dots"),
+}
+EMOTION_HOLD_MS = 5000  # после реплики выражение держится ещё столько
+POKES_TO_ANNOY = 4  # столько тычков за POKE_WINDOW_MS — раздражается
+POKE_WINDOW_MS = 2500
 PEEK = 30  # сколько маскота видно, когда она спряталась за край экрана
 CHEERS = ("умничка :3", "минус одна, горжусь тобой", "вот это мой человек", "засчитано ♥",
           "кайф. дальше?")
@@ -82,6 +105,8 @@ class Mascot(console.ConsoleWindow):
         self._pet_moves: list[tuple[int, int]] = []  # (время, пройденный курсором путь)
         self._last_cursor: QPoint | None = None
         self._hearts: list[tuple[int, float]] = []  # (время появления, x)
+        self._emotion, self._emotion_until = "", 0  # эмоция текущего ответа
+        self._pokes: list[int] = []  # когда тыкали в мордочку
         self._last_reply_id: int | None = None
 
         self._settings = QSettings("Ubermensch", "desktop")
@@ -161,6 +186,12 @@ class Mascot(console.ConsoleWindow):
     def happy(self, seconds: float = 1.5) -> None:
         self._happy_until = self._ms + int(seconds * 1000)
 
+    def feel(self, emotion: str, seconds: float = 6) -> None:
+        """Показать эмоцию: на время реплики и ещё EMOTION_HOLD_MS после неё."""
+        if emotion in EMOTIONS:
+            self._emotion = emotion
+            self._emotion_until = self._ms + int(seconds * 1000)
+
     def _on_event(self, event: dict) -> None:
         kind = event.get("type")
         if kind == "reminder":
@@ -170,8 +201,10 @@ class Mascot(console.ConsoleWindow):
         elif kind == "say":  # реплика от ядра — например, комментарий к экрану
             self.say(event.get("text", ""), seconds=20)
         elif kind == "celebrate":
-            self.happy(2)
+            self.feel("excited", 3.5)
             self.say(random.choice(CHEERS), seconds=4)
+        elif kind == "emotion":  # эмоция ответа мозга: держится, пока печатается реплика
+            self.feel(str(event.get("emotion", "")), 8)
 
     def _on_state(self, state: dict) -> None:
         replies = [m for m in state.get("messages", []) if m["role"] == "assistant"]
@@ -208,7 +241,11 @@ class Mascot(console.ConsoleWindow):
         if self.api.state.get("thinking"):
             return "thinking"
         if self._typing or t < self._talk_until:
+            if self._emotion and t < self._emotion_until:  # говорит, пока не допечатает
+                self._emotion_until = max(self._emotion_until, t + EMOTION_HOLD_MS)
             return "talk"
+        if self._emotion and t < self._emotion_until:
+            return "emotion"
         activity = self.behavior.activity
         if activity == "wake":  # вздрогнул, потом обрадовался
             return "surprised" if self.behavior.progress(t) < 0.35 else "happy"
@@ -218,11 +255,24 @@ class Mascot(console.ConsoleWindow):
             return "sleep"
         return "idle"
 
+    def _active_emotion(self) -> dict | None:
+        return EMOTIONS.get(self._emotion) if self._ms < self._emotion_until else None
+
     def _face(self, mood: str) -> face.FaceState:
         """Эмоция → состояние лица."""
         t = self._ms
         blink = t < self._blink_until
         state = face.FaceState(eyes="closed" if blink else "open", t=t)
+        emotion = self._active_emotion()
+        if emotion and mood in ("talk", "emotion"):
+            if not blink or emotion["eyes"] in ("happy", "chevron", "flat"):
+                state.eyes = emotion["eyes"]
+            state.brows, state.brow_angle = emotion.get("brows", 0), emotion.get("angle", 0)
+            state.brow_tilt, state.blush = emotion.get("tilt", 0), emotion.get("blush", False)
+            state.wink = emotion.get("wink", False)
+            talk = emotion.get("talk", TALK)
+            state.mouth = talk[(t // 140) % len(talk)] if mood == "talk" else emotion["mouth"]
+            return state
         if mood == "drag":
             state.eyes, state.mouth, state.brows = "chevron", "o", -3
         elif mood == "dizzy":
@@ -287,6 +337,14 @@ class Mascot(console.ConsoleWindow):
             p.translate(cx, TITLE_H + body_h / 2)
             p.rotate(math.sin(self._ms / 300) * 5)
             p.translate(-cx, -(TITLE_H + body_h / 2))
+        elif mood == "talk":  # говорит — голова чуть кивает в такт словам
+            p.translate(0, math.sin(self._ms / 110) * 1.5)
+        elif mood == "emotion" and self._emotion == "excited":  # подпрыгивает от радости
+            p.translate(0, -abs(math.sin(self._ms / 160)) * 5)
+        elif mood == "emotion" and self._emotion == "confused":  # склонила голову
+            p.translate(cx, TITLE_H + body_h / 2)
+            p.rotate(-8)
+            p.translate(-cx, -(TITLE_H + body_h / 2))
         face.draw(p, cx, eyes_y, mouth_y, state, color)
         p.restore()
 
@@ -301,8 +359,34 @@ class Mascot(console.ConsoleWindow):
             p.drawText(QRect(10, self.H - 20, self.W - 16, 16), Qt.AlignmentFlag.AlignVCenter,
                        rf"C:\anya> {status}")
 
+    def _paint_effect(self, p: QPainter, effect: str, color) -> None:
+        """Манга-эффект эмоции вокруг мордочки."""
+        t, w = self._ms, self.W
+        if effect == "sparkles":
+            face.sparkles(p, [(18, TITLE_H + 20), (w - 20, TITLE_H + 26), (24, self.H - 38),
+                              (w - 26, self.H - 44)], t, color)
+        elif effect == "sparkle_one":
+            face.sparkles(p, [(w / 2 + 70, TITLE_H + 22)], t, color)
+        elif effect == "sweat":
+            face.sweat_drop(p, w / 2 + 68, TITLE_H + 26, t)
+        elif effect == "anger":
+            face.anger_mark(p, w / 2 + 64, TITLE_H + 18, t)
+        elif effect == "gloom":
+            face.gloom(p, w / 2 - 34, TITLE_H + 4, 68, t, color)
+        elif effect == "question":
+            p.setPen(color)
+            p.setFont(QFont(MONO, 18, QFont.Weight.Bold))
+            p.drawText(QPointF(w - 34, TITLE_H + 26 - abs(math.sin(t / 300)) * 4), "?")
+        elif effect == "dots":
+            p.setPen(color)
+            p.setFont(QFont(MONO, 14, QFont.Weight.Bold))
+            p.drawText(QPointF(w - 46, TITLE_H + 22), "." * (1 + (t // 400) % 3))
+
     def _paint_extras(self, p: QPainter, mood: str, color) -> None:
         t = self._ms
+        emotion = self._active_emotion()
+        if emotion and mood in ("talk", "emotion") and emotion.get("effect"):
+            self._paint_effect(p, emotion["effect"], color)
         p.setPen(color)
         if mood == "thinking":
             p.setFont(QFont(MONO, 14, QFont.Weight.Bold))
@@ -314,7 +398,7 @@ class Mascot(console.ConsoleWindow):
             for i, note in enumerate("♪♫♪"):
                 phase = ((t / 1000) * 0.45 + i / 3) % 1
                 p.setOpacity(1 - phase)
-                p.setFont(QFont("Segoe UI Symbol", int(10 + phase * 5)))
+                p.setFont(QFont("Noto Sans Symbols2", int(10 + phase * 5)))
                 p.drawText(QPointF(self.W - 52 + math.sin(phase * 6 + i) * 8,
                                    TITLE_H + 46 - phase * 34), note)
             p.setOpacity(1)
@@ -333,7 +417,7 @@ class Mascot(console.ConsoleWindow):
         for born, x in self._hearts:  # сердечки, когда гладят
             phase = (t - born) / 1500
             p.setOpacity(1 - phase)
-            p.setFont(QFont("Segoe UI Symbol", 13))
+            p.setFont(QFont("Noto Sans Symbols2", 13))
             p.drawText(QPointF(x, TITLE_H + 40 - phase * 34), "♥")
         p.setOpacity(1)
 
@@ -397,6 +481,13 @@ class Mascot(console.ConsoleWindow):
         elif button == "maximize":
             self.open_history.emit()
         else:
+            self._pokes = [t for t in self._pokes if self._ms - t < POKE_WINDOW_MS] + [self._ms]
+            if len(self._pokes) >= POKES_TO_ANNOY:  # затыкали — дуется
+                self._pokes.clear()
+                self.feel("annoyed", 3)
+                self.say(random.choice(("эй, щекотно!", "ну хватит тыкать >_<", "я тебе не кнопка ¬_¬")),
+                         seconds=3)
+                return
             self.happy(0.5)
             self.clicked.emit()
 

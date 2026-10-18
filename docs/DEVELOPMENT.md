@@ -23,7 +23,7 @@
 
 ```mermaid
 flowchart TD
-    UI[Qt: маскот и лист задач] -->|HTTP + SSE| API[Локальный API]
+    UI[Qt: маскот; виджет задач Plasma] -->|HTTP + SSE| API[Локальный API]
     TG[Telegram-бот aiogram] --> CORE[Core]
     API --> CORE
     CORE --> ASSISTANT[Assistant: контекст и применение ответа]
