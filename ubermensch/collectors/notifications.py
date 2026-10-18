@@ -1,66 +1,69 @@
-"""Уведомления Windows: кто и что пишет пользователю (Discord, почта, сайты и т. д.).
+"""Уведомления: кто и что пишет пользователю (Discord, почта, сайты в Chrome и т. д.).
 
-Windows хранит недавние уведомления в локальной базе; собирая её регулярно, копим историю.
-Telegram отсюда не берём — его переписки собираются напрямую и полнее.
+Система истории уведомлений не хранит, поэтому ядро само слушает их на шине D-Bus
+(system/session.py) и пишет журнал по дням; сборщик забирает свежие дни, база
+отбрасывает уже собранное. Telegram отсюда не берём — его переписки собираются напрямую
+и полнее.
 """
 from __future__ import annotations
 
+import hashlib
 import html
-import os
+import json
 import re
-import shutil
-import sqlite3
-import tempfile
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import date, datetime, timedelta
 
+from .. import config
 from . import local_iso
 
-DATABASE = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Notifications" \
-    / "wpndatabase.db"
-FILETIME_EPOCH = datetime(1601, 1, 1, tzinfo=timezone.utc)
-SKIP_APPS = re.compile(r"(?i)telegram|python|ubermensch")
+FOLDER = config.DATA_DIR / "raw" / "notifications"
+FRESH_DAYS = 3  # сбор идёт чаще раза в день — этого хватает с запасом
+KEEP_DAYS = 30
+SKIP_APPS = re.compile(r"(?i)telegram|python|ubermensch|anya|plasma_waitforname|kded|"
+                       r"org\.kde\.(powerdevil|kdeconnect\.daemon)|spectacle")
+TAGS = re.compile(r"<[^>]+>")
 
 
-def _app_name(primary_id: str) -> str:
-    """«Microsoft.WindowsStore_8wekyb3d8bbwe!App» → «WindowsStore», «…\\chrome.exe» → «chrome»."""
-    name = re.split(r"[!\\/]", primary_id)
-    candidate = next((part for part in reversed(name) if part and not part.startswith("{")),
-                     primary_id)
-    candidate = re.sub(r"_[a-z0-9]{13}$", "", candidate.removesuffix(".exe"))
-    return candidate.split(".")[-1] if candidate.count(".") >= 1 else candidate
+def _app_name(app: str, entry: str) -> str:
+    """«Google Chrome» → «Google Chrome», пустое имя — по ярлыку «org.kde.discover» → «discover»."""
+    return app.strip() or entry.rsplit(".", 1)[-1] or "?"
 
 
 def collect() -> list[dict]:
-    if not DATABASE.exists():
+    if not FOLDER.is_dir():
         return []
+    today = date.today()
     events = []
-    with tempfile.TemporaryDirectory() as tmp:
-        for suffix in ("", "-wal", "-shm"):  # база открыта Windows — читаем копию целиком
-            source = Path(f"{DATABASE}{suffix}")
-            if source.exists():
-                shutil.copy2(source, Path(tmp) / f"wpndatabase.db{suffix}")
-        db = sqlite3.connect(Path(tmp) / "wpndatabase.db")
-        rows = db.execute(
-            "SELECT n.Id, h.PrimaryId, n.ArrivalTime, n.Payload FROM Notification n "
-            "JOIN NotificationHandler h ON h.RecordId = n.HandlerId WHERE n.Type = 'toast'"
-        ).fetchall()
-        db.close()
-    for notification_id, primary_id, arrival, payload in rows:
-        if not payload or SKIP_APPS.search(primary_id or ""):
+    for journal in sorted(FOLDER.glob("*.jsonl")):
+        try:
+            day = date.fromisoformat(journal.stem)
+        except ValueError:
             continue
-        xml = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else payload
-        texts = [html.unescape(t).strip() for t in re.findall(r"<text[^>]*>([^<]*)</text>", xml)]
-        text = " — ".join(t for t in texts if t)
-        if not text:
+        if today - day > timedelta(days=KEEP_DAYS):
+            journal.unlink(missing_ok=True)
             continue
-        moment = FILETIME_EPOCH + timedelta(microseconds=int(arrival) // 10)
-        events.append({
-            "source": "notification",
-            "external_id": f"{primary_id}:{notification_id}:{arrival}",
-            "ts": local_iso(moment),
-            "thread": _app_name(primary_id or "?"),
-            "text": text[:1000],
-            "meta": {},
-        })
+        if today - day > timedelta(days=FRESH_DAYS):
+            continue
+        for line in journal.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            app = _app_name(record.get("app", ""), record.get("entry", ""))
+            if SKIP_APPS.search(f"{app} {record.get('entry', '')}"):
+                continue
+            parts = [html.unescape(TAGS.sub("", record.get(k) or "")).strip()
+                     for k in ("summary", "body")]
+            text = " — ".join(p for p in parts if p)
+            if not text:
+                continue
+            digest = hashlib.sha1(line.encode("utf-8")).hexdigest()[:16]
+            events.append({
+                "source": "notification",
+                "external_id": f"{app}:{record.get('ts')}:{digest}",
+                "ts": local_iso(datetime.fromisoformat(record["ts"]).astimezone()),
+                "thread": app,
+                "text": text[:1000],
+                "meta": {},
+            })
     return events

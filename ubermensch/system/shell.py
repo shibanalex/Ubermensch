@@ -1,34 +1,36 @@
-"""Команды и открытие: PowerShell с классификацией «только чтение», запуск, Корзина."""
+"""Команды и открытие: bash с классификацией «только чтение», запуск программ, Корзина."""
 from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 OUTPUT_CHARS = 8000
 
-# Команды PowerShell, которые что-то меняют. Остальные (Get-*, Test-*, Select-* …) — только чтение.
+# Команды, которые что-то меняют. Остальные (ls, cat, grep, ps, df, journalctl …) — только чтение.
 MUTATING = re.compile(
-    r"(?i)\b(remove|set|new|stop|start|restart|rename|move|copy|clear|install|uninstall|"
-    r"invoke|add|disable|enable|out|export|import|register|unregister|update|reset|suspend|"
-    r"resume|mount|dismount|push|pop|enter|send|write|save|lock|unlock|grant|revoke)-\w+"
-    r"|\b(rm|del|erase|rd|rmdir|mv|move|cp|copy|ren|kill|taskkill|shutdown|reg|sc|net|"
-    r"format|diskpart|bcdedit|iex|curl|wget|start|attrib|icacls|takeown|cipher|powercfg)\b"
-    r"|>|\|\s*(sh|bash|cmd)\b")
-
+    r"(?i)(^|[;&|(`]|\$\()\s*(sudo\s+)?(rm|rmdir|mv|cp|mkdir|touch|ln|chmod|chown|chgrp|dd|"
+    r"truncate|shred|kill|pkill|killall|xkill|systemctl|loginctl|apt|apt-get|dpkg|snap|flatpak|"
+    r"pip|pipx|npm|git|tee|install|rsync|scp|curl|wget|crontab|kwriteconfig6|gsettings|dconf|"
+    r"nmcli|rfkill|xdg-settings|update-alternatives|ufw|mount|umount|swapoff|swapon|tar|unzip|"
+    r"7z|gio|kioclient6|trash|reboot|poweroff|shutdown|halt)\b"
+    r"|\bsed\s+(-\w*\s+)*-i|>|\|\s*(sh|bash|zsh|python3?)\b")
 
 # Команды, которые могут сломать систему, данные или доступ: их Аня выполняет только с «да».
 DANGEROUS = re.compile(
-    r"(?i)\b(format|diskpart|bcdedit|vssadmin|wbadmin|cipher\s+/w|bootrec|sfc|dism|"
-    r"shutdown|logoff)\b"
-    r"|\b(Format-Volume|Clear-Disk|Initialize-Disk|Remove-Partition|Resize-Partition|"
-    r"Stop-Computer|Restart-Computer|Remove-LocalUser|Set-LocalUser|New-LocalUser|"
-    r"Add-LocalGroupMember|Set-MpPreference|Add-MpPreference|Set-ExecutionPolicy|"
-    r"Disable-ComputerRestore|Set-Service|Remove-Service)\b"
-    r"|\bnet\s+(user|localgroup)\b|\breg\s+(delete|import)\b|Remove-Item\s+.*HKLM:"
-    r"|\bTurnOff|DisableAntiSpyware|DisableRealtimeMonitoring")
-PROTECTED_WORDS = re.compile(r"(?i)\\Windows\b|Program Files|Ubermensch|Übermensch|\.env\b")
+    r"(?i)\b(sudo|su|pkexec|doas|mkfs(\.\w+)?|fdisk|sfdisk|gdisk|parted|wipefs|cryptsetup|"
+    r"dd|shred|shutdown|reboot|poweroff|halt|useradd|userdel|usermod|passwd|chpasswd|visudo|"
+    r"grub-install|update-grub|efibootmgr)\b"
+    r"|\bsystemctl\s+(--user\s+)?(poweroff|reboot|halt|disable|mask|stop|kill|isolate|"
+    r"rescue|emergency)\b"
+    r"|\b(apt|apt-get|dpkg|snap|flatpak)\s+(remove|purge|autoremove|-r|-P|--purge)\b"
+    r"|\bufw\s+disable\b|\bcrontab\s+-r\b|\brm\s+(-\w+\s+)*/\s*($|[;&|])"
+    r"|>\s*/dev/(sd|nvme|mmcblk)|:\(\)\s*\{")
+PROTECTED_WORDS = re.compile(
+    r"(?i)(^|[\s'\"=])/(etc|boot|usr|bin|sbin|lib|lib64|opt|var|root|sys|proc)\b"
+    r"|Ubermensch|Übermensch|\.env\b|\.ssh\b|\.gnupg\b")
 
 
 def is_read_only(command: str) -> bool:
@@ -42,31 +44,66 @@ def is_dangerous(command: str) -> bool:
         not is_read_only(command) and bool(PROTECTED_WORDS.search(command)))
 
 
-def powershell(command: str, timeout: int = 120) -> str:
-    """Выполняет команду и возвращает вывод (UTF-8, обрезанный)."""
-    script = f"[Console]::OutputEncoding=[Text.Encoding]::UTF8; {command}"
-    done = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                          capture_output=True, timeout=timeout,
-                          creationflags=subprocess.CREATE_NO_WINDOW)
+def run(command: str, timeout: int = 120) -> str:
+    """Выполняет команду в bash и возвращает вывод (обрезанный)."""
+    done = subprocess.run(["bash", "-c", command], capture_output=True, timeout=timeout,
+                          stdin=subprocess.DEVNULL, cwd=Path.home(),
+                          env={**os.environ, "LC_ALL": os.environ.get("LANG", "C.UTF-8")})
     out = (done.stdout + done.stderr).decode("utf-8", errors="replace").strip()
     return (out or f"(нет вывода, код {done.returncode})")[:OUTPUT_CHARS]
 
 
+def _detached(args: list[str]) -> None:
+    """Программа живёт сама по себе: не дочерний процесс ядра и без его вывода."""
+    subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def _desktop_entries() -> list[Path]:
+    dirs = [Path.home() / ".local/share"] + [
+        Path(d) for d in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":")]
+    dirs += [Path("/var/lib/snapd/desktop"), Path("/var/lib/flatpak/exports/share"),
+             Path.home() / ".local/share/flatpak/exports/share"]
+    return [f for d in dirs if (d / "applications").is_dir()
+            for f in (d / "applications").rglob("*.desktop")]
+
+
+def _find_app(name: str) -> Path | None:
+    """Ярлык программы: по имени файла («org.telegram.desktop»), затем по Name= («Telegram»)."""
+    needle = name.casefold().removesuffix(".desktop")
+    entries = _desktop_entries()
+    for entry in entries:
+        if needle == entry.stem.casefold() or needle == entry.stem.casefold().rsplit(".", 1)[-1]:
+            return entry
+    for entry in entries:
+        try:
+            text = entry.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if "NoDisplay=true" in text:
+            continue
+        names = re.findall(r"(?m)^(?:Name|Name\[ru\]|GenericName\[ru\])=(.+)$", text)
+        if any(needle == n.strip().casefold() for n in names):
+            return entry
+    for entry in entries:
+        if needle in entry.stem.casefold():
+            return entry
+    return None
+
+
 def open_target(target: str) -> None:
-    """Файл, папка, URL или программа по имени («notepad», «chrome»)."""
-    if re.match(r"(?i)^https?://", target) or Path(target).exists():
-        os.startfile(target)
+    """Файл, папка, URL или программа по имени («chrome», «telegram», «kate»)."""
+    path = Path(target).expanduser()
+    if re.match(r"(?i)^[a-z][a-z0-9+.-]*://", target) or path.exists():
+        _detached(["xdg-open", str(path) if path.exists() else target])
+    elif entry := _find_app(target):
+        _detached(["gio", "launch", str(entry)])
+    elif shutil.which(target):
+        _detached([target])
     else:
-        subprocess.Popen(["cmd", "/c", "start", "", target],
-                         creationflags=subprocess.CREATE_NO_WINDOW)
+        raise FileNotFoundError(f"Не нашла программу или файл «{target}».")
 
 
 def to_recycle_bin(path: str) -> None:
     """Удаление в Корзину — его можно отменить."""
-    kind = "DeleteDirectory" if Path(path).is_dir() else "DeleteFile"
-    literal = path.replace("'", "''")
-    subprocess.run(["powershell", "-NoProfile", "-Command",
-                    "Add-Type -AssemblyName Microsoft.VisualBasic; "
-                    f"[Microsoft.VisualBasic.FileIO.FileSystem]::{kind}('{literal}', "
-                    "'OnlyErrorDialogs', 'SendToRecycleBin')"],
-                   check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    subprocess.run(["gio", "trash", "--", path], check=True, capture_output=True, timeout=60)

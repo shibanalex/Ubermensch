@@ -10,13 +10,13 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote  # имена скачанных файлов бывают в %D0%90-кодировке
 
+from .. import config
 from . import local_iso
 
-HOME = Path.home()
-ROOTS = [Path(r"D:\доки"), HOME / "Documents", HOME / "Downloads", HOME / "Desktop"]
+ROOTS = [*config.PERSONAL_DIRS, *config.EXTRA_ROOTS]
 EXTENSIONS = {".docx", ".pdf", ".txt", ".md"}
 SKIP_DIRS = {"node_modules", ".venv", "venv", "__pycache__", "site-packages", "AppData", "dist",
-             "build", ".idea", ".vscode", "Übermensch_Project", "Messenger", "gallery-admin"}
+             "build", ".idea", ".vscode", ".cache", "snap", "Übermensch_Project", "Messenger", "gallery-admin"}
 PROJECT_MARKERS = {".git", "package.json", "pyproject.toml", "requirements.txt"}
 MAX_BYTES = 10 * 1024 * 1024
 MAX_CHARS = 30_000

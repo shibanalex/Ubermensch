@@ -1,93 +1,97 @@
-"""Окна и ввод Windows: активное окно, простой, полноэкранность, блокировка, медиаклавиши."""
+"""Окна и ввод: активное окно, простой, полноэкранность, блокировка, музыка и громкость.
+
+Окно и простой — от сенсоров сеанса (session.py: KWin и Wayland). Музыка — через MPRIS
+(D-Bus-интерфейс любого плеера: Chrome, Spotify, VLC…), громкость — через PipeWire (wpctl).
+"""
 from __future__ import annotations
 
-import ctypes
-from ctypes import wintypes
+import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 
-_user32 = ctypes.windll.user32
-_kernel32 = ctypes.windll.kernel32
-_user32.GetForegroundWindow.restype = wintypes.HWND
-_kernel32.OpenProcess.restype = wintypes.HANDLE
-_kernel32.GetTickCount.restype = wintypes.DWORD
-PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-MONITOR_DEFAULTTONEAREST = 2
+from jeepney import DBusAddress, new_method_call
+from jeepney.bus_messages import message_bus
+from jeepney.io.blocking import open_dbus_connection
 
-MEDIA_KEYS = {"play_pause": 0xB3, "next": 0xB0, "previous": 0xB1, "volume_up": 0xAF,
-              "volume_down": 0xAE, "mute": 0xAD}
+from . import session
+
+MEDIA_ACTIONS = ("play_pause", "next", "previous", "volume_up", "volume_down", "mute")
+MPRIS_METHODS = {"play_pause": "PlayPause", "next": "Next", "previous": "Previous"}
+VOLUME_STEP = "2%"
 
 
 @dataclass(frozen=True)
 class Window:
-    app: str  # имя программы без .exe
+    app: str  # класс программы: google-chrome, org.telegram.desktop, code…
     title: str
-    hwnd: int
-
-
-class _LastInput(ctypes.Structure):
-    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
-
-
-class _MonitorInfo(ctypes.Structure):
-    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
-                ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+    pid: int
+    fullscreen: bool = False
+    desktop: bool = False  # рабочий стол (обои и значки)
 
 
 def idle_seconds() -> float:
     """Сколько секунд не трогали мышь и клавиатуру."""
-    info = _LastInput(ctypes.sizeof(_LastInput), 0)
-    _user32.GetLastInputInfo(ctypes.byref(info))
-    return ((_kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF) / 1000  # счётчик 32-битный
+    return session.idle_seconds()
 
 
 def foreground() -> Window | None:
-    """Активное окно или None, если его нет."""
-    hwnd = _user32.GetForegroundWindow()
-    if not hwnd:
+    """Активное окно или None, если его нет (или сенсоры ядра не запущены)."""
+    data = session.active_window()
+    if not data:
         return None
-    title = ctypes.create_unicode_buffer(512)
-    _user32.GetWindowTextW(hwnd, title, 512)
-    pid = wintypes.DWORD()
-    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    app = "?"
-    process = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
-    if process:
-        path = ctypes.create_unicode_buffer(1024)
-        size = wintypes.DWORD(1024)
-        if _kernel32.QueryFullProcessImageNameW(process, 0, path, ctypes.byref(size)):
-            app = Path(path.value).stem
-        _kernel32.CloseHandle(process)
-    return Window(app, title.value, int(hwnd))
+    return Window(app=data.get("app", "?"), title=data.get("title", ""),
+                  pid=int(data.get("pid") or 0), fullscreen=bool(data.get("fullscreen")),
+                  desktop=bool(data.get("desktop")))
 
 
-def is_desktop(hwnd: int | None) -> bool:
-    """Окно рабочего стола Windows (обои и значки)."""
-    name = ctypes.create_unicode_buffer(32)
-    _user32.GetClassNameW(wintypes.HWND(hwnd or 0), name, 32)
-    return name.value in ("Progman", "WorkerW")
+def is_desktop(window: Window | None) -> bool:
+    return window is not None and window.desktop
 
 
 def is_fullscreen(window: Window) -> bool:
     """Окно занимает весь монитор — игра, фильм, презентация."""
-    rect = wintypes.RECT()
-    if not _user32.GetWindowRect(window.hwnd, ctypes.byref(rect)):
-        return False
-    monitor = _user32.MonitorFromWindow(window.hwnd, MONITOR_DEFAULTTONEAREST)
-    info = _MonitorInfo(ctypes.sizeof(_MonitorInfo))
-    if not _user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
-        return False
-    screen = info.rcMonitor
-    return (rect.left <= screen.left and rect.top <= screen.top
-            and rect.right >= screen.right and rect.bottom >= screen.bottom)
+    return window.fullscreen
 
 
 def lock() -> None:
-    _user32.LockWorkStation()
+    subprocess.run(["loginctl", "lock-session"], check=True, timeout=10)
+
+
+def _players(connection) -> list[str]:
+    names = connection.send_and_get_reply(message_bus.ListNames(), timeout=2).body[0]
+    return [n for n in names if n.startswith("org.mpris.MediaPlayer2.")]
+
+
+def _playback_status(connection, player: str) -> str:
+    address = DBusAddress("/org/mpris/MediaPlayer2", bus_name=player,
+                          interface="org.freedesktop.DBus.Properties")
+    reply = connection.send_and_get_reply(
+        new_method_call(address, "Get", "ss", ("org.mpris.MediaPlayer2.Player", "PlaybackStatus")),
+        timeout=2)
+    return reply.body[0][1] if reply.body else ""
+
+
+def _media(action: str) -> None:
+    """Плеер, который играет сейчас; если никто не играет — первый на паузе."""
+    with open_dbus_connection(bus="SESSION") as connection:
+        players = _players(connection)
+        if not players:
+            raise RuntimeError("Не нашла запущенного плеера (музыка, видео в браузере).")
+        statuses = {p: _playback_status(connection, p) for p in players}
+        target = next((p for p, s in statuses.items() if s == "Playing"), None) \
+            or next((p for p, s in statuses.items() if s == "Paused"), players[0])
+        address = DBusAddress("/org/mpris/MediaPlayer2", bus_name=target,
+                              interface="org.mpris.MediaPlayer2.Player")
+        connection.send_and_get_reply(new_method_call(address, MPRIS_METHODS[action]), timeout=2)
 
 
 def press_media_key(action: str, times: int = 1) -> None:
-    key = MEDIA_KEYS[action]
-    for _ in range(max(1, min(times, 50))):
-        _user32.keybd_event(key, 0, 0, 0)
-        _user32.keybd_event(key, 0, 2, 0)  # KEYEVENTF_KEYUP
+    times = max(1, min(times, 50))
+    sink = "@DEFAULT_AUDIO_SINK@"
+    if action in MPRIS_METHODS:
+        for _ in range(times if action != "play_pause" else 1):
+            _media(action)
+    elif action == "mute":
+        subprocess.run(["wpctl", "set-mute", sink, "toggle"], check=True, timeout=5)
+    else:
+        step = f"{int(VOLUME_STEP[:-1]) * times}%{'+' if action == 'volume_up' else '-'}"
+        subprocess.run(["wpctl", "set-volume", "-l", "1.0", sink, step], check=True, timeout=5)

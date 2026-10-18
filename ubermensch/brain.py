@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import re
-import subprocess
+import signal
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -124,7 +124,7 @@ class Brain:
         self._auth_failures = 0  # подряд; первая после пробуждения часто ложная — сеть не поднялась
 
     def _resolve_binary(self) -> str:
-        """Путь к claude.exe меняется при обновлении расширения VS Code — ищем заново."""
+        """Путь к claude меняется при обновлении расширения VS Code — ищем заново."""
         if not self.claude_bin or not Path(self.claude_bin).exists():
             try:
                 self.claude_bin = find_claude()
@@ -167,20 +167,10 @@ class Brain:
         """Останавливаем и Claude, и его MCP-процессы до передачи запроса другому ИИ."""
         if proc.returncode is not None:
             return
-        if os.name == "nt":
-            try:
-                killer = await asyncio.create_subprocess_exec(
-                    "taskkill", "/PID", str(proc.pid), "/T", "/F",
-                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                )
-                try:
-                    await asyncio.wait_for(killer.wait(), 5)
-                except TimeoutError:
-                    killer.kill()
-                    await killer.wait()
-            except OSError:
-                log.warning("Не удалось вызвать taskkill для дерева Claude")
+        try:  # Claude запущен в своей группе процессов — гасим её целиком
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
         if proc.returncode is None:
             try:
                 proc.kill()
@@ -196,7 +186,7 @@ class Brain:
 
         tools — встроенные инструменты Claude Code (только безопасные), mcp_config — наш
         сервер инструментов (ubermensch.tools); всё остальное запрещено (dontAsk).
-        Промпт идёт через stdin (у командной строки Windows лимит ~32К символов),
+        Промпт идёт через stdin (длинный контекст не влезает в аргументы командной строки),
         ответ — JSON по схеме.
         """
         args = [
@@ -230,8 +220,7 @@ class Brain:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.settings.workspace,
-                # ядро запущено без консоли (pythonw) — без флага Windows открывает окно на каждый вызов
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                start_new_session=True,  # своя группа: при отмене гасим Claude вместе с MCP
                 # инструмент может ждать «да/нет» пользователя до 10 минут
                 env={**os.environ, "MCP_TOOL_TIMEOUT": str(limit * 1000)},
             )

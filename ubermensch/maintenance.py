@@ -4,7 +4,7 @@
 задачи, история, собранные данные), стилем переписки и досье. Пароль — BACKUP_PASSWORD в .env;
 без него архив не открыть, поэтому хранить его нужно отдельно от ноутбука.
 
-Архивы лежат в D:\\Ubermensch\\backups (последние 7) и копируются на внешний диск или флешку,
+Архивы лежат в <данные>/backups (последние 7) и копируются на внешний диск или флешку,
 если в корне носителя есть папка AnyaBackup (последние 14). Сессия Telegram и ключи из .env
 в архив не входят: их проще пересоздать, чем рисковать утечкой.
 """
@@ -15,7 +15,6 @@ import logging
 import os
 import shutil
 import sqlite3
-import string
 import subprocess
 import tempfile
 from datetime import datetime, timedelta
@@ -26,7 +25,7 @@ from .health import Health
 
 log = logging.getLogger(__name__)
 
-SEVEN_ZIP = Path(r"C:\Program Files\7-Zip\7z.exe")
+SEVEN_ZIP = shutil.which("7z") or shutil.which("7za")
 LOCAL_DIR = config.DATA_DIR / "backups"
 MARKER = "AnyaBackup"  # папка в корне внешнего носителя: сюда копировать архивы
 MARKERS = (MARKER, "OswaldBackup")  # старое имя тоже понимаем
@@ -43,19 +42,30 @@ def _archives(folder: Path) -> list[Path]:
                   key=lambda p: p.name.split("-", 1)[1])  # по дате, независимо от имени
 
 
-def _external_folders() -> list[Path]:
-    """Подключённые носители с папкой AnyaBackup (кроме системного C: и D: с данными)."""
-    folders = []
-    for letter in string.ascii_uppercase:
-        if letter in "CD":
-            continue
-        folder = next((Path(f"{letter}:/{m}") for m in MARKERS
-                       if Path(f"{letter}:/{m}").is_dir()), Path(f"{letter}:/{MARKER}"))
+def _mount_points() -> list[Path]:
+    """Подключённые носители: KDE монтирует их в /media/<пользователь>, иногда в /run/media."""
+    user = os.environ.get("USER", "")
+    points = []
+    for base in (Path("/media") / user, Path("/run/media") / user, Path("/mnt")):
         try:
-            if folder.is_dir():
-                folders.append(folder)
+            points += [p for p in base.iterdir() if p.is_dir()]
         except OSError:
             continue
+    return points
+
+
+def _external_folders() -> list[Path]:
+    """Подключённые носители с папкой AnyaBackup в корне (кроме диска с самими данными)."""
+    folders = []
+    for point in _mount_points():
+        try:
+            if point.stat().st_dev == config.DATA_DIR.stat().st_dev:
+                continue
+            folder = next((point / m for m in MARKERS if (point / m).is_dir()), None)
+        except OSError:
+            continue
+        if folder:
+            folders.append(folder)
     return folders
 
 
@@ -75,7 +85,7 @@ class Maintenance:
     def _check_disk(self) -> None:
         free_gb = shutil.disk_usage(config.DATA_DIR).free / 1024 ** 3
         if free_gb < MIN_FREE_GB:
-            self.health.report("disk", f"На диске {config.DATA_DIR.drive} осталось {free_gb:.1f} ГБ. "
+            self.health.report("disk", f"На диске с данными осталось {free_gb:.1f} ГБ. "
                                "Освободи место, иначе сбор данных и бэкапы остановятся.")
         else:
             self.health.clear("disk", "Место на диске снова есть.")
@@ -93,9 +103,9 @@ class Maintenance:
             self.health.report("backup", "Резервные копии не делаются: задай пароль BACKUP_PASSWORD "
                                "в .env и запиши его там, где он переживёт ноутбук.")
             return None
-        if not SEVEN_ZIP.exists():
+        if not SEVEN_ZIP:
             self.health.report("backup", "Резервные копии не делаются: нужен 7-Zip "
-                               r"(C:\Program Files\7-Zip).")
+                               "(sudo apt install 7zip).")
             return None
         LOCAL_DIR.mkdir(parents=True, exist_ok=True)
         archive = LOCAL_DIR / f"anya-{datetime.now():%Y-%m-%d_%H-%M}.7z"
@@ -113,13 +123,14 @@ class Maintenance:
                 if extra.exists():
                     parts.append(str(extra))
             done = subprocess.run(
-                [str(SEVEN_ZIP), "a", "-t7z", "-mhe=on", "-mx=5", f"-p{password}", str(archive),
-                 *parts], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                # пароль — через stdin: в аргументах его видит любой процесс (ps)
+                [SEVEN_ZIP, "a", "-t7z", "-mhe=on", "-mx=5", "-p", str(archive), *parts],
+                input=f"{password}\n".encode(), capture_output=True)
         if done.returncode != 0:
             archive.unlink(missing_ok=True)
             self.health.report("backup", "Резервная копия не создалась: 7-Zip вернул ошибку "
                                f"{done.returncode}. Подробности в логе.")
-            log.error("7-Zip: %s", done.stderr.decode("cp866", errors="replace")[:2000])
+            log.error("7-Zip: %s", done.stderr.decode("utf-8", errors="replace")[:2000])
             return None
         for old in _archives(LOCAL_DIR)[:-KEEP_LOCAL]:
             old.unlink(missing_ok=True)

@@ -346,7 +346,7 @@ class Core:
         note = ""
         if summary:
             try:
-                folder = config.OBSIDIAN_DIR / "Конспекты"
+                folder = config.DOCUMENTS_DIR / "Конспекты"
                 folder.mkdir(parents=True, exist_ok=True)
                 target = folder / f"{path.stem}.md"
                 if not summary.startswith("#"):  # заголовок модель обычно пишет сама
@@ -354,7 +354,7 @@ class Core:
                 target.write_text(summary + "\n", encoding="utf-8")
                 note = f"\nКонспект: {target}"
             except OSError:
-                log.warning("Не удалось положить конспект в Obsidian (%s)", config.OBSIDIAN_DIR)
+                log.warning("Не удалось положить конспект в %s", config.DOCUMENTS_DIR)
         self.store.record_import(path.name, digest, "done", outcome.reply)
         self.store.delete_cursor(f"distill:{digest}")
         self.notify(f"📥 {outcome.reply}\nНового в памяти: {len(outcome.changes)}.{note}")

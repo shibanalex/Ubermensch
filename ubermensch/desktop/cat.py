@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import math
+import os
 import random
 from datetime import datetime
 
@@ -16,7 +17,7 @@ from PySide6.QtCore import (QEasingCurve, QPoint, QPointF, QRect, QRectF, QSetti
                             QTimer, Signal)
 from PySide6.QtGui import (QContextMenuEvent, QCursor, QFont, QGuiApplication, QMouseEvent,
                            QPainter, QPen, QPixmap)
-from PySide6.QtWidgets import QApplication, QMenu
+from PySide6.QtWidgets import QMenu
 
 from ..system import windows
 from . import behavior, console, face
@@ -110,10 +111,9 @@ class Mascot(console.ConsoleWindow):
     def _fullscreen_app(self) -> bool:
         """На весь экран чужое окно (игра, фильм), а не рабочий стол и не наши окна."""
         window = windows.foreground()
-        if window is None or windows.is_desktop(window.hwnd):
+        if window is None or windows.is_desktop(window):
             return False
-        ours = {int(w.winId()) for w in QApplication.topLevelWidgets() if w.isVisible()}
-        return window.hwnd not in ours and windows.is_fullscreen(window)
+        return window.pid != os.getpid() and windows.is_fullscreen(window)
 
     def _observe(self) -> None:
         if not self.isVisible():

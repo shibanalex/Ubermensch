@@ -19,19 +19,16 @@
 - API не имеет разграничения прав по клиентам. Этот токен даёт доступ и к состоянию,
   и к подтверждениям, и к системным инструментам.
 
-Read-only пример PowerShell; исполняется при уже запущенном ядре:
+Read-only пример bash; исполняется при уже запущенном ядре:
 
-```powershell
-$dataRoot = if ($env:UBERMENSCH_DATA) { $env:UBERMENSCH_DATA } else { 'D:\Ubermensch' }
-$apiPort = if ($env:API_PORT) { $env:API_PORT } else { '8765' }
-$apiToken = (Get-Content -LiteralPath (Join-Path $dataRoot 'secrets\api_token') -Raw).Trim()
-$apiHeaders = @{ Authorization = "Bearer $apiToken" }
-$apiBase = "http://127.0.0.1:$apiPort"
-Invoke-RestMethod -Uri "$apiBase/api/health" -Headers $apiHeaders
+```bash
+data_root="${UBERMENSCH_DATA:-$HOME/Projects/Ubermensch}"
+api_base="http://127.0.0.1:${API_PORT:-8765}"
+curl -s -H "Authorization: Bearer $(cat "$data_root/secrets/api_token")" "$api_base/api/health"
 ```
 
 Этот пример не читает `.env`: если пути/порт заданы только там, значения переменных
-PowerShell нужно привести к фактической конфигурации. Сам токен не выводится.
+окружения нужно привести к фактической конфигурации. Сам токен не выводится.
 
 ## Каталог маршрутов
 
@@ -201,7 +198,7 @@ Approval появляется в `/api/state` и SSE. Применение ра�
 ```json
 {
   "name": "read_file",
-  "arguments": {"path": "C:\\Temp\\example.txt", "offset": 0, "limit": 12000},
+  "arguments": {"path": "/tmp/example.txt", "offset": 0, "limit": 12000},
   "run_id": "26ab4d1e-7e70-48b0-9fd5-15741e927ed6"
 }
 ```

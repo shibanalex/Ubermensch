@@ -7,7 +7,7 @@
 мало, качество важнее). Флагман (GPT-6 Astra) на бюджет в $10 не рассчитан: весь Takeout
 обошёлся бы в ~$58.
 Каждый вызов считается в долларах по токенам; на OPENAI_WARN_USD — предупреждение, на
-OPENAI_BUDGET_USD — стоп, всё возвращается на Claude. Прокси Windows учитывается (trust_env).
+OPENAI_BUDGET_USD — стоп, всё возвращается на Claude. Системный прокси учитывается (trust_env).
 """
 from __future__ import annotations
 

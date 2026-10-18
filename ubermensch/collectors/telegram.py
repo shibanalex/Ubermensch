@@ -2,7 +2,7 @@
 
 Берём личные чаты и «Избранное» целиком. Из групп — только важное: свои сообщения (вместе с тем,
 на что ответил) и обращения к пользователю; чужая болтовня — шум. Каналы и боты не читаем.
-Сессия = полный доступ к аккаунту, поэтому лежит на зашифрованном D:.
+Сессия = полный доступ к аккаунту, поэтому лежит в secrets с доступом только владельцу.
 
 Аккаунтов два: личный (TG_API_ID/TG_API_HASH) и рабочий (TG_WORK_API_ID/TG_WORK_HASH), у каждого
 своя сессия. Рабочие чаты помечены «(рабочий TG)», чтобы разбор понимал контекст.
@@ -54,9 +54,9 @@ class Profile:
 
 
 PERSONAL = Profile("personal", "личный", SESSION, "TG_API_ID", "TG_API_HASH",
-                   "telegram_login.bat", "TG_PHONE")
+                   "telegram_login.sh", "TG_PHONE")
 WORK = Profile("work", "рабочий", config.DATA_DIR / "secrets" / "telegram_work",
-               "TG_WORK_API_ID", "TG_WORK_HASH", "telegram_work_login.bat", "TG_WORK_PHONE")
+               "TG_WORK_API_ID", "TG_WORK_HASH", "telegram_work_login.sh", "TG_WORK_PHONE")
 PROFILES = {p.key: p for p in (PERSONAL, WORK)}
 
 

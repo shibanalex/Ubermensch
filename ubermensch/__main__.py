@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import logging
-import msvcrt
 import os
 import sys
 import time
@@ -16,11 +16,13 @@ from .analysis import Investigation
 from .assistant import Assistant
 from .brain import Brain
 from .openai_brain import OpenAIBrain
+from .collectors import notifications
 from .collectors.activity import ActivityTracker
 from .core import Core
 from .maintenance import Maintenance
 from .observer import ScreenObserver
 from .store import Store
+from .system import session
 
 
 def _setup_logging(settings: config.Settings) -> None:
@@ -40,7 +42,7 @@ def _single_instance(settings: config.Settings):
     """Два экземпляра бота с одним токеном мешают друг другу получать сообщения."""
     lock = open(settings.data_dir / "ubermensch.lock", "w")
     try:
-        msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         sys.exit("Übermensch уже запущен.")
     return lock
@@ -87,17 +89,17 @@ async def _serve(settings: config.Settings) -> None:
 def _data_available() -> bool:
     try:
         return (config.DATA_DIR / "db").is_dir() and bool(os.listdir(config.DATA_DIR))
-    except OSError:  # диск заблокирован BitLocker или ещё не подключён
+    except OSError:  # диск с данными ещё не подключён или не расшифрован
         return False
 
 
 def _wait_for_data() -> None:
-    """После перезагрузки D: заблокирован, пока его не откроют паролем — ждём, а не падаем."""
+    """Папки с данными нет (диск не подключён) — ждём, а не падаем."""
     notified = False
     while not _data_available():
         if not notified and os.getenv("TG_BOT_TOKEN") and os.getenv("TG_CHAT_ID"):
-            text = (f"🔒 Диск с данными ({config.DATA_DIR.drive}) заблокирован. Открой его в "
-                    "Проводнике и введи пароль BitLocker — я запущусь сам.")
+            text = (f"🔒 Не вижу папку с данными ({config.DATA_DIR}). Подключи диск — "
+                    "я запущусь сама.")
             body = urllib.parse.urlencode({"chat_id": os.environ["TG_CHAT_ID"], "text": text})
             try:
                 urllib.request.urlopen(
@@ -114,6 +116,7 @@ def main() -> None:
     settings = config.load()
     _setup_logging(settings)
     lock = _single_instance(settings)  # noqa: F841 — держим файл открытым до выхода
+    session.start(notifications.FOLDER)  # активное окно, простой, уведомления
     logging.info("Старт. Данные: %s, Claude: %s", settings.data_dir, settings.claude_bin)
     asyncio.run(_serve(settings))
 

@@ -204,8 +204,7 @@ def save_profile(data_dir: Path, profile: UserProfile | dict, *,
         _write_synced(stage / "profile.json", payload)
         _write_synced(stage / "profile.md", report if report is not None else render_report(profile))
         _write_synced(stage / "manifest.json", _json(manifest))
-        # Windows refuses an existing destination; the UUID/immutable ID also
-        # prevents two writers from intentionally replacing another version.
+        # The UUID/immutable ID prevents two writers from replacing another version.
         stage.rename(target)
     if activate:
         pointer = base / f".current-{uuid4().hex}.tmp"

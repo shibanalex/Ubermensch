@@ -7,7 +7,7 @@
 Assistant применяет структурированные операции через методы Store. Backup использует
 отдельное SQLite-подключение и штатный механизм snapshot.
 
-По умолчанию БД: `D:\Ubermensch\db\ubermensch.db`. Включён `journal_mode=WAL`,
+По умолчанию БД: `~/Projects/Ubermensch/db/ubermensch.db` (`DATA_DIR/db`). Включён `journal_mode=WAL`,
 поэтому рядом могут существовать `ubermensch.db-wal` и `ubermensch.db-shm`.
 Наличие WAL нормально. Нельзя копировать только живой `.db` и считать это
 согласованной резервной копией всех последних изменений.
@@ -294,36 +294,33 @@ SQLite ID локален для одной БД. UUID `run_id` инструме�
 документации не использовалось.
 
 ```text
-D:\Ubermensch\
-  db\ubermensch.db           основная SQLite-база (+ WAL/SHM во время работы)
-  secrets\                  API-токен, Telegram-сессии, OAuth, сессия ЛК
-  raw\import\               входящие файлы и экспорты
-  raw\lk\snapshot.json      снимок личного кабинета
-  workspace\
-    mcp.json                генерируемая конфигурация MCP
-    system_prompt*.md       генерируемые промпты
-    anya_persona.md          голос помощника
-    tg_style.md             личный стиль переписки
-    tg_style_work.md         рабочий стиль переписки
-    world.json              кеш погоды, валют, новостей
-    screens\                автоматические/запрошенные снимки
-    runs\<uuid>\tools.jsonl  минимальный журнал инструментов
-  dossier\                  датированные досье и latest.md
-  backups\                  локальные архивы
-  logs\                     журналы
-  bin\                      локальные вспомогательные файлы, если установлены
-  ubermensch.lock            блокировка одного ядра для этого DATA_DIR
+~/Projects/Ubermensch/        DATA_DIR (права 700)
+  db/ubermensch.db            основная SQLite-база (+ WAL/SHM во время работы)
+  secrets/                    API-токен, Telegram-сессии, OAuth, сессия ЛК (права 700)
+  raw/import/                 входящие файлы и экспорты
+  raw/lk/snapshot.json        снимок личного кабинета
+  raw/notifications/          уведомления с D-Bus по дням (ГГГГ-ММ-ДД.jsonl, 30 дней)
+  workspace/
+    mcp.json                  генерируемая конфигурация MCP
+    system_prompt*.md         генерируемые промпты
+    anya_persona.md           голос помощника
+    tg_style.md               личный стиль переписки
+    tg_style_work.md          рабочий стиль переписки
+    world.json                кеш погоды, валют, новостей
+    screens/                  автоматические/запрошенные снимки
+    runs/<uuid>/tools.jsonl   минимальный журнал инструментов
+  dossier/                    датированные досье и latest.md
+  backups/                    локальные архивы
+  logs/                       журналы
+  ubermensch.lock             блокировка одного ядра для этого DATA_DIR
 
-D:\Aleksey\Aleksey\          существующее хранилище Obsidian, со своей .obsidian
-  Аня\                      зона заметок помощника, Досье.md и Конспекты\
-
-%USERPROFILE%\Documents\Аня\ документы Word/Excel и другие результаты
+~/Документы/Аня/              ANYA_DOCUMENTS: заметки, Конспекты/, Досье.md, Word/Excel
+DIARY_DIR                     дневник пользователя в Obsidian (если задан), только чтение
 ```
 
-Obsidian — отдельное существующее хранилище. Он не становится частью `DATA_DIR`
-при изменении `UBERMENSCH_DATA`. Для переноса отдельно менять `OSWALD_OBSIDIAN`
-и при необходимости `OSWALD_DOCUMENTS`. Приложение не реализует синхронизацию
-всего vault и не управляет `.obsidian`.
+Дневник — отдельное хранилище пользователя. Он не становится частью `DATA_DIR`,
+мозг получает его только на чтение (`--add-dir`), запись в него не входит в
+свободные зоны. Приложение не синхронизирует vault и не управляет `.obsidian`.
 
 `workspace/runs` хранит только имя и статус инструмента, без аргументов, результата,
 времени и идентификатора отдельного вызова. Это защита от опасного автоматического
@@ -339,13 +336,13 @@ Obsidian — отдельное существующее хранилище. О�
 - `workspace/tg_style.md` и `workspace/anya_persona.md`, если существуют.
 - Каталог `dossier`.
 
-**Не включены:** весь Obsidian vault, `Documents/Аня`, `raw/import`, сессии и OAuth
+**Не включены:** дневник, `~/Документы/Аня`, `raw/import`, `raw/notifications`, сессии и OAuth
 из `secrets`, `.env`, рабочий стиль `tg_style_work.md`, остальные файлы workspace.
 Это существенная граница восстановления: архив приложения не равен полной копии
 всех данных владельца и всех исходников анализа.
 
 Код проверяет наличие свободного места и создаёт зашифрованные архивы, но не
-включает BitLocker и не проверяет шифрование тома. Параметры ротации, внешние носители
+шифрует папку данных и не проверяет шифрование диска (см. [SECURITY](SECURITY.md#хранение-на-диске)). Параметры ротации, внешние носители
 и пошаговое восстановление описаны в [OPERATIONS](OPERATIONS.md). Перед восстановлением
 нужно остановить процесс, работающий с этой базой, сохранить текущий комплект данных
 и отдельно решить судьбу WAL/SHM; нельзя подменять `.db` под работающим Core.
@@ -354,10 +351,10 @@ Obsidian — отдельное существующее хранилище. О�
 
 Из корня проекта:
 
-```powershell
-.\.venv\Scripts\python.exe -c "from ubermensch.store import Store; s=Store(':memory:'); print(s.db.execute('PRAGMA user_version').fetchone()[0]); s.db.close()"
+```bash
+.venv/bin/python -c "from ubermensch.store import Store; s=Store(':memory:'); print(s.db.execute('PRAGMA user_version').fetchone()[0]); s.db.close()"
 ```
 
 Ожидается `6`. Для изменения миграций создать искусственную БД предыдущей версии,
 проверить сохранность строк после открытия новым Store, затем повторно открыть её.
-Не тестировать миграцию впервые на `D:\Ubermensch\db\ubermensch.db`.
+Не тестировать миграцию впервые на рабочей `DATA_DIR/db/ubermensch.db`.

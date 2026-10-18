@@ -37,7 +37,7 @@ async def read_file(path: str, offset: int = 0, limit: int = 12000) -> dict:
 
 @registry.tool()
 async def find_files(name_part: str, folder: str | None = None, limit: int = 30) -> list[str]:
-    """Найти файлы и папки по части имени (рабочий стол, документы, загрузки, диск D: или folder)."""
+    """Найти файлы и папки по части имени (домашняя папка и диски с данными или folder)."""
     return await asyncio.to_thread(files.find, name_part, folder, limit)
 
 

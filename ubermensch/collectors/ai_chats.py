@@ -1,4 +1,4 @@
-"""Разговоры пользователя с ИИ: история Claude Code (Windows и архив из WSL).
+"""Разговоры пользователя с ИИ: история Claude Code (на этом компьютере и в архивах).
 
 Берём только реплики самого пользователя — это его собственные слова о себе, делах и планах.
 Чаты AI Studio приходят отдельно, через папку импорта.
@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import tarfile
 import zipfile
@@ -16,7 +17,8 @@ from pathlib import Path
 from . import local_iso
 
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
-BACKUPS = Path(r"D:\Backups")
+# архивы старой истории (например, с прежней Windows и WSL)
+BACKUPS = Path(os.getenv("AI_CHATS_BACKUPS", str(Path.home() / "Backups"))).expanduser()
 MAX_CHARS = 3000
 # служебные вставки Claude Code, а не слова пользователя
 NOISE = re.compile(r"<(system-reminder|ide_[a-z_]+|command-[a-z-]+|local-command-[a-z]+)>.*?</\1>",

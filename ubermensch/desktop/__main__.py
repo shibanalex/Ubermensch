@@ -6,8 +6,9 @@
 """
 from __future__ import annotations
 
-import ctypes
+import fcntl
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -21,21 +22,27 @@ CHILDREN = {"маскот": "ubermensch.desktop.mascot_app",
 MAIN = "маскот"  # его «Выход» закрывает приложение
 BACKOFF = (2, 5, 15, 60)  # пауза перед перезапуском после 1-го, 2-го, ... падения подряд
 STABLE_S = 300  # проработал столько — счётчик падений сбрасывается
-ERROR_ALREADY_EXISTS = 183
+# Окна Ани ходят по экрану и сами выбирают место — на Wayland так нельзя, поэтому они
+# работают через XWayland. Остальное (активное окно, простой) — от сенсоров ядра.
+CHILD_ENV = {**os.environ, "QT_QPA_PLATFORM": "xcb"}
 
 log = logging.getLogger("desktop")
 
 
 def _single_instance():
-    """Именованный мьютекс Windows: второй присмотр не стартует."""
-    handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\ubermensch-desktop")
-    if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+    """Блокировка файла в каталоге сеанса: второй присмотр не стартует."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    handle = open(os.path.join(runtime, "ubermensch-desktop.lock"), "w")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
         return None
     return handle
 
 
 def _log_file():
-    """Лог приложения на D:; если диск ещё заблокирован — без файла."""
+    """Лог приложения в папке данных; если её пока нет (диск не подключён) — без файла."""
     try:
         folder = config.DATA_DIR / "logs"
         folder.mkdir(parents=True, exist_ok=True)
@@ -60,7 +67,7 @@ class Child:
     def start(self) -> None:
         self.proc = subprocess.Popen(
             [sys.executable, "-m", self.module], stdout=subprocess.DEVNULL, stderr=self.stderr,
-            creationflags=subprocess.CREATE_NO_WINDOW)
+            env=CHILD_ENV)
         self.started = time.monotonic()
         log.info("Запущен %s (pid %d)", self.name, self.proc.pid)
 

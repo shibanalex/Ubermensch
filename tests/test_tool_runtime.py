@@ -263,7 +263,7 @@ class ToolAPITests(unittest.IsolatedAsyncioTestCase):
         gateway = await HttpToolGateway.connect()
         mcp_tools = await create_server().list_tools()
         self.assertEqual({t.name for t in gateway.definitions()}, {t.name for t in mcp_tools})
-        self.assertIn("run_powershell", {t.name for t in gateway.definitions()})
+        self.assertIn("run_shell", {t.name for t in gateway.definitions()})
 
     async def test_read_text_through_real_api_and_journal(self):
         path = Path(self.temp.name) / "note.txt"
@@ -297,7 +297,7 @@ class ToolAPITests(unittest.IsolatedAsyncioTestCase):
             await gateway.call("read_file", {"path": "unused"})
         gateway = await HttpToolGateway.connect()
         with self.assertRaises(BrainError):
-            await gateway.call("run_powershell", {"command": "must not run", "unexpected": True})
+            await gateway.call("run_shell", {"command": "must not run", "unexpected": True})
         self.assertFalse((Path(self.temp.name) / "workspace").exists())
 
     async def test_server_failure_after_effect_is_uncertain(self):

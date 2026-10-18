@@ -2,10 +2,11 @@
 
 ## Платформа и зависимости
 
-Текущий runtime рассчитан на Windows: используются `msvcrt`, Win32, PowerShell,
-локальные Qt-каналы и Планировщик заданий. Проверки этой рабочей копии выполнялись
-на Python 3.14.3. Матрицы поддержки других версий Python и других ОС в репозитории
-нет. Desktop использует PySide6; сервер — asyncio/aiohttp; Telegram-бот — aiogram,
+Текущий runtime рассчитан на Linux с KDE Plasma 6 на Wayland (проверено на Ubuntu 26.04,
+KWin 6.6, Python 3.14.4). Используются D-Bus (jeepney), скрипт KWin, Wayland-протокол
+ext-idle-notify (pywayland), bash, локальные Qt-каналы и сервисы systemd пользователя.
+Матрицы поддержки других окружений рабочего стола и ОС в репозитории нет: на GNOME
+сенсоры окна не заработают (там нет KWin), остальное — да. Desktop использует PySide6; сервер — asyncio/aiohttp; Telegram-бот — aiogram,
 пользовательские Telegram-аккаунты — Telethon.
 
 Версии Python-пакетов закреплены в [`requirements.txt`](../requirements.txt).
@@ -13,15 +14,19 @@
 python-docx, openpyxl, клиенты Google OAuth/API. `aiohttp` импортируется напрямую,
 но сейчас устанавливается как транзитивная зависимость; отдельной строки в
 requirements пока нет. Метаданных сборки пакета/колеса и процедуры сборки
-`anya.exe` нет: модули запускаются из корня checkout.
+приложения нет: модули запускаются из корня checkout.
 
 Внешние компоненты устанавливаются отдельно:
 
 | Компонент | Для чего нужен |
 |---|---|
-| Claude Code и действующий вход | Основной чат и большая часть анализа |
-| Google Chrome | Сценарии Playwright личного кабинета используют канал Chrome |
-| 7-Zip | Зашифрованные резервные копии |
+| Claude Code и действующий вход | Основной чат и большая часть анализа (`curl -fsSL https://claude.ai/install.sh \| bash`) |
+| Google Chrome | Сценарии Playwright личного кабинета используют канал Chrome; история браузера |
+| `7zip` (`7z`) | Зашифрованные резервные копии |
+| KDE Plasma: `qdbus6`, `spectacle`, KWin | Скрипт KWin (активное окно, слой листа задач), снимки экрана |
+| `plocate`, `fd-find` | Мгновенный поиск файлов (без них — обход папок) |
+| PipeWire `wpctl`, `loginctl`, `gio`, `xdg-open`, `xdg-user-dir` | Громкость, блокировка, Корзина, открытие файлов, русские имена папок |
+| XWayland | Окна маскота и листа задач (на чистом Wayland окно не может выбрать место) |
 | Telegram bot token | Полный запуск ядра требует настройки бота |
 | Telegram API ID/hash и пользовательская сессия | Чтение переписок и отправка от владельца |
 | Google OAuth client/token | Календарь; отдельный сценарий входа |
@@ -32,17 +37,17 @@ requirements пока нет. Метаданных сборки пакета/к�
 
 ## Подготовка checkout
 
-Команды ниже — **PowerShell**, текущая папка — корень проекта:
+Команды ниже — **bash**, текущая папка — корень проекта:
 
-```powershell
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item -LiteralPath .env.example -Destination .env
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp -n .env.example .env && chmod 600 .env
 ```
 
-Копирование `.env.example` предназначено для нового checkout без `.env`.
-Существующий файл с настройками не перезаписывать. Путь виртуального окружения
-важен: генерируемый MCP-конфиг использует именно `.venv\Scripts\python.exe`.
+Копирование `.env.example` предназначено для нового checkout без `.env`
+(`-n` не перезаписывает существующий файл с настройками). Генерируемый MCP-конфиг
+использует интерпретатор, которым запущено ядро (`sys.executable`), — обычно `.venv/bin/python`.
 
 Для первичной проверки выполнить команды из [TESTING](TESTING.md). Не запускать
 `python -m ubermensch` только для проверки импортов: это полный запуск с ботом,
@@ -56,12 +61,11 @@ Copy-Item -LiteralPath .env.example -Destination .env
 
 Для отдельного стенда до запуска Python можно задать:
 
-```powershell
-$env:UBERMENSCH_DATA = Join-Path $env:TEMP 'UbermenschDev'
-$env:OSWALD_OBSIDIAN = Join-Path $env:UBERMENSCH_DATA 'notes'
-$env:OSWALD_DOCUMENTS = Join-Path $env:UBERMENSCH_DATA 'documents'
-$env:API_PORT = '18765'
-New-Item -ItemType Directory -Path (Join-Path $env:UBERMENSCH_DATA 'db') -Force | Out-Null
+```bash
+export UBERMENSCH_DATA=/tmp/UbermenschDev
+export ANYA_DOCUMENTS=$UBERMENSCH_DATA/documents
+export API_PORT=18765
+mkdir -p "$UBERMENSCH_DATA/db"
 ```
 
 Каталог `db` создаётся заранее: стартовая `_wait_for_data()` ждёт его существования
@@ -69,8 +73,10 @@ New-Item -ItemType Directory -Path (Join-Path $env:UBERMENSCH_DATA 'db') -Force 
 восприниматься как недоступное хранилище.
 
 Эти переменные отделяют БД и создаваемые файлы. Они **не отключают сбор личных данных**:
-ряд сборщиков по-прежнему читает профиль Windows, Chrome, пользовательские каталоги
-и отдельные жёстко заданные корни на D:. Полный стенд следует запускать в отдельном
+ряд сборщиков по-прежнему читает историю Chrome, личные каталоги пользователя,
+`UBERMENSCH_ROOTS` и историю Claude Code. Сенсоры сеанса (скрипт KWin, D-Bus-имя
+`org.ubermensch.Anya`, мониторинг уведомлений) общие на весь сеанс: второе ядро
+не получит имя D-Bus, а скрипт KWin будет звонить первому. Полный стенд следует запускать в отдельном
 профиле/VM с тестовыми аккаунтами. Единого флага «без сборщиков» сейчас нет.
 Переменная `TG_BOT_TOKEN` из реального `.env` также продолжит использоваться,
 если её отдельно не заменить в окружении.
@@ -87,10 +93,12 @@ New-Item -ItemType Directory -Path (Join-Path $env:UBERMENSCH_DATA 'db') -Force 
 |---|---|---|
 | `TG_BOT_TOKEN` | Нет, обязательна для `config.load()` | Токен Telegram-бота |
 | `TG_CHAT_ID` | Нет, обязательна; целое число | Чат владельца, фильтр доступа бота |
-| `UBERMENSCH_DATA` | `D:\Ubermensch` | База, workspace, raw, secrets, logs, backups |
+| `UBERMENSCH_DATA` | `<папка проекта>/../Ubermensch` | База, workspace, raw, secrets, logs, backups |
 | `API_PORT` | `8765` | Порт HTTP ядра |
-| `OSWALD_OBSIDIAN` | `D:\Aleksey\Aleksey\Аня` | Заметки в существующем Obsidian vault |
-| `OSWALD_DOCUMENTS` | `%USERPROFILE%\Documents\Аня` | Документы помощника |
+| `ANYA_DOCUMENTS` | `<XDG DOCUMENTS>/Аня` (`~/Документы/Аня`) | Свободная зона Ани: заметки, конспекты, досье, Word/Excel |
+| `DIARY_DIR` | Нет | Дневник пользователя (Obsidian): Аня читает, но не правит |
+| `UBERMENSCH_ROOTS` | Нет | Дополнительные корни поиска и сбора файлов, через `:` |
+| `AI_CHATS_BACKUPS` | `~/Backups` | Архивы старой истории Claude Code (`wsl-*-home-*.tar.gz`) |
 | `CLAUDE_BIN` | Автопоиск | Явный путь к CLI |
 | `CLAUDE_MODEL` | `opus` | Основная модель в настройках; отдельные сценарии выбирают `sonnet` |
 | `CLAUDE_TIMEOUT` | `300`, секунды | Базовый таймаут Claude; сценарии могут переопределить |
@@ -98,14 +106,15 @@ New-Item -ItemType Directory -Path (Join-Path $env:UBERMENSCH_DATA 'db') -Force 
 `API_HOST` — константа `127.0.0.1`, переменной окружения для неё нет. Токен API
 создаётся в `DATA_DIR/secrets/api_token`, а не задаётся через `.env`.
 
-Поиск Claude: `CLAUDE_BIN` → `PATH` → `~/.local/bin/claude.exe` → самый свежий по
-mtime бинарник расширения VS Code `anthropic.claude-code-*`. Если ничего не найдено,
+Поиск Claude: `CLAUDE_BIN` → `PATH` → `~/.local/bin/claude` (под systemd `PATH` может
+его не содержать) → самый свежий по mtime бинарник расширения VS Code `anthropic.claude-code-*`. Если ничего не найдено,
 `config.load()` допускает пустой путь, чтобы ядро могло запуститься и сообщить
 неисправность при вызове мозга.
 
-Исторические имена `OSWALD_*` сохранены. При загрузке настроек каталог `Oswald`
-рядом с настроенной зоной может быть переименован в новый каталог, если старый
-существует, а новый отсутствует. Это реальный файловый побочный эффект `config.load()`.
+Пути в `.env` могут начинаться с `~`. Личные каталоги (`PERSONAL_DIRS`) берутся
+через `xdg-user-dir`: на русской системе это «Рабочий стол», «Документы», «Загрузки»;
+к ним добавлены существующие `~/Documents`, `~/Учеба`, `~/Мои Работы`.
+`config.load()` создаёт каталоги данных и ставит `secrets/` права `700`.
 
 ### Интеграции
 
@@ -152,26 +161,22 @@ OAuth Google и авторизованные сессии хранятся в `s
 Перед первым полным запуском нужны доступное хранилище с каталогом `db`, настройки
 бота и настроенные необходимые интеграции. Для наблюдаемого старта:
 
-```powershell
-.\.venv\Scripts\python.exe -m ubermensch
+```bash
+./run.sh                              # ядро, логи в терминале
+.venv/bin/python -m ubermensch.desktop  # в другом терминале — маскот и лист задач
 ```
 
-В другом терминале — desktop:
-
-```powershell
-.\.venv\Scripts\python.exe -m ubermensch.desktop
-```
-
-`run.bat` запускает ядро с консолью; `start.bat` запускает ядро и desktop через
-`pythonw` без консоли. Скрипты входа находятся в корне: `telegram_login.bat`,
-`telegram_work_login.bat`, `lk_login.bat`; сценарий календаря описан в OPERATIONS.
+`start.sh` запускает ядро и desktop в фоне: через systemd, если установлен автозапуск,
+иначе через `nohup`. Скрипты входа находятся в корне: `telegram_login.sh`,
+`telegram_work_login.sh`, `lk_login.sh`, `google_login.sh`.
 
 Последовательность ядра:
 
 1. Ждать доступности `DATA_DIR/db`, проверяя каждые 30 секунд; при возможности
    отправить уведомление о недоступном диске.
 2. Загрузить Settings, создать каталоги, настроить логирование, взять файловый
-   lock `ubermensch.lock` через `msvcrt`.
+   lock `ubermensch.lock` через `fcntl.flock`, поднять сенсоры сеанса
+   (`system/session.py`: D-Bus-сервис, скрипт KWin, простой, уведомления).
 3. Создать Store → Brain → Assistant → Core. Assistant формирует промпты и MCP-конфиг.
 4. Подключить optional OpenAI, Health, Investigation и восемь фоновых служб.
 5. Создать токен при отсутствии, запустить HTTP API, затем службы и Telegram polling.
@@ -179,22 +184,23 @@ OAuth Google и авторизованные сессии хранятся в `s
 
 Lock привязан к каталогу данных, а не ко всему компьютеру. Другой `DATA_DIR` позволяет
 запустить второй процесс, поэтому отдельному стенду нужны другой порт и другой бот.
-Повторный `start.bat` не обновляет уже работающее ядро: lock отклонит дубликат.
+Повторный `start.sh` не обновляет уже работающее ядро: lock отклонит дубликат.
 
 Для разработки удобен foreground-процесс с Ctrl+C. При обслуживании фонового запуска
-определять процессы по командной строке и конкретному checkout; не завершать все
-`python.exe`/`pythonw.exe` на компьютере. Изменение Python-файла требует перезапуска
+использовать `systemctl --user restart ubermensch` или определять процессы по
+командной строке и конкретному checkout (`pgrep -af "python -m ubermensch"`). Изменение Python-файла требует перезапуска
 владеющего им процесса: hot reload нет.
 
 ## Автозапуск и журналы
 
-[`scripts/install_autostart.ps1`](../scripts/install_autostart.ps1) создаёт задачи
-`Ubermensch` и `Ubermensch Desktop` при входе пользователя. Они запускают pythonw
-из `.venv` с рабочей директорией проекта, допускают работу от батареи и настроены
-на повторный запуск после сбоя. Это отдельная настройка установленной системы,
+[`scripts/install_autostart.sh`](../scripts/install_autostart.sh) создаёт сервисы
+systemd пользователя `ubermensch` и `ubermensch-desktop`, привязанные к
+`graphical-session.target` (стартуют при входе в Plasma и получают `WAYLAND_DISPLAY`,
+`DISPLAY`, адрес D-Bus). Они запускают `.venv/bin/python` с рабочей директорией проекта
+и перезапускаются после сбоя. Это отдельная настройка установленной системы,
 не обязательный шаг настройки тестового checkout.
 
 Основной журнал — `DATA_DIR/logs/ubermensch.log`, ротация 5 MB × 5 резервных файлов.
 Desktop supervisor имеет собственный ротируемый журнал; stderr дочерних UI-процессов
-пишется отдельно. Подробности диагностики — в [TESTING](TESTING.md) и
+пишется отдельно. Под systemd вывод процессов также виден в `journalctl --user -u ubermensch`. Подробности диагностики — в [TESTING](TESTING.md) и
 [OPERATIONS](OPERATIONS.md).

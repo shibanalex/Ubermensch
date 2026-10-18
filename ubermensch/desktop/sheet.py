@@ -1,11 +1,11 @@
 """Лист задач: бумажный лист, приклеенный к рабочему столу.
 
 Он живёт под окнами программ, а когда пользователь переходит на рабочий стол
-(клик по обоям, Win+D), поднимается над ним, чтобы его было видно.
+(клик по обоям), поднимается над ними, чтобы его было видно. Слоем управляет скрипт
+KWin (system/kwin_tracker.js): он узнаёт лист по заголовку окна SHEET_TITLE.
 """
 from __future__ import annotations
 
-import ctypes
 import html
 from datetime import date
 
@@ -15,7 +15,6 @@ from PySide6.QtGui import (QColor, QContextMenuEvent, QFont, QFontMetrics, QGuiA
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QScrollArea,
                                QVBoxLayout, QWidget)
 
-from ..system import windows
 from . import theme
 from .client import Api
 
@@ -27,12 +26,7 @@ MONTHS = ["января", "февраля", "марта", "апреля", "ма�
           "сентября", "октября", "ноября", "декабря"]
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
-_user32 = ctypes.windll.user32
-_user32.GetForegroundWindow.restype = ctypes.c_void_p
-_user32.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
-                                 ctypes.c_int, ctypes.c_int, ctypes.c_uint]
-HWND_TOP, HWND_BOTTOM = None, ctypes.c_void_p(1)
-SWP_NOSIZE_NOMOVE_NOACTIVATE = 0x0001 | 0x0002 | 0x0010
+SHEET_TITLE = "anya.exe — задачи"  # по нему KWin держит лист у рабочего стола
 
 
 def _hand(size: float) -> QFont:
@@ -108,12 +102,13 @@ class TaskSheet(QWidget):
     open_metrics = Signal()
 
     def __init__(self, api: Api):
-        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+                         | Qt.WindowType.WindowStaysOnBottomHint)
+        self.setWindowTitle(SHEET_TITLE)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.api = api
         self._settings = QSettings("Ubermensch", "desktop")
         self._drag: QPoint | None = None
-        self._raised: bool | None = None
 
         self.content = QWidget(self)
         self.content.setStyleSheet(theme.SCROLLBAR + theme.FLAT_BUTTON)
@@ -158,11 +153,7 @@ class TaskSheet(QWidget):
         self._fit()
         self._place()
 
-        layer = QTimer(self, interval=300)
-        layer.timeout.connect(self._sync_layer)
-        layer.start()
-
-    # --- положение и слой рабочего стола ---
+    # --- положение ---
 
     def _place(self) -> None:
         area = QGuiApplication.primaryScreen().availableGeometry()
@@ -172,20 +163,6 @@ class TaskSheet(QWidget):
             self.move(saved)
         else:
             self.move(area.right() - self.width() - 270, area.top() + 30)  # левее маскота
-
-    def _sync_layer(self) -> None:
-        """Под окнами программ, но над обоями, когда пользователь смотрит на рабочий стол."""
-        if not self.isVisible():
-            return
-        foreground = _user32.GetForegroundWindow()
-        if foreground == int(self.winId()):
-            self._raised = True  # с листом работают — он сверху сам
-            return
-        raise_it = windows.is_desktop(foreground)
-        if raise_it != self._raised:
-            self._raised = raise_it
-            _user32.SetWindowPos(int(self.winId()), HWND_TOP if raise_it else HWND_BOTTOM,
-                                 0, 0, 0, 0, SWP_NOSIZE_NOMOVE_NOACTIVATE)
 
     def resizeEvent(self, event) -> None:
         self.content.setGeometry(theme.paper_rect(self).toRect())

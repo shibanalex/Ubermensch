@@ -426,7 +426,7 @@ class Investigation:
                 found["notification"] = self.store.add_events(
                     await asyncio.to_thread(notifications.collect))
             except Exception:
-                log.exception("Сбор уведомлений Windows не удался")
+                log.exception("Сбор уведомлений не удался")
             await self._update_categories()
             found["lk"] = await self._collect_university()
 
@@ -748,11 +748,11 @@ class Investigation:
         path = DOSSIER_DIR / f"dossier-{datetime.now():%Y-%m-%d_%H-%M}.md"
         path.write_text(text, encoding="utf-8")
         (DOSSIER_DIR / "latest.md").write_text(text, encoding="utf-8")
-        try:  # копия в Obsidian — читать удобнее, со ссылками и поиском
-            config.OBSIDIAN_DIR.mkdir(parents=True, exist_ok=True)
-            (config.OBSIDIAN_DIR / "Досье.md").write_text(text, encoding="utf-8")
+        try:  # копия в папку Ани — пользователю под рукой
+            config.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+            (config.DOCUMENTS_DIR / "Досье.md").write_text(text, encoding="utf-8")
         except OSError:
-            log.warning("Не удалось положить досье в Obsidian (%s)", config.OBSIDIAN_DIR)
+            log.warning("Не удалось положить досье в %s", config.DOCUMENTS_DIR)
         self.store.set_cursor("dossier_at", datetime.now().isoformat(timespec="seconds"))
         pending = self.store.job_counts().get("pending", 0)
         tail = f" Остальной год ещё разбираю в фоне (осталось порций: {pending})." if pending else ""

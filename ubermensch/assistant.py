@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import re
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -26,8 +27,10 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 # встроенные инструменты Claude Code — только безопасные: поиск в сети и чтение файлов;
 # всё, что меняет систему, — через наш сервер инструментов (ubermensch.tools)
 CHAT_TOOLS = ("WebSearch", "WebFetch", "Read", "Glob", "Grep")
-READ_DIRS = (Path.home() / "Desktop", Path.home() / "Documents", Path.home() / "Downloads",
-             Path("D:/"))
+READ_DIRS = (*config.PERSONAL_DIRS, *config.EXTRA_ROOTS,
+             *((config.DIARY_DIR,) if config.DIARY_DIR else ()))
+DIARY_NOTE = ("- Дневник пользователя (Obsidian), папка {}: его записи о днях и мыслях. "
+              "Читай, чтобы понимать его, но не правь — это его личное.")
 ACTION_TIMEOUT = 900  # с запасом на «да/нет» пользователя внутри инструмента
 TG_MODEL, TG_EFFORT = "sonnet", "medium"  # в Telegram — быстро, но с размышлением
 HISTORY_LIMIT = 20
@@ -405,7 +408,7 @@ class Assistant:
         self.mcp_config = settings.workspace / "mcp.json"
         self.mcp_config.write_text(json.dumps({"mcpServers": {MCP_SERVER: {
             "type": "stdio",
-            "command": str(PROJECT_DIR / ".venv" / "Scripts" / "python.exe"),
+            "command": sys.executable,
             "args": ["-m", "ubermensch.tools"],
             "env": {"PYTHONPATH": str(PROJECT_DIR), "PYTHONIOENCODING": "utf-8"},
         }}}, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -425,7 +428,7 @@ class Assistant:
         text = (PROMPT_TEMPLATE.read_text(encoding="utf-8")
                 .replace("{{AREAS}}", areas)
                 .replace("{{ACTIONS}}", help_lines)
-                .replace("{{OBSIDIAN}}", str(config.OBSIDIAN_DIR))
+                .replace("{{DIARY}}", DIARY_NOTE.format(config.DIARY_DIR) if config.DIARY_DIR else "")
                 .replace("{{DOCUMENTS}}", str(config.DOCUMENTS_DIR)))
         if telegram:
             text += (PROMPTS / "telegram.md").read_text(encoding="utf-8")

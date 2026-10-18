@@ -2,11 +2,11 @@
 
 ## Базовая проверка checkout
 
-Команды выполняются из корня проекта в PowerShell после установки requirements:
+Команды выполняются из корня проекта в bash после установки requirements:
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe -m compileall -q ubermensch tests
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m compileall -q ubermensch tests
 git diff --check
 ```
 
@@ -38,15 +38,17 @@ Telegram. Они не требуют оплачиваемого вызова И�
 
 Для отдельного класса/метода можно использовать unittest filter:
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v -k RouterTests
+```bash
+.venv/bin/python -m unittest discover -s tests -v -k RouterTests
 ```
 
 ## Чего эти тесты не доказывают
 
 - Совместимость установленной версии Claude CLI с каждым параметром запуска.
 - Доступность выбранных OpenAI model IDs и все варианты ответа реального провайдера.
-- Корректность всех Win32/PowerShell-эффектов, Office-файлов и календаря.
+- Корректность эффектов KWin/D-Bus/Wayland, bash, Office-файлов и календаря.
+  Сенсоры сеанса проверяются вручную внутри Plasma: `windows.foreground()` и
+  `windows.idle_seconds()` из второго процесса при запущенном ядре.
 - Доставку Telegram/Gmail, работу OAuth, вход в личный кабинет и сбор Chrome.
 - Визуальное поведение Qt, DPI, положение окон и все сценарии завершения процессов.
 - Восстановление реального архива, миграцию исторической production-базы и работу
@@ -84,7 +86,7 @@ Telegram. Они не требуют оплачиваемого вызова И�
 Подменять `config.DATA_DIR`, API port/token и зависимость отправки до выполнения
 инструмента. `run_id` сам по себе не направляет запись в временный каталог:
 Core строит путь журнала от текущего DATA_DIR. Нельзя использовать реальный
-`telegram_send`, PowerShell или файл на D: как удобную fixture.
+`telegram_send`, `run_shell` или файл в реальной папке данных как удобную fixture.
 
 Для будущих тестов миграций не импортировать `__main__` ради Store. Нужны только
 `store.py` и искусственные строки. Для parser fixtures не копировать переписку
@@ -105,7 +107,8 @@ Core строит путь журнала от текущего DATA_DIR. Нел
 
 ### Резервный ИИ не выполняет действие
 
-1. Убедиться, что запущено обновлённое ядро: повторный start.bat не заменяет процесс.
+1. Убедиться, что запущено обновлённое ядро: повторный `start.sh` не заменяет процесс
+   (`systemctl --user restart ubermensch`).
 2. Проверить наличие helper и его spent/budget, проблему openai и временную блокировку.
 3. Проверить `/api/tools`: нужная функция должна быть в общем каталоге.
 4. Проверить ответ `/api/tools/call`, схему аргументов и ожидание approval.

@@ -1,7 +1,7 @@
 """Google Календарь пользователя: Аня сама ставит события и дедлайны (они сразу на телефоне).
 
 Доступ — только к событиям (scope calendar.events), не ко всему аккаунту. Ключи OAuth и токен
-лежат в D:\\Ubermensch\\secrets. Первый вход: google_login.bat (см. docs/OPERATIONS.md).
+лежат в <данные>/secrets. Первый вход: ./google_login.sh (см. docs/OPERATIONS.md).
 События, созданные Аней, помечаются в описании — их она может удалять сама, чужие только с «да».
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ def _service():
     from googleapiclient.discovery import build
 
     if not TOKEN_FILE.exists():
-        raise CalendarNotConnected("Google Календарь не подключён: запусти google_login.bat "
+        raise CalendarNotConnected("Google Календарь не подключён: запусти google_login.sh "
                                    "(инструкция — docs/OPERATIONS.md).")
     creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
     if not creds.valid:
@@ -40,10 +40,10 @@ def _service():
                 creds.refresh(Request())
             except Exception as e:
                 raise CalendarNotConnected(f"Доступ к календарю истёк или отозван ({e}): "
-                                           "запусти google_login.bat заново.") from None
+                                           "запусти google_login.sh заново.") from None
             TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
         else:
-            raise CalendarNotConnected("Доступ к календарю недействителен: запусти google_login.bat.")
+            raise CalendarNotConnected("Доступ к календарю недействителен: запусти google_login.sh.")
     return build("calendar", "v3", credentials=creds, cache_discovery=False)
 
 

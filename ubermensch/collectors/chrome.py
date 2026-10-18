@@ -1,7 +1,6 @@
 """История Chrome: страницы (одна запись на страницу в день) и поисковые запросы."""
 from __future__ import annotations
 
-import os
 import shutil
 import sqlite3
 import tempfile
@@ -12,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import local_iso
 
-USER_DATA = Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "User Data"
+USER_DATA = Path.home() / ".config" / "google-chrome"
 CHROME_EPOCH = datetime(1601, 1, 1, tzinfo=timezone.utc)
 SKIP_HOSTS = {"localhost", "127.0.0.1", "newtab", ""}
 # поисковик → параметр с запросом

@@ -18,7 +18,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36"
+UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
 TIMEOUT = 20
 CITY = os.getenv("WORLD_CITY", "Москва")
 LAT, LON = float(os.getenv("WORLD_LAT", "55.75")), float(os.getenv("WORLD_LON", "37.62"))

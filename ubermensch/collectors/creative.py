@@ -10,14 +10,13 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
+from .. import config
 from . import local_iso
 
-HOME = Path.home()
-ROOTS = [HOME / "Documents", HOME / "Desktop", HOME / "Downloads", Path("D:/")]
+ROOTS = [*config.PERSONAL_DIRS, *config.EXTRA_ROOTS]
 APPS = {".mscz": "MuseScore", ".mscx": "MuseScore", ".flp": "FL Studio"}
-SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "__pycache__", "$RECYCLE.BIN", "AppData",
-             "System Volume Information", "Docker", "WSL", "Libraries Kontakt", "Ubermensch",
-             "Backups", "Program Files", "Program Files (x86)", "Visual Studio"}
+SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "__pycache__", ".cache", "snap",
+             "lost+found", "Docker", "Libraries Kontakt", "Ubermensch", "Backups"}
 
 
 def mscz_xml(archive: zipfile.ZipFile) -> str:

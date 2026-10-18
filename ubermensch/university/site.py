@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+import ssl
 import tempfile
 import urllib.parse
 import urllib.request
@@ -15,8 +16,12 @@ from pathlib import Path
 
 BASE = "https://mospolytech.ru"
 HOSTS = ("mospolytech.ru",)  # читаем только сайты вуза (и поддомены)
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36"
+UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
 TIMEOUT = 25
+# Сервер mospolytech.ru не отдаёт промежуточный сертификат. Windows докачивает его сама
+# (AIA), OpenSSL — нет, поэтому он лежит рядом: системные корни + этот промежуточный.
+TLS = ssl.create_default_context()
+TLS.load_verify_locations(Path(__file__).with_name("certs") / "globalsign-gcc-r46-dv-tls-ca-2025.pem")
 MAX_BYTES = 15_000_000
 MAX_TEXT = 60_000  # столько текста страницы отдаём мозгу
 SKIP_TAGS = {"script", "style", "noscript", "svg", "header", "footer", "nav", "form", "button"}
@@ -82,7 +87,9 @@ def allowed(url: str) -> bool:
 def fetch(url: str, opener=None) -> tuple[bytes, str, str]:
     """(содержимое, тип, итоговый адрес после перенаправлений)."""
     request = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ru"})
-    with (opener.open if opener else urllib.request.urlopen)(request, timeout=TIMEOUT) as response:
+    open_url = opener.open if opener else lambda r, timeout: urllib.request.urlopen(
+        r, timeout=timeout, context=TLS)
+    with open_url(request, timeout=TIMEOUT) as response:
         raw = response.read(MAX_BYTES + 1)
         if len(raw) > MAX_BYTES:
             raise ValueError("файл больше 15 МБ")

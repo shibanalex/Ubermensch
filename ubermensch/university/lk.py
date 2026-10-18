@@ -1,10 +1,10 @@
 """Личный кабинет студента (e.mospolytech.ru/old): только чтение.
 
 Вход — Playwright через установленный Chrome, без окна, по LK_LOGIN и LK_PASSWORD из .env
-(капча или ошибка — окно для ручного входа: lk_login.bat). Браузер нужен только для входа:
+(капча или ошибка — окно для ручного входа: lk_login.sh). Браузер нужен только для входа:
 сессия (cookies) сохраняется в secrets, дальше страницы читаются обычными HTTP-запросами.
 Обход: с главной по ссылкам внутри кабинета (без «выхода» и действий), плюс документы
-(PDF, Word). Снимок страниц хранится на D:, изменения между снимками — событиями.
+(PDF, Word). Снимок страниц хранится в папке данных, изменения между снимками — событиями.
 """
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ def login(interactive: bool = False) -> None:
                 if page.locator("input[type=password]").count():
                     raise LkLoginFailed("Кабинет не принял логин и пароль (или просит капчу) — "
                                         "проверь LK_LOGIN/LK_PASSWORD в .env или войди сам: "
-                                        "lk_login.bat")
+                                        "lk_login.sh")
             cookies = [c for c in page.context.cookies() if HOST in c.get("domain", "")]
         finally:
             browser.close()
@@ -105,7 +105,8 @@ def _opener() -> urllib.request.OpenerDirector:
                 0, c["name"], c["value"], None, False, c["domain"], True,
                 c["domain"].startswith("."), c.get("path", "/"), True, c.get("secure", False),
                 int(c["expires"]) if c.get("expires", -1) > 0 else None, False, None, None, {}))
-    return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar),
+                                       urllib.request.HTTPSHandler(context=site.TLS))
 
 
 # --- чтение ---
@@ -209,7 +210,7 @@ def find(query: str, limit: int = 5) -> list[dict]:
 
 
 def main() -> None:
-    """lk_login.bat: окно для ручного входа (если автоматический не прошёл)."""
+    """lk_login.sh: окно для ручного входа (если автоматический не прошёл)."""
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
     print("Сейчас откроется окно личного кабинета — войди как обычно, окно закроется само.")

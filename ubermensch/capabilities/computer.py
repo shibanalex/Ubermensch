@@ -13,21 +13,24 @@ WORKSPACE = config.DATA_DIR / "workspace"
 
 @registry.tool()
 async def open_item(target: str) -> str:
-    """Открыть файл, папку, сайт (URL) или программу (например «notepad», «chrome», «telegram»)."""
-    shell.open_target(target)
+    """Открыть файл, папку, сайт (URL) или программу (например «kate», «chrome», «telegram»)."""
+    try:
+        await asyncio.to_thread(shell.open_target, target)
+    except FileNotFoundError as error:
+        return str(error)
     return f"Открыто: {target}"
 
 
 
 @registry.tool()
-async def run_powershell(command: str, reason: str) -> str:
-    """Выполнить команду PowerShell — сразу, в том числе меняющую настройки. Подтверждение
-    нужно только опасным: диски, загрузка, выключение, учётные записи, антивирус, системные
-    папки, память и код Ани. reason — зачем это нужно."""
+async def run_shell(command: str, reason: str) -> str:
+    """Выполнить команду bash (Ubuntu, KDE Plasma) — сразу, в том числе меняющую настройки.
+    Подтверждение нужно только опасным: sudo, диски, загрузчик, выключение, учётные записи,
+    удаление пакетов, системные папки, память и код Ани. reason — зачем это нужно."""
     if shell.is_dangerous(command) and \
-            not await _ask("Опасная команда PowerShell", f"{reason}\n\n{command}"):
+            not await _ask("Опасная команда", f"{reason}\n\n{command}"):
         return "Пользователь не разрешил выполнить команду."
-    return await asyncio.to_thread(shell.powershell, command)
+    return await asyncio.to_thread(shell.run, command)
 
 
 
@@ -35,7 +38,10 @@ async def run_powershell(command: str, reason: str) -> str:
 async def media_key(action: Literal["play_pause", "next", "previous", "volume_up", "volume_down",
                                     "mute"], times: int = 1) -> str:
     """Управление музыкой и громкостью: пауза/воспроизведение, треки, громкость (один шаг ≈ 2%)."""
-    windows.press_media_key(action, times)
+    try:
+        await asyncio.to_thread(windows.press_media_key, action, times)
+    except (RuntimeError, OSError) as error:
+        return f"Не получилось: {error}"
     return "Готово"
 
 
@@ -55,7 +61,7 @@ async def screenshot() -> str:
 
 @registry.tool()
 async def lock_screen() -> str:
-    """Заблокировать компьютер (экран входа Windows)."""
-    windows.lock()
+    """Заблокировать компьютер (экран блокировки)."""
+    await asyncio.to_thread(windows.lock)
     return "Компьютер заблокирован"
 

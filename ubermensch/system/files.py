@@ -1,43 +1,57 @@
-"""Поиск файлов: мгновенно через Everything (es.exe), иначе — обходом личных папок."""
+"""Поиск файлов: мгновенно по индексу plocate, в конкретной папке — fd, иначе обходом папок."""
 from __future__ import annotations
 
 import os
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 from .. import config
 
 HOME = Path.home()
-SEARCH_ROOTS = [HOME / "Desktop", HOME / "Documents", HOME / "Downloads", Path("D:/")]
-SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "__pycache__", "$RECYCLE.BIN",
-             "System Volume Information", "Docker", "WSL", "Libraries Kontakt", "AppData"}
-ES = config.DATA_DIR / "bin" / "es.exe"  # консольный клиент Everything (voidtools)
+SEARCH_ROOTS = [HOME, *config.EXTRA_ROOTS]
+SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "__pycache__", "site-packages", "snap",
+             ".cache", ".local", ".config", ".mozilla", ".npm", ".cargo", ".rustup", "Trash"}
 
 
-def _everything(name_part: str, folder: str | None, limit: int) -> list[str] | None:
-    """None — Everything недоступен (не установлен или не запущен)."""
-    es = str(ES) if ES.exists() else shutil.which("es")
-    if not es:
+def _visible(path: str) -> bool:
+    """Без служебного: скрытые папки, кэши, системные каталоги."""
+    parts = Path(path).parts
+    return not any(p in SKIP_DIRS or (p.startswith(".") and p != ".") for p in parts[1:-1])
+
+
+def _plocate(name_part: str, limit: int) -> list[str] | None:
+    """None — индекса нет. Индекс обновляется раз в сутки: свежие файлы найдёт fd/обход."""
+    if not shutil.which("plocate"):
         return None
-    # в консоль es пишет в старой кодировке (Ü → U, кириллица теряется) — берём UTF-8 из файла
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / "found.txt"
-        args = [es, "-n", str(limit), "-export-txt", str(out), "-utf8-bom"] \
-            + (["-path", folder] if folder else []) + [name_part]
-        done = subprocess.run(args, capture_output=True, timeout=30,
-                              creationflags=subprocess.CREATE_NO_WINDOW)
-        if done.returncode != 0 or not out.exists():
-            return None
-        lines = out.read_text(encoding="utf-8-sig").splitlines()
-    return [line for line in lines if line.strip() and "\\AppData\\" not in line]
+    done = subprocess.run(["plocate", "-i", "-l", str(limit * 10), "--", name_part],
+                          capture_output=True, timeout=30)
+    if done.returncode not in (0, 1):  # 1 — ничего не найдено
+        return None
+    lines = done.stdout.decode("utf-8", errors="replace").splitlines()
+    roots = [str(r) for r in SEARCH_ROOTS]
+    found = [line for line in lines if line.startswith(tuple(roots)) and _visible(line)
+             and name_part.casefold() in Path(line).name.casefold()]
+    return found[:limit]
+
+
+def _fd(name_part: str, folder: str, limit: int) -> list[str] | None:
+    fd = shutil.which("fdfind") or shutil.which("fd")
+    if not fd:
+        return None
+    done = subprocess.run([fd, "--ignore-case", "--fixed-strings", "--absolute-path",
+                           "--max-results", str(limit), "--", name_part, folder],
+                          capture_output=True, timeout=60)
+    if done.returncode != 0:
+        return None
+    return done.stdout.decode("utf-8", errors="replace").splitlines()
 
 
 def find(name_part: str, folder: str | None = None, limit: int = 30) -> list[str]:
     """Файлы и папки, в имени которых есть name_part (без учёта регистра)."""
-    if (found := _everything(name_part, folder, limit)) is not None:
-        return found
+    fast = _fd(name_part, folder, limit) if folder else _plocate(name_part, limit)
+    if fast:
+        return fast
     needle = name_part.casefold()
     found = []
     for root in ([Path(folder)] if folder else SEARCH_ROOTS):
