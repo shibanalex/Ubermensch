@@ -1,4 +1,4 @@
-"""Личный кабинет студента (e.mospolytech.ru/old): только чтение.
+"""Личный кабинет студента (старый кабинет e.mospolytech.ru): только чтение.
 
 Вход — Playwright через установленный Chrome, без окна, по LK_LOGIN и LK_PASSWORD из .env
 (капча или ошибка — окно для ручного входа: lk_login.sh). Браузер нужен только для входа:
@@ -26,8 +26,12 @@ from . import site
 
 log = logging.getLogger(__name__)
 
-ROOT = "https://e.mospolytech.ru/old/"
+ROOT = "https://e.mospolytech.ru/old/"  # вход: отсюда кабинет сам ведёт на страницу входа
 HOST = "e.mospolytech.ru"
+# Старый кабинет жил в /old/, сейчас (новый сломан) — в корне, разделы «/?p=marks». Обход
+# стартует с того, где нашлось меню разделов: когда новый починят, старый вернётся в /old/.
+STARTS = ("https://e.mospolytech.ru/", "https://e.mospolytech.ru/old/")
+MIN_MENU_LINKS = 5
 SESSION = config.DATA_DIR / "secrets" / "lk_session.json"
 SNAPSHOT = config.DATA_DIR / "raw" / "lk" / "snapshot.json"
 MAX_PAGES = 60
@@ -50,8 +54,13 @@ def credentials() -> tuple[str, str] | None:
     return (login, password) if login and password else None
 
 
+CHANGE_PASSWORD = re.compile(r"(?i)name=[\"']?(old|new|confirm|repeat)_?pass")
+
+
 def _is_login_page(html: str) -> bool:
-    return bool(re.search(r'<input[^>]+type=["\']?password', html, re.I))
+    """Есть поле пароля, и это не форма смены пароля в «Персональной информации»."""
+    fields = re.findall(r'<input[^>]+type=["\']?password[^>]*>', html, re.I)
+    return any(not CHANGE_PASSWORD.search(field) for field in fields)
 
 
 # --- вход ---
@@ -72,12 +81,14 @@ def login(interactive: bool = False) -> None:
                 page.goto(ROOT, timeout=LOGIN_TIMEOUT_MS)
             except PlaywrightError as e:
                 raise LkUnavailable(str(e).splitlines()[0]) from None
-            password = page.locator("input[type=password]").first
+            # на странице входа несколько форм (одна скрытая — ФИО и 4 цифры): только видимые поля
+            password = page.locator("input[type=password]:visible").first
             if interactive:
                 # пользователь входит сам; ждём, пока поле пароля исчезнет (до 5 минут)
                 page.wait_for_selector("input[type=password]", state="detached", timeout=300_000)
             elif password.count():
-                user = page.locator("input[type=text], input[type=email], input:not([type])").first
+                user = page.locator("form:has(input[type=password]:visible) :is(input[type=text], "
+                                    "input[type=email], input:not([type])):visible").first
                 user.fill(auth[0])
                 password.fill(auth[1])
                 password.press("Enter")
@@ -85,7 +96,7 @@ def login(interactive: bool = False) -> None:
                     page.wait_for_load_state("networkidle", timeout=LOGIN_TIMEOUT_MS)
                 except PlaywrightError:
                     pass
-                if page.locator("input[type=password]").count():
+                if page.locator("input[type=password]:visible").count():
                     raise LkLoginFailed("Кабинет не принял логин и пароль (или просит капчу) — "
                                         "проверь LK_LOGIN/LK_PASSWORD в .env или войди сам: "
                                         "lk_login.sh")
@@ -94,6 +105,7 @@ def login(interactive: bool = False) -> None:
             browser.close()
     SESSION.parent.mkdir(parents=True, exist_ok=True)
     SESSION.write_text(json.dumps(cookies), encoding="utf-8")
+    SESSION.chmod(0o600)
     log.info("Вход в личный кабинет выполнен, сессия сохранена")
 
 
@@ -115,6 +127,10 @@ def _get(url: str, opener) -> dict:
     """Страница кабинета текстом; сессия кончилась — LkLoginFailed после повторного входа."""
     try:
         raw, kind, final = site.fetch(url, opener)
+    except urllib.error.HTTPError as e:
+        if e.code >= 500:  # кабинет лежит
+            raise LkUnavailable(str(e)) from None
+        raise RuntimeError(f"страница недоступна: {e.code}") from None  # одна битая ссылка
     except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
         raise LkUnavailable(str(e)) from None
     if "html" not in kind:
@@ -148,12 +164,34 @@ def read(url: str) -> dict:
                       if urllib.parse.urlparse(u).hostname == HOST and t][:150]}
 
 
+def _in_cabinet(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    return parsed.hostname == HOST and (parsed.path in ("/", "/index.php")
+                                        or parsed.path.startswith("/old/"))
+
+
+def _start(opener) -> str:
+    """Адрес, где сейчас живёт старый кабинет: главная с меню разделов."""
+    for url in STARTS:
+        try:
+            page = _get(url, opener)
+        except LkUnavailable:
+            raise
+        except Exception:
+            continue
+        links = [u for u, _ in page["links"] if _in_cabinet(u) and not UNSAFE.search(u)]
+        if not page["login"] and len(set(links)) >= MIN_MENU_LINKS:
+            return url
+    raise LkUnavailable("не нашла меню старого кабинета ни в корне, ни в /old/")
+
+
 def crawl() -> dict[str, dict]:
-    """Обход кабинета: {адрес: {"title", "text", "hash"}}. Только ссылки внутри /old/,
+    """Обход кабинета: {адрес: {"title", "text", "hash"}}. Только ссылки внутри кабинета,
     без выхода, удаления, отправки форм и картинок."""
     opener = _session_opener()
+    start = _start(opener)
     pages: dict[str, dict] = {}
-    queue, seen = deque([ROOT]), {ROOT}
+    queue, seen = deque([start]), {start}
     while queue and len(pages) < MAX_PAGES:
         url = queue.popleft()
         try:
@@ -171,9 +209,7 @@ def crawl() -> dict[str, dict]:
                           "hash": hashlib.sha1(text.encode()).hexdigest()}
         for link, _ in page["links"]:
             link = link.split("#")[0]
-            parsed = urllib.parse.urlparse(link)
-            if (parsed.hostname == HOST and parsed.path.startswith("/old/") and link not in seen
-                    and not UNSAFE.search(link)):
+            if _in_cabinet(link) and link not in seen and not UNSAFE.search(link):
                 seen.add(link)
                 queue.append(link)
         time.sleep(PAUSE)

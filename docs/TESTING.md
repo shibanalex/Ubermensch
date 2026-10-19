@@ -19,7 +19,8 @@ git diff --check
 В [`tests/test_interview.py`](../tests/test_interview.py) — **3** (порядок вопросов, расписание
 и ответы, неверный вывод уходит из контекста вместе с правилами) и в
 [`tests/test_sensors.py`](../tests/test_sensors.py) — **3** (сон ноутбука из журнала, журнал
-прослушиваний, таблицы Excel и метрики). Используется стандартный unittest, включая `IsolatedAsyncioTestCase`.
+прослушиваний, таблицы Excel и метрики). В [`tests/test_university.py`](../tests/test_university.py) — **2** (страница
+входа против формы смены пароля, ссылки кабинета в корне и в `/old/`). Используется стандартный unittest, включая `IsolatedAsyncioTestCase`.
 Специальных команд pytest, CI workflow и настроенного обязательного линтера в
 репозитории пока нет. `compileall` проверяет синтаксис и создаёт обычный
 `__pycache__`, но не подтверждает правильность выполнения программы.

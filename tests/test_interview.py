@@ -56,7 +56,8 @@ class InterviewTests(unittest.TestCase):
         day = datetime(2026, 10, 18, 15, 0)
         self.assertFalse(self.interviewer._due(day))  # он давно не писал
         self.store.add_message("user", "привет", "tg")
-        now = datetime.now().replace(hour=15)
+        self.store.db.execute("UPDATE messages SET ts='2026-10-18T14:00:00'")
+        now = datetime(2026, 10, 18, 15, 0)
         self.assertTrue(self.interviewer._due(now))
         self.assertFalse(self.interviewer._due(now.replace(hour=23)))
         self.interviewer.ask()

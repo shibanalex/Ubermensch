@@ -50,7 +50,7 @@ mkdir -p ../Ubermensch/db                    # если UBERMENSCH_DATA изме
 | [AI_RUNTIME](docs/AI_RUNTIME.md) | Claude/OpenAI, промпты, схема ответа, 24 инструмента, переключение |
 | [BACKGROUND](docs/BACKGROUND.md) | Сборщики, очередь анализа, импорт, досье и обслуживание |
 | [CLIENTS](docs/CLIENTS.md) | Qt, Telegram, локальная связь окон, метрики |
-| [TESTING](docs/TESTING.md) | 36 изолированных тестов, проверки изменений и диагностика |
+| [TESTING](docs/TESTING.md) | 38 изолированных тестов, проверки изменений и диагностика |
 | [LIMITATIONS](docs/LIMITATIONS.md) | Технический долг, границы гарантий и критерии следующих этапов |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Как устроено: процессы, модули, потоки данных, как расширять и масштабировать |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Запуск, автозапуск, где что лежит, диагностика, **что делать при сбоях**, бэкапы и восстановление |
