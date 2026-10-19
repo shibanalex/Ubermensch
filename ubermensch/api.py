@@ -169,6 +169,17 @@ def create_app(core: Core, token: str) -> web.Application:
         core.profiler.request()
         return web.json_response({"started": True})
 
+    async def get_agent(request: web.Request) -> web.Response:
+        """Самостоятельность: последний heartbeat, поручения, расписание."""
+        return web.json_response(core.autonomy.status() if core.autonomy else {})
+
+    async def post_heartbeat(request: web.Request) -> web.Response:
+        """Проснуться и проверить ситуацию сейчас (без учёта «ничего не изменилось»)."""
+        if core.autonomy is None:
+            return web.json_response({"started": False}, status=503)
+        asyncio.create_task(core.autonomy.heartbeat(force=True))
+        return web.json_response({"started": True})
+
     async def get_health(request: web.Request) -> web.Response:
         return web.json_response({"problems": core.health.problems(),
                                   "services": core.supervisor.status()})
@@ -251,6 +262,8 @@ def create_app(core: Core, token: str) -> web.Application:
         web.get("/api/investigation", get_investigation),
         web.get("/api/metrics", get_metrics),
         web.get("/api/profile", get_profile),
+        web.get("/api/agent", get_agent),
+        web.post("/api/agent/heartbeat", post_heartbeat),
         web.post("/api/profile/rebuild", post_profile_rebuild),
         web.post("/api/voice", post_voice),
         web.post("/api/import/deep", post_deep_import),

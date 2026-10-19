@@ -75,6 +75,7 @@ class Core:
         self.investigation: Investigation  # подключается при запуске, до старта API
         self.profiler = None  # profiling.Profiler, подключается при запуске
         self.interviewer = None  # interview.Interviewer, подключается при запуске
+        self.autonomy = None  # agent.Autonomy, подключается при запуске
         self.health = Health(self.notify)  # известные проблемы и что с ними делать
         self.supervisor = Supervisor(self.health)  # фоновые сервисы с перезапуском
         # один клиент на сессию: и для сбора, и для действий; личный и рабочий аккаунты

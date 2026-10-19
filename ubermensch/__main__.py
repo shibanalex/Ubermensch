@@ -11,7 +11,7 @@ import urllib.parse
 import urllib.request
 from logging.handlers import RotatingFileHandler
 
-from . import api, bot, config
+from . import agent, api, bot, config
 from .analysis import Investigation
 from .assistant import Assistant
 from .brain import Brain
@@ -21,6 +21,7 @@ from .collectors.activity import ActivityTracker
 from .core import Core
 from .maintenance import Maintenance
 from .observer import ScreenObserver
+from .agent import Autonomy
 from .interview import Interviewer
 from .profiling import Profiler
 from .store import Store
@@ -82,6 +83,9 @@ async def _serve(settings: config.Settings) -> None:
     services.add("профиль", core.profiler.run)
     core.interviewer = Interviewer(store, core.notify)
     services.add("интервью", core.interviewer.run)
+    agent.recover()
+    core.autonomy = Autonomy(store, assistant, core.investigation, core)
+    services.add("самостоятельность", core.autonomy.run)
 
     runner = await api.start(core, config.api_token(create=True), config.API_HOST, config.API_PORT)
     services.start()

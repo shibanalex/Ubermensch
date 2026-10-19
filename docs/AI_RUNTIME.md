@@ -147,7 +147,8 @@ stdin и ожидает JSON. Существенные параметры ком
 Obsidian (`OBSIDIAN_VAULT`). Встроенные Bash/Edit/Write не выдаются. Команды
 всё равно возможны через общий `run_shell`, с его собственной политикой.
 
-Модель desktop берётся из Settings; Telegram использует `sonnet` с effort medium,
+Модель desktop и Telegram берётся из Settings (opus); Telegram — с effort medium, сторож
+переключения на OpenAI — 4 минуты; heartbeat — `sonnet`, поручения — основная модель;
 массовый анализ — `sonnet`. Комментарий экрана использует Read и таймаут 180 секунд.
 Это настройки текущего кода, а не универсальные рекомендации по моделям.
 
@@ -337,6 +338,16 @@ Start/end — дата целого дня либо локальный datetime;
 | Инструмент и аргументы | Политика |
 |---|---|
 | `profile_feedback(claim_id, verdict, comment='')` | Поправка пользователя к выводу (`wrong`, `outdated`, `right`) сразу; вызывать только по его словам |
+
+### Самостоятельность — `capabilities/agent.py`
+
+| Инструмент и аргументы | Политика |
+|---|---|
+| `delegate_task(title, instructions, due='')` | Поручение себе на фоновую работу сразу |
+| `schedule_task(title, instructions, every, at='09:00', weekday=0, hours=0)` | Регулярное поручение сразу |
+| `agent_tasks()` | Поручения и расписание |
+| `cancel_agent_task(task_id)` | Отменить поручение или расписание сразу |
+| `save_skill(name, when, steps)` | Записать навык в `OUTPUT_DIR/Навыки` сразу |
 
 ### Вуз — `capabilities/university.py`
 

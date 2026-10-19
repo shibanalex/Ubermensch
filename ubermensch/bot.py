@@ -40,6 +40,7 @@ COMMANDS = [
     BotCommand(command="status", description="Состояние системы"),
     BotCommand(command="profile", description="Мой профиль: /profile или /profile обновить"),
     BotCommand(command="question", description="Задай мне вопрос обо мне"),
+    BotCommand(command="agent", description="Твои поручения и расписание"),
     BotCommand(command="login", description="Войти в Telegram: /login или /login work"),
 ]
 
@@ -265,6 +266,18 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
         if core.interviewer is None or core.interviewer.ask() is None:
             await send(message.bot, message.chat.id, "Вопросов пока нет: профиль ещё строится "
                        "или я уже обо всём спросила. Загляну в данные — появятся новые.")
+
+    @owner.message(Command("agent"))
+    async def on_agent(message: Message) -> None:
+        s = core.autonomy.status() if core.autonomy else {}
+        beat = s.get("heartbeat") or {}
+        lines = ["**Сама**", f"Последний heartbeat: {beat.get('at', '—')} — {beat.get('decision', '—')}; "
+                 f"своих сообщений сегодня: {s.get('messages_today', 0)}",
+                 *(f"• {t['title']} [{t['status']}]" for t in s.get("tasks", [])),
+                 *(f"⏰ {line}" for line in s.get("schedules", []))]
+        if s.get("task"):
+            lines.append(f"Сейчас работаю над: {s['task']}")
+        await send(message.bot, message.chat.id, "\n".join(lines))
 
     @owner.message(Command("login"))
     async def on_login(message: Message, command: CommandObject) -> None:
