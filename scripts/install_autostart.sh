@@ -42,6 +42,12 @@ RestartSec=5
 WantedBy=graphical-session.target
 UNIT
 
+# Ядро — сервер: от сети закрытая крышка и простой не усыпляют ноутбук (от батареи — как обычно)
+kwriteconfig6 --file powerdevilrc --group AC --group SuspendAndShutdown --key LidAction 0
+kwriteconfig6 --file powerdevilrc --group AC --group SuspendAndShutdown --key AutoSuspendAction 0
+qdbus6 org.kde.Solid.PowerManagement /org/kde/Solid/PowerManagement \
+    org.kde.Solid.PowerManagement.reparseConfiguration >/dev/null 2>&1 || true
+
 systemctl --user daemon-reload
 systemctl --user enable ubermensch.service ubermensch-desktop.service
 echo "Автозапуск установлен. Запустить сейчас: ./start.sh"

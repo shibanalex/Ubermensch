@@ -83,6 +83,7 @@ flowchart LR
 | `notification` / `collectors/notifications.py` | Уведомления программ и сайтов из журнала `raw/notifications`, который ядро пишет, слушая D-Bus | Только пока ядро запущено: система историю уведомлений не хранит |
 | `power` / `collectors/power.py` | Сон ноутбука из системного журнала (systemd-sleep): уснул — проснулся | Нужна группа adm или systemd-journal; включения не берутся — часы сдвигаются при двойной загрузке с Windows |
 | `music` / `collectors/listening.py` | Что играло в плеерах MPRIS (Spotify, браузер, VLC…) — журнал `raw/listening`, который ядро пишет раз в 15 секунд | Только пока ядро запущено; трек короче 15 секунд может не попасть |
+| импорт / `collectors/gdrive.py` | Чаты Gemini в AI Studio с Google Диска (`application/vnd.google-makersuite.prompt`), изменившиеся с курсора `gemini`, раз в 6 часов → `raw/import/Gemini — <название> [id].json` → глубокий импорт | Нужен вход Google с `drive.readonly`; изменившийся чат — новый хеш, в память только новое |
 | `document` (xlsx) | Таблицы Excel читаются как текст по листам (`office.excel_text`) | До 2000 строк на лист |
 | `activity` / `collectors/activity.py` | Сессии активного окна | Только с момента работы трекера |
 | `youtube`, `google_search`, `google_activity` / `collectors/takeout.py` | Экспорты активности Google | Архивы и распакованные выгрузки; отдельный учёт imports |

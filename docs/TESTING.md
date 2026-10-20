@@ -18,8 +18,8 @@ git diff --check
 кроме `08 AI/Reports`; API виджета: правка задачи и возврат сделанной).
 В [`tests/test_interview.py`](../tests/test_interview.py) — **3** (порядок вопросов, расписание
 и ответы, неверный вывод уходит из контекста вместе с правилами) и в
-[`tests/test_sensors.py`](../tests/test_sensors.py) — **3** (сон ноутбука из журнала, журнал
-прослушиваний, таблицы Excel и метрики). В [`tests/test_university.py`](../tests/test_university.py) — **2** (страница
+[`tests/test_sensors.py`](../tests/test_sensors.py) — **4** (сон ноутбука из журнала, журнал
+прослушиваний, таблицы Excel и метрики; ещё один — чаты Gemini с Диска в импорт один раз). В [`tests/test_university.py`](../tests/test_university.py) — **2** (страница
 входа против формы смены пароля, ссылки кабинета в корне и в `/old/`). В [`tests/test_agent.py`](../tests/test_agent.py) — **4** (расписание,
 heartbeat без перемен и лимит сообщений, поручение с продолжением и отчётом, рефлексия с уроками
 и навыками). Используется стандартный unittest, включая `IsolatedAsyncioTestCase`.

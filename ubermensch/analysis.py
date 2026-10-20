@@ -18,11 +18,11 @@ from collections import Counter, defaultdict
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
-from . import config, ingest, metrics
+from . import config, google_calendar, ingest, metrics
 from .assistant import HELPER_SOURCES, Assistant
 from .brain import BrainError
-from .collectors import (ai_chats, chrome, creative, documents, gmail, listening, notifications,
-                         obsidian, power, takeout)
+from .collectors import (ai_chats, chrome, creative, documents, gdrive, gmail, listening,
+                         notifications, obsidian, power, takeout)
 from .collectors.telegram import TelegramAccount, TelegramLoginRequired
 from .health import Health
 from .store import Store
@@ -39,6 +39,7 @@ CHUNK_CHARS = 120_000
 LEGACY_CHUNK = 60_000  # порции, поставленные в очередь до 13.10.2026 (ключ без «@размер»)
 COLLECT_EVERY = 2 * 3600
 SLOW_SOURCES_EVERY = 24 * 3600  # документы и архив чатов с ИИ меняются редко
+GEMINI_EVERY = 6 * 3600  # чаты AI Studio с Диска — «иногда»
 # Лимит подписки Claude общий для разбора, бота и Claude Code: днём разбор идёт медленно
 # и уступает разговорам, ночью — быстро.
 DAY_PAUSE = 15 * 60  # не больше 4 порций в час
@@ -449,6 +450,8 @@ class Investigation:
             except Exception:
                 log.exception("Сбор сна ноутбука или музыки не удался")
 
+            found["gemini"] = await self._collect_gemini()
+
             try:  # хранилище Obsidian — каждый сбор: он пишет туда постоянно
                 found["obsidian"] = self.store.sync_events(
                     await asyncio.to_thread(obsidian.collect))
@@ -472,6 +475,27 @@ class Investigation:
             return found
         finally:
             self.collecting = False
+
+    async def _collect_gemini(self) -> int:
+        """Чаты AI Studio / Gemini с Google Диска — раз в GEMINI_EVERY, если есть вход Google."""
+        if not google_calendar.TOKEN_FILE.exists() or not self._due("gemini", GEMINI_EVERY):
+            return 0
+        try:
+            saved, cursor = await asyncio.to_thread(
+                gdrive.collect, config.DATA_DIR / "raw" / "import", self.store.cursor("gemini"))
+        except google_calendar.CalendarNotConnected as e:
+            self.health.report("gemini", f"Чаты Gemini с Диска не забираются: {e}")
+            return 0
+        except Exception:
+            log.exception("Сбор чатов Gemini с Диска не удался")
+            return 0
+        if cursor:
+            self.store.set_cursor("gemini", cursor)
+        self._mark("gemini")
+        self.health.clear("gemini", "Чаты Gemini с Диска снова забираются.")
+        if saved:
+            log.info("С Диска — чаты Gemini: %s", ", ".join(saved))
+        return len(saved)
 
     async def _collect_takeout(self) -> int:
         """Новые архивы Google Takeout в папке импорта — каждый читается один раз."""

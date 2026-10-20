@@ -1,7 +1,8 @@
 """Google Календарь пользователя: Аня сама ставит события и дедлайны (они сразу на телефоне).
 
-Доступ — только к событиям (scope calendar.events), не ко всему аккаунту. Ключи OAuth и токен
-лежат в <данные>/secrets. Первый вход: ./google_login.sh (см. docs/OPERATIONS.md).
+Доступ — события календаря (scope calendar.events) и чтение Диска (drive.readonly — чаты
+AI Studio / Gemini, collectors/gdrive.py). Ключи OAuth и токен лежат в <данные>/secrets.
+Первый вход: ./google_login.sh (см. docs/OPERATIONS.md); после добавления Диска — войти заново.
 События, созданные Аней, помечаются в описании — их она может удалять сама, чужие только с «да».
 """
 from __future__ import annotations
@@ -10,7 +11,8 @@ from datetime import date, datetime, timedelta
 
 from . import config
 
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+SCOPES = ["https://www.googleapis.com/auth/calendar.events",
+          "https://www.googleapis.com/auth/drive.readonly"]
 CLIENT_FILE = config.DATA_DIR / "secrets" / "google_oauth_client.json"
 TOKEN_FILE = config.DATA_DIR / "secrets" / "google_token.json"
 MARK = "— добавила Аня"
@@ -26,6 +28,11 @@ class CalendarNotConnected(RuntimeError):
 
 
 def _service():
+    return service("calendar", "v3")
+
+
+def service(api: str, version: str):
+    """Клиент Google API с сохранённым входом (общий для календаря и Диска)."""
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
@@ -44,7 +51,10 @@ def _service():
             TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
         else:
             raise CalendarNotConnected("Доступ к календарю недействителен: запусти google_login.sh.")
-    return build("calendar", "v3", credentials=creds, cache_discovery=False)
+    if not set(SCOPES) <= set(creds.scopes or SCOPES):
+        raise CalendarNotConnected("Вход в Google сделан без доступа к Диску: запусти "
+                                   "google_login.sh заново.")
+    return build(api, version, credentials=creds, cache_discovery=False)
 
 
 def _when(value: str) -> dict:
@@ -98,7 +108,8 @@ def login() -> None:
     flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_FILE), SCOPES)
     creds = flow.run_local_server(port=0, prompt="consent")
     TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
-    print("Готово: Аня подключена к Google Календарю.")
+    TOKEN_FILE.chmod(0o600)
+    print("Готово: Аня подключена к Google Календарю и Диску (чтение).")
 
 
 if __name__ == "__main__":

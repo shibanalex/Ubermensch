@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from ubermensch import behavior
-from ubermensch.collectors import listening, power
+from ubermensch.collectors import gdrive, listening, power
 from ubermensch.store import Store
 from ubermensch.system.office import excel_text, write_excel
 
@@ -64,6 +64,34 @@ class SensorTests(unittest.TestCase):
         self.assertIn("2026-10-14 | 72.5 | 7", text)
         self.assertEqual(text.count("\n"), 2)  # заголовок листа, шапка, одна строка данных
 
+
+    def test_gemini_chats_from_drive_go_to_import_once(self):
+        chat = json.dumps({"chunkedPrompt": {"chunks": [{"role": "user", "text": "привет"}]}}).encode()
+        listing = {"files": [{"id": "abc123456789", "name": "План/трио", "modifiedTime": "2026-10-19T10:00:00Z"},
+                             {"id": "zzz", "name": "битый", "modifiedTime": "2026-10-19T11:00:00Z"}]}
+        contents = {"abc123456789": chat, "zzz": b"not json"}
+
+        class Download:
+            def __init__(self, buffer, request):
+                self.buffer, self.request = buffer, request
+
+            def next_chunk(self):
+                self.buffer.write(contents[self.request])
+                return None, True
+
+        files = SimpleNamespace(
+            list=lambda **kw: SimpleNamespace(execute=lambda: listing),
+            get_media=lambda fileId: fileId)
+        drive = SimpleNamespace(files=lambda: files)
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(gdrive.google_calendar, "service", return_value=drive), \
+                patch("googleapiclient.http.MediaIoBaseDownload", Download):
+            saved, cursor = gdrive.collect(Path(temp), None)
+            again, _ = gdrive.collect(Path(temp), cursor)
+            self.assertEqual(saved, ["Gemini — План_трио [abc12345].json"])
+            self.assertEqual(again, [])  # тот же файл — без повторного импорта
+            self.assertEqual(Path(temp, saved[0]).read_bytes(), chat)
+        self.assertEqual(cursor, "2026-10-19T11:00:00Z")
 
 if __name__ == "__main__":
     unittest.main()
