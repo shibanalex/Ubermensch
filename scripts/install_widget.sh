@@ -19,9 +19,6 @@ port="$(env_value API_PORT 8765)"
 build="$(mktemp -d)"
 trap 'rm -rf "$build"' EXIT
 cp -r "$project/plasmoid/$plugin" "$build/"
-mkdir -p "$build/$plugin/contents/fonts"
-cp "$project/ubermensch/desktop/fonts/Caveat.ttf" "$project/ubermensch/desktop/fonts/Caveat-OFL.txt" \
-    "$build/$plugin/contents/fonts/"
 link="cd '$project' \&\& .venv/bin/python -m ubermensch.desktop.link"
 sed -i -e "s|@API@|http://127.0.0.1:$port|" -e "s|@TOKEN_FILE@|$data_dir/secrets/api_token|" \
     -e "s|@LINK@|$link|" "$build/$plugin/contents/ui/main.qml"
