@@ -1,5 +1,5 @@
-// Задачи Ани — виджет Plasma: тёмная карточка (в тон оформлению «Concert») с задачами на
-// сегодня, потом и сделанными сегодня.
+// Задачи Ани — виджет Plasma: карточка в цветах текущей темы с задачами на сегодня, потом
+// и сделанными сегодня.
 // Галочка у сделанной задачи снимается — задача возвращается (если отметил мискликом).
 // Двойной клик по тексту — правка, правая кнопка — меню. Данные — локальный API ядра
 // (127.0.0.1, токен из папки данных); просьбы к маскоту — `python -m ubermensch.desktop.link`.
@@ -19,16 +19,17 @@ PlasmoidItem {
     readonly property string tokenFile: "@TOKEN_FILE@"
     readonly property string linkCommand: "@LINK@"
 
-    // палитра «Concert»: графит, слоновая кость, приглушённое золото
-    readonly property color card: Qt.rgba(23 / 255, 23 / 255, 27 / 255, 0.86)
-    readonly property color hairline: Qt.rgba(200 / 255, 164 / 255, 100 / 255, 0.35)
-    readonly property color ink: "#ece4d4"
-    readonly property color pencil: "#8c867a"
-    readonly property color gold: "#c8a464"
-    readonly property color goldLight: "#dabc82"
-    readonly property color warn: "#cd5c50"
-    readonly property string serif: "Cormorant Garamond"
-    readonly property string sans: "Inter"
+    // цвета и шрифт — из текущей темы Plasma, виджет подходит к любому оформлению
+    readonly property color card: Qt.rgba(Kirigami.Theme.backgroundColor.r, Kirigami.Theme.backgroundColor.g,
+                                           Kirigami.Theme.backgroundColor.b, 0.82)
+    readonly property color hairline: Qt.rgba(accent.r, accent.g, accent.b, 0.35)
+    readonly property color ink: Kirigami.Theme.textColor
+    readonly property color pencil: Kirigami.Theme.disabledTextColor
+    readonly property color accent: Kirigami.Theme.highlightColor
+    readonly property color accentLight: Qt.lighter(Kirigami.Theme.highlightColor, 1.2)
+    readonly property color onAccent: Kirigami.Theme.highlightedTextColor
+    readonly property color warn: Kirigami.Theme.negativeTextColor
+    readonly property string font: Kirigami.Theme.defaultFont.family
     readonly property var months: ["января", "февраля", "марта", "апреля", "мая", "июня", "июля",
                                    "августа", "сентября", "октября", "ноября", "декабря"]
     readonly property var weekdays: ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
@@ -136,8 +137,8 @@ PlasmoidItem {
             visible: root.nowTasks.length > 0
             anchors { right: parent.right; top: parent.top }
             width: Math.max(height, badge.implicitWidth + 6); height: 14; radius: 7
-            color: root.gold
-            Text { id: badge; anchors.centerIn: parent; text: root.nowTasks.length; color: "#16140f"; font.pixelSize: 10 }
+            color: root.accent
+            Text { id: badge; anchors.centerIn: parent; text: root.nowTasks.length; color: root.onAccent; font.pixelSize: 10 }
         }
     }
 
@@ -167,10 +168,10 @@ PlasmoidItem {
                             const d = new Date(root.today + "T12:00:00")
                             return `${root.weekdays[d.getDay()]}, ${d.getDate()} ${root.months[d.getMonth()]}`
                         }
-                        font.family: root.serif; font.pixelSize: 26; font.weight: Font.DemiBold; color: root.ink
+                        font.family: root.font; font.pixelSize: 19; font.weight: Font.DemiBold; color: root.ink
                     }
                     Text {
-                        text: "✦"; font.pixelSize: 16; color: planArea.containsMouse ? root.goldLight : root.gold
+                        text: "✦"; font.pixelSize: 16; color: planArea.containsMouse ? root.accentLight : root.accent
                         MouseArea {
                             id: planArea; anchors.fill: parent; hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor; onClicked: root.ask("plan")
@@ -178,7 +179,7 @@ PlasmoidItem {
                         QQC2.ToolTip.visible: planArea.containsMouse; QQC2.ToolTip.text: "Спланировать день с Аней"
                     }
                     Text {
-                        text: "⋯"; font.pixelSize: 18; color: moreArea.containsMouse ? root.goldLight : root.pencil
+                        text: "⋯"; font.pixelSize: 18; color: moreArea.containsMouse ? root.accentLight : root.pencil
                         MouseArea {
                             id: moreArea; anchors.fill: parent; hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor; onClicked: moreMenu.popup()
@@ -198,7 +199,7 @@ PlasmoidItem {
                     implicitHeight: 1
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0; color: root.gold }
+                        GradientStop { position: 0; color: root.accent }
                         GradientStop { position: 1; color: "transparent" }
                     }
                 }
@@ -206,7 +207,7 @@ PlasmoidItem {
                 Text {
                     visible: !root.online
                     text: "Аня не на связи — ядро не запущено?"
-                    font.family: root.sans; font.pixelSize: 12; color: root.pencil
+                    font.family: root.font; font.pixelSize: 12; color: root.pencil
                 }
 
                 QQC2.ScrollView {
@@ -226,17 +227,17 @@ PlasmoidItem {
                 Rectangle {  // «вернуть» сразу после отметки
                     Layout.fillWidth: true; implicitHeight: 28; radius: 8
                     visible: root.undoTask !== null
-                    color: Qt.rgba(200 / 255, 164 / 255, 100 / 255, 0.12)
+                    color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.12)
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
                         Text {
                             Layout.fillWidth: true; elide: Text.ElideRight
                             text: root.undoTask ? `✓ ${root.undoTask.title}` : ""
-                            font.family: root.sans; font.pixelSize: 12; color: root.ink
+                            font.family: root.font; font.pixelSize: 12; color: root.ink
                         }
                         Text {
-                            text: "вернуть"; font.family: root.sans; font.pixelSize: 12; font.underline: true
-                            color: root.gold
+                            text: "вернуть"; font.family: root.font; font.pixelSize: 12; font.underline: true
+                            color: root.accent
                             MouseArea {
                                 anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                                 onClicked: { root.setStatus(root.undoTask, "open"); root.undoTask = null }
@@ -249,7 +250,7 @@ PlasmoidItem {
                     id: newTask
                     Layout.fillWidth: true
                     placeholderText: "+ добавить задачу"
-                    font.family: root.sans; font.pixelSize: 13; color: root.ink
+                    font.family: root.font; font.pixelSize: 13; color: root.ink
                     placeholderTextColor: root.pencil
                     background: Item {}
                     onAccepted: { root.add(text); text = "" }
@@ -268,13 +269,13 @@ PlasmoidItem {
         spacing: 1
         visible: items.length > 0 || empty !== ""
         Text {
-            text: title.toUpperCase(); font.family: root.serif; font.pixelSize: 14
-            font.weight: Font.Bold; font.letterSpacing: 2; color: root.gold
+            text: title.toUpperCase(); font.family: root.font; font.pixelSize: 11
+            font.weight: Font.Bold; font.letterSpacing: 2; color: root.accent
             topPadding: 8; bottomPadding: 2
         }
         Text {
             visible: items.length === 0 && empty !== ""
-            text: empty; font.family: root.serif; font.italic: true; font.pixelSize: 17; color: root.pencil
+            text: empty; font.family: root.font; font.italic: true; font.pixelSize: 13; color: root.pencil
         }
         Repeater { model: items; delegate: TaskRow { task: modelData } }
     }
@@ -291,11 +292,11 @@ PlasmoidItem {
         Rectangle {  // кружок: клик отмечает, по сделанной — возвращает
             Layout.alignment: Qt.AlignTop; Layout.topMargin: 3
             width: 15; height: 15; radius: 7.5
-            color: row.done ? root.gold : "transparent"
-            border.width: 1.3; border.color: boxArea.containsMouse ? root.goldLight : root.gold
+            color: row.done ? root.accent : "transparent"
+            border.width: 1.3; border.color: boxArea.containsMouse ? root.accentLight : root.accent
             Text {
                 visible: row.done; anchors.centerIn: parent
-                text: "✓"; font.pixelSize: 10; font.bold: true; color: "#16140f"
+                text: "✓"; font.pixelSize: 10; font.bold: true; color: root.onAccent
             }
             MouseArea {
                 id: boxArea; anchors.fill: parent; anchors.margins: -5; hoverEnabled: true
@@ -310,7 +311,7 @@ PlasmoidItem {
             visible: !row.editing
             Layout.fillWidth: true
             text: row.task.title; wrapMode: Text.Wrap
-            font.family: root.sans; font.pixelSize: 13; font.strikeout: row.done
+            font.family: root.font; font.pixelSize: 13; font.strikeout: row.done
             color: row.done ? root.pencil : root.ink
             MouseArea {
                 anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -322,7 +323,7 @@ PlasmoidItem {
             visible: row.editing
             Layout.fillWidth: true
             text: row.task.title
-            font.family: root.sans; font.pixelSize: 13; color: root.ink
+            font.family: root.font; font.pixelSize: 13; color: root.ink
             onVisibleChanged: if (visible) { forceActiveFocus(); selectAll() }
             onAccepted: {
                 if (text.trim() && text.trim() !== row.task.title) root.edit(row.task, {title: text.trim()})
@@ -335,7 +336,7 @@ PlasmoidItem {
             visible: !row.editing && !!row.task.due && row.task.due !== root.today && !row.done
             Layout.alignment: Qt.AlignTop; Layout.topMargin: 3
             text: (row.overdue ? "до " : "") + root.shortDate(row.task.due)
-            font.family: root.sans; font.pixelSize: 11; color: row.overdue ? root.warn : root.pencil
+            font.family: root.font; font.pixelSize: 11; color: row.overdue ? root.warn : root.pencil
         }
 
         QQC2.Menu {
