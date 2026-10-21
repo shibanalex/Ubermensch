@@ -41,6 +41,7 @@ MAX_MESSAGES = 4  # своих сообщений в день
 MIN_MESSAGE_GAP = timedelta(minutes=90)
 QUIET_AFTER_CHAT = timedelta(minutes=10)
 REFLECT_FROM = 23  # рефлексия — после этого часа (или ночью, до 5)
+REVIEW_WEEKDAY, REVIEW_FROM = 6, 19  # обзор недели — в воскресенье с 19:00
 TASK_SESSIONS = 3  # поручение: столько заходов, потом — «не вышло»
 REST_AFTER_TASK = 15 * 60
 LESSONS_CHARS, JOURNAL_CHARS, SKILLS_CHARS = 6000, 3000, 4000
@@ -360,14 +361,16 @@ class Autonomy:
             "с конкретной пользой — не здоровайся и не повторяй уже сказанное в истории и дневнике) "
             "или act (сделай сама нужное инструментами и коротко скажи что). Задачи из его списка, "
             "которые можно сделать твоими инструментами (найти, прочитать, разобрать, подготовить, "
-            "поставить в календарь), — делай сама: короткие сразу, большие — поручением; сделанное "
+            "поставить в календарь), — делай сама: короткие сразу, большие — поручением. Задачи, "
+            "которые по его словам, дневнику, почте или кабинету уже сделаны, закрой (done), а "
+            "потерявшие смысл — drop, и коротко скажи, что закрыла. Сделанное "
             "отмечай done в поле tasks. Поручения и навыки — "
             "инструментами delegate_task и save_skill, если это уместно. Ничего не отправляй людям "
             "от его имени без его просьбы.\n\n<heartbeat>\n" + _read(checklist_path(), 4000)
             + "\n</heartbeat>")
         data, outcome = await self.assistant.agent_ask(
             task, HEARTBEAT_EXTRA, focus="heartbeat", model=HEARTBEAT_MODEL,
-            effort=HEARTBEAT_EFFORT, timeout=600, source="heartbeat")
+            effort=HEARTBEAT_EFFORT, timeout=600, source="heartbeat", api=True)
         decision = data.get("decision", "silent")
         if decision != "silent" and outcome.reply and (can_write or decision == "act"):
             self.core.notify(outcome.reply)
@@ -464,6 +467,56 @@ class Autonomy:
         self.store.set_cursor("reflected_on", day.isoformat())
         log.info("Рефлексия за %s: уроки обновлены, навыков %d", day, len(data.get("skills") or []))
 
+    # --- обзор недели ---
+
+    async def weekly_review(self, today: date | None = None) -> Path:
+        """Итоги недели в его Obsidian (по его шаблону Weekly): сделанное, понятое, что менять."""
+        today = today or date.today()
+        start = today - timedelta(days=6)
+        year, week, _ = today.isocalendar()
+        done = self.store.db.execute(
+            "SELECT title, substr(done_at,1,10) FROM tasks WHERE status='done' AND done_at >= ? "
+            "ORDER BY done_at", (start.isoformat(),)).fetchall()
+        overdue = self.store.db.execute(
+            "SELECT title, due FROM tasks WHERE status='open' AND due < ? ORDER BY due",
+            (today.isoformat(),)).fetchall()
+        diary = self.store.db.execute(
+            "SELECT external_id, text FROM events WHERE source='obsidian' AND outgoing=1 "
+            "AND external_id LIKE '02 Journal/%' AND ts >= ? ORDER BY ts", (start.isoformat(),)).fetchall()
+        anya_days = "\n\n".join(t for n in range(7)
+                                  if (t := _read(journal_path(start + timedelta(days=n)), 3000)))
+        template = _read(config.VAULT_DIR / "90 Templates" / "Weekly.md", 2000) if config.VAULT_DIR else ""
+        task = (
+            f"[Системная задача: итоги недели {year}-W{week:02d} ({start:%d.%m}–{today:%d.%m}).] "
+            "Напиши ему обзор недели в Markdown — поле review. Структура — его шаблон из <template> "
+            "(«Главное, что произошло», «Что понял или заметил», «Что изменить на следующей неделе»), "
+            "плюс разделы «Цели: что сдвинулось» (по его целям и ориентирам), «Сон и энергия» (по "
+            "дневнику и метрикам, если видно), «Три шага на неделю» (конкретно, под его цели). "
+            "Пиши его языком, тепло и по делу, без морализаторства; ставь [[ссылки]] на его заметки "
+            "дневника. Не выдумывай: чего не видно — так и скажи. reply — 2–3 предложения ему.\n\n"
+            f"<template>\n{template}\n</template>\n<done_tasks>\n"
+            + "\n".join(f"- {t} ({d})" for t, d in done) + "\n</done_tasks>\n<overdue>\n"
+            + "\n".join(f"- {t} (срок {d})" for t, d in overdue) + "\n</overdue>\n<his_diary>\n"
+            + "\n\n".join(f"### {p}\n{text[:4000]}" for p, text in diary)[:30_000]
+            + f"\n</his_diary>\n<anya_journal>\n{anya_days[:20_000]}\n</anya_journal>")
+        data, outcome = await self.assistant.agent_ask(
+            task, {"review": {"type": "string"}, "journal": {"type": "string"}},
+            focus="итоги недели цели", effort="medium", timeout=900, source="weekly_review")
+        path = config.OUTPUT_DIR / "Обзоры недели" / f"{year}-W{week:02d}.md"
+        _write_text(path, f"---\ntype: review\nperiod: weekly\nweek: {year}-W{week:02d}\n---\n"
+                    f"{str(data.get('review') or '').strip()}\n")
+        self.store.set_cursor("reviewed_week", f"{year}-W{week:02d}")
+        self.core.notify(f"🗓 Итоги недели: {outcome.reply}\nЗаметка: {path}")
+        if data.get("journal"):
+            journal(f"[обзор недели] {data['journal']}")
+        log.info("Обзор недели: %s", path)
+        return path
+
+    def _review_due(self, now: datetime) -> bool:
+        year, week, _ = now.date().isocalendar()
+        return now.weekday() == REVIEW_WEEKDAY and now.hour >= REVIEW_FROM \
+            and self.store.cursor("reviewed_week") != f"{year}-W{week:02d}"
+
     def _reflection_due(self, now: datetime) -> date | None:
         day = now.date() if now.hour >= REFLECT_FROM else (now - timedelta(days=1)).date() \
             if now.hour < 5 else None
@@ -482,6 +535,8 @@ class Autonomy:
                              schedule_id=schedule["id"])
                 if self._busy(now):
                     pass
+                elif self._review_due(now):
+                    await self.weekly_review()
                 elif day := self._reflection_due(now):
                     await self.reflect(day)
                 elif pending := [t for t in tasks("pending")]:

@@ -240,6 +240,11 @@ class MetricsWindow(console.ConsoleWindow):
             self._w(f"  {label:<{LABEL_W - 2}}", FG)
             self._ln(value or missing, BRIGHT if value else DIM)
 
+        if api := d.get("claude_api"):  # Claude API: heartbeat и запасной ответ
+            self._head("Claude API", api["model"])
+            self._row("потрачено", api["spent"], api["budget"],
+                      f"${api['spent']:.2f} из ${api['budget']:g}",
+                      RED if api["spent"] >= api["budget"] * 0.8 else GREEN)
         if openai := d.get("openai"):  # второй ИИ: сколько потрачено из бюджета
             self._head("Второй ИИ", f"OpenAI · {openai['model'] or 'модель выберется сама'}")
             self._row("потрачено", openai["spent"], openai["budget"],

@@ -148,6 +148,17 @@ OAuth Google и авторизованные сессии хранятся в `s
 провайдера. Расход хранится в курсоре `openai:spent` и сам по календарю не сбрасывается.
 Подробности и ограничения расчёта — в [AI_RUNTIME](AI_RUNTIME.md).
 
+### Claude API
+
+| Переменная | По умолчанию / смысл |
+|---|---|
+| `CLAUDE_AI_API_KEY` | Без ключа `ClaudeApiBrain` не подключается |
+| `CLAUDE_API_BUDGET_USD` | `10`; накопительный расчётный лимит (курсор `claude_api:spent`) |
+| `CLAUDE_API_WARN_USD` | `8`; порог предупреждения |
+
+Модели заданы в `claude_api.MODELS`: `background` — `claude-haiku-5-5` (heartbeat, effort low),
+`chat` — `claude-sonnet-5-5` (запасной ответ, effort medium, серверный `fallbacks="default"`).
+
 ### Внутренние параметры дочерних процессов
 
 `UBERMENSCH_TOOL_JOURNAL` передаётся MCP-процессу на конкретный запуск чата.

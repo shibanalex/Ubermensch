@@ -107,5 +107,20 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[итог дня] день", context)
 
 
+    async def test_weekly_review_writes_note_once_a_week(self):
+        task = self.store.add_task("Сдать справку", "", None, None, "user")
+        self.store.set_task_status(task, "done")
+        self.assistant.answers = [{"review": "# Итоги недели\n## Главное\n- справка", "journal": "итоги",
+                                   "reply": "Неделя вышла плотной"}]
+        sunday = datetime(2026, 10, 25, 20, 0)
+        self.assertTrue(self.autonomy._review_due(sunday))
+        self.assertFalse(self.autonomy._review_due(sunday.replace(hour=12)))
+        path = await self.autonomy.weekly_review(sunday.date())
+        self.assertIn("Сдать справку", self.assistant.calls[0])
+        self.assertEqual(path.name, "2026-W43.md")
+        self.assertIn("week: 2026-W43", path.read_text(encoding="utf-8"))
+        self.assertFalse(self.autonomy._review_due(sunday))
+        self.assertTrue(self.notes[-1].startswith("🗓 Итоги недели"))
+
 if __name__ == "__main__":
     unittest.main()

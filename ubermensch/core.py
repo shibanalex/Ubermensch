@@ -340,6 +340,8 @@ class Core:
                                     mtime("anya_persona.md"), mtime("tg_style.md"))
         if self.assistant.helper is not None:
             learning["openai"] = self.assistant.helper.status()
+        if self.assistant.claude_api is not None:
+            learning["claude_api"] = self.assistant.claude_api.status()
         return {"learning": learning,
                 "activity": metrics.activity(self.store)}
 

@@ -15,6 +15,7 @@ from . import agent, api, bot, config
 from .analysis import Investigation
 from .assistant import Assistant
 from .brain import Brain
+from .claude_api import ClaudeApiBrain
 from .openai_brain import OpenAIBrain
 from .collectors import listening, notifications
 from .collectors.activity import ActivityTracker
@@ -57,6 +58,8 @@ async def _serve(settings: config.Settings) -> None:
     assistant = Assistant(settings, store, brain)
     core = Core(store, assistant, settings.data_dir / "raw" / "import")
     brain.health = core.health  # мозг сообщает о лимите и слетевшем входе
+    if os.getenv("CLAUDE_AI_API_KEY"):  # Claude API: heartbeat (Haiku) и запасной ответ (Sonnet)
+        assistant.claude_api = ClaudeApiBrain(store, core.health, core.notify)
     if os.getenv("OPENAI_API_KEY"):  # второй ИИ: фон без личного и запасной ответ в чате
         assistant.helper = OpenAIBrain(store, core.health, core.notify)
     assistant.waiting_for_user = lambda: bool(core._approvals)

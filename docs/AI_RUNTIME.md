@@ -158,6 +158,23 @@ missing, timeout, other. Разбор времени снятия лимита �
 с `start_new_session`), затем при необходимости завершает/дожидается родителя. Это нужно для завершения
 MCP и для корректной проверки, не успел ли стартовать инструмент.
 
+## Claude API (`claude_api.py`)
+
+`ClaudeApiBrain` — тот же интерфейс `ask`, что у `Brain` и `OpenAIBrain`, через официальный SDK
+`anthropic` (`AsyncAnthropic`, ключ `CLAUDE_AI_API_KEY`). Ответ — `output_config.format`
+(JSON Schema), effort — `output_config.effort`; системный промпт с `cache_control` (кешируется
+вместе с инструментами). Инструменты — общий `HttpToolGateway` (те же подтверждения); весь ответ
+модели (с блоками рассуждений) возвращается в историю цикла, результаты — `tool_result`,
+ошибка инструмента — `is_error`. `refusal` и `max_tokens` — ошибка, а не ответ. Для `chat`
+запрос идёт через бета-эндпоинт с `fallbacks="default"` (`server-side-fallback-2026-07-01`):
+при отказе классификатора сервер сам отдаёт запрос другой модели; цена считается по
+`response.model`. Расход — по входу, выходу, чтению и записи кеша; предупреждение и стоп —
+как у OpenAI. Ключ отклонён, нет денег, нет доступа — пауза на час и проблема в Health.
+
+Где используется: heartbeat (`agent_ask(..., api=True)`, при ошибке — подписка) и запасной
+ответ чата (`Assistant._fallback_brain`: сначала Claude API, затем OpenAI). Промпт для пути
+через API — `system_prompt_agent_api.md`: без встроенных Read/Glob/Grep/WebSearch.
+
 ## OpenAI и цикл функций
 
 Текущий адаптер вызывает `/v1/chat/completions`, для выбора доступной модели —
