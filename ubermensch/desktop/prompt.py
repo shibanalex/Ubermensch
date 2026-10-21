@@ -6,7 +6,7 @@ from PySide6.QtGui import QFont, QKeyEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QVBoxLayout
 
 from . import console
-from .console import BRIGHT, DIM, GREEN, MONO, TITLE_H
+from .console import ACCENT, BRIGHT, DIM, MONO, TITLE_H
 
 WIDTH, HEIGHT = 500, 150
 
@@ -40,13 +40,13 @@ class PromptWindow(console.ConsoleWindow):
         row = QHBoxLayout()
         prompt = QLabel(r"C:\anya>")
         prompt.setFont(QFont(MONO, 10.5))
-        prompt.setStyleSheet(f"color: {GREEN.name()};")
+        prompt.setStyleSheet(f"color: {ACCENT.name()};")
         self.edit = PromptEdit()
         self.edit.setFont(QFont(MONO, 10.5))
         self.edit.setCursorWidth(8)  # блочный курсор, как в консоли
         self.edit.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none; color: {BRIGHT.name()};"
-            f"selection-background-color: #2e5f3e; }}" + console.SCROLLBAR)
+            f"selection-background-color: {console.SELECTION}; }}" + console.SCROLLBAR)
         self.edit.submitted.connect(self._submit)
         self.edit.cancelled.connect(self.hide)
         row.addWidget(prompt, alignment=Qt.AlignmentFlag.AlignTop)

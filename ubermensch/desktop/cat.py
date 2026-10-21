@@ -23,9 +23,9 @@ from ..system import windows
 from . import behavior, console, face
 from .bubble import ReplyBubble
 from .client import Api
-from .console import BG, BORDER, DIM, GREEN, MONO, TITLE_H, plain
+from .console import ACCENT, BG, BORDER, DIM, MONO, TITLE_H, plain
 
-FACE = GREEN
+FACE = ACCENT
 TALK = ("w", "open", "w", "o")  # рот, пока говорит
 
 # Эмоции в духе аниме и манги: лицо (глаза, рот, брови, румянец, подмигивание), рот во время

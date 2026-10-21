@@ -11,10 +11,10 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
 
 from . import console
 from .client import Api
-from .console import BRIGHT, DIM, FG, GREEN, MONO, RED, TITLE_H
+from .console import ACCENT, BRIGHT, DIM, FG, GREEN, MONO, RED, TITLE_H
 
-AMBER = QColor("#e5c07b")
-GREY = QColor("#9a9a9a")
+AMBER = QColor("#ebcb8b")
+GREY = QColor("#8892a6")
 BAR_W = 22
 LABEL_W = 30
 SPARK = "▁▂▃▄▅▆▇█"
@@ -87,7 +87,7 @@ class MetricsWindow(console.ConsoleWindow):
         self.view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.view.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none; color: {FG.name()};"
-            f"selection-background-color: #2e5f3e; }}" + console.SCROLLBAR)
+            f"selection-background-color: {console.SELECTION}; }}" + console.SCROLLBAR)
         layout.addWidget(self.view, 1)
 
         bottom = QHBoxLayout()
@@ -190,7 +190,7 @@ class MetricsWindow(console.ConsoleWindow):
 
     def _head(self, title: str, note: str = "") -> None:
         self._ln()
-        self._w(title.upper(), GREEN, bold=True)
+        self._w(title.upper(), ACCENT, bold=True)
         self._ln(f"   {note}" if note else "", DIM)
 
     def _row(self, label: str, value: float, total: float, tail: str,

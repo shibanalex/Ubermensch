@@ -15,9 +15,10 @@ from dataclasses import dataclass, field
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 
-BLUSH = QColor(255, 125, 165, 170)
-WATER = QColor(120, 190, 255, 220)  # слёзы и капля пота
-ANGER = QColor(255, 95, 95, 230)  # знак злости
+BLUSH = QColor(236, 140, 170, 170)
+WATER = QColor(136, 192, 208, 220)  # слёзы и капля пота
+ANGER = QColor(191, 97, 106, 235)  # знак злости
+PUPIL = QColor("#2e3440")  # детали глаз — цветом фона окна
 EYE_DX = 40  # глаза от центра
 EYE_W, EYE_H = 23, 22  # полуширина глаза и высота века над центром
 
@@ -91,19 +92,19 @@ def _open_eye(p: QPainter, ex: float, ey: float, m: int, s: FaceState, color: QC
         p.drawLine(QPointF(x, iy + ry * 0.15), QPointF(x - 1.5, iy + ry * 0.8))
     if sparkle:  # глаза-звёздочки: блики мерцают
         twinkle = 0.85 + 0.25 * math.sin(s.t / 160 + m)
-        _star(p, ix - m * 3.5, iy - ry * 0.4, 6.5 * twinkle, QColor("#0c0c0c"))
-        _star(p, ix + m * 3.5, iy + ry * 0.3, 3.2 * twinkle, QColor("#0c0c0c"))
+        _star(p, ix - m * 3.5, iy - ry * 0.4, 6.5 * twinkle, PUPIL)
+        _star(p, ix + m * 3.5, iy + ry * 0.3, 3.2 * twinkle, PUPIL)
     else:
-        p.setPen(_pen(QColor("#0c0c0c"), 2.6))  # блики — вертикальные чёрточки
+        p.setPen(_pen(PUPIL, 2.6))  # блики — вертикальные чёрточки
         p.drawLine(QPointF(ix - m * 3.5, iy - ry * 0.65), QPointF(ix - m * 3.5, iy - ry * 0.15))
         p.drawLine(QPointF(ix - m * 0.5, iy - ry * 0.55), QPointF(ix - m * 0.5, iy - ry * 0.35))
         if teary:  # влажный блеск: ещё два блика
-            p.setPen(_pen(QColor("#0c0c0c"), 2.0))
+            p.setPen(_pen(PUPIL, 2.0))
             p.drawEllipse(QPointF(ix + m * 4, iy + ry * 0.35), 1.6, 1.6)
             p.drawEllipse(QPointF(ix - m * 5, iy + ry * 0.1), 1.0, 1.0)
     if half:  # сонное веко закрывает верх
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor("#0c0c0c"))
+        p.setBrush(PUPIL)
         p.drawRect(QRectF(ex - EYE_W - 8, ey - EYE_H - 10, 2 * EYE_W + 16, EYE_H + 9))
     p.restore()
     p.setPen(_pen(color, 3.2))

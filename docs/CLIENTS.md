@@ -32,6 +32,9 @@ Supervisor использует `sys.executable`, запускает маско�
 Шрифты: «от руки» — Caveat (`desktop/fonts/Caveat.ttf`, OFL, с кириллицей; маскот
 регистрирует его сам), моноширинный — Hack, обычный — Noto Sans, символы — Noto Sans Symbols2.
 
+Цвета окон маскота — палитра Nord (`console.py`): полупрозрачный фон Polar Night (KWin
+размывает его), лицо и приглашение ввода — Frost `#88c0d0`, успех — `#a3be8c`, ошибки — `#bf616a`.
+
 ## Эмоции маскота
 
 [`face.py`](../ubermensch/desktop/face.py) рисует мордочку векторно: глаза `open`, `closed`,

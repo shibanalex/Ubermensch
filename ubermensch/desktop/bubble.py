@@ -41,7 +41,7 @@ class ReplyBubble(console.ConsoleWindow):
         self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.view.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none; color: {FG.name()};"
-            f"selection-background-color: #2e5f3e; }}" + console.SCROLLBAR)
+            f"selection-background-color: {console.SELECTION}; }}" + console.SCROLLBAR)
 
         self._type_timer = QTimer(self, interval=16)
         self._type_timer.timeout.connect(self._type_tick)

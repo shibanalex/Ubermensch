@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
 
 from . import console
 from .client import Api
-from .console import BRIGHT, DIM, FG, GREEN, MONO, RED, TITLE_H, plain
+from .console import ACCENT, BRIGHT, DIM, FG, GREEN, MONO, RED, TITLE_H, plain
 
 PROMPT = r"C:\anya> "
 CHARS_PER_TICK = 6  # скорость «печати»: ~375 символов в секунду
@@ -44,7 +44,7 @@ class AnswerConsole(console.ConsoleWindow):
         self.view.setFont(QFont(MONO, 10.5))
         self.view.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none; color: {FG.name()};"
-            f"selection-background-color: #2e5f3e; }}" + console.SCROLLBAR)
+            f"selection-background-color: {console.SELECTION}; }}" + console.SCROLLBAR)
         layout.addWidget(self.view, 1)
 
         self.approvals = QVBoxLayout()
@@ -98,7 +98,7 @@ class AnswerConsole(console.ConsoleWindow):
 
     def show_request(self, text: str) -> None:
         """Сразу выводим запрос — ответ допечатается, когда придёт."""
-        self._write("\n" + PROMPT, _fmt(GREEN))
+        self._write("\n" + PROMPT, _fmt(ACCENT))
         self._write(text + "\n", _fmt(BRIGHT))
         self._shown_requests.append(text)
 
@@ -162,7 +162,7 @@ class AnswerConsole(console.ConsoleWindow):
             if m["text"] in self._shown_requests:  # уже выведен в момент отправки
                 self._shown_requests.remove(m["text"])
                 return
-            self._write("\n" + PROMPT, _fmt(GREEN))
+            self._write("\n" + PROMPT, _fmt(ACCENT))
             self._write(m["text"], _fmt(BRIGHT))
             self._write("  [telegram]\n" if m.get("channel") == "tg" else "\n", _fmt(DIM))
             return

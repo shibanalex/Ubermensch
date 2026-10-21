@@ -1,4 +1,5 @@
-"""Окна в стиле консоли Windows: чёрное тело, тёмный заголовок «>_», кнопки ─ ☐ ✕."""
+"""Окна-консоли в палитре Nord: полупрозрачное тело Polar Night, тёмный заголовок «>_»,
+кнопки ─ ☐ ✕. Фон за окном размывает KWin."""
 from __future__ import annotations
 
 import re
@@ -11,16 +12,19 @@ from PySide6.QtWidgets import QWidget
 from . import theme
 
 MONO = "Hack"  # моноширинный, похож на Consolas; запасной — любой моно из системы
-BG = QColor("#0c0c0c")
-FG = QColor("#cccccc")
-BRIGHT = QColor("#f2f2f2")
-DIM = QColor("#767676")
-GREEN = QColor("#5af78e")
-RED = QColor("#ff6b6b")
-TITLE_BG = QColor("#1f1f1f")
-BORDER = QColor("#3c3c3c")
-BUTTON_HOVER = QColor("#3a3a3a")
-CLOSE_HOVER = QColor("#c42b1c")
+# палитра Nord (nordtheme.com)
+BG = QColor(46, 52, 64, 236)  # nord0, чуть прозрачный
+FG = QColor("#d8dee9")
+BRIGHT = QColor("#eceff4")
+DIM = QColor("#7b88a1")
+ACCENT = QColor("#88c0d0")  # Frost — лицо Ани, приглашение ввода
+GREEN = QColor("#a3be8c")
+RED = QColor("#bf616a")
+TITLE_BG = QColor(36, 41, 51, 245)
+BORDER = QColor("#4c566a")
+BUTTON_HOVER = QColor("#3b4252")
+CLOSE_HOVER = QColor("#bf616a")
+SELECTION = "#5e81ac"
 
 TITLE_H, BUTTON_W = 28, 34
 SHOW_MS, HIDE_MS, SLIDE = 180, 130, 12  # появление: проявляется и всплывает на SLIDE пикселей
@@ -29,7 +33,7 @@ GLYPHS = {"hide": "─", "maximize": "☐", "close": "✕"}
 
 SCROLLBAR = f"""
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
-QScrollBar::handle:vertical {{ background: #3a3a3a; min-height: 30px; }}
+QScrollBar::handle:vertical {{ background: #4c566a; border-radius: 4px; min-height: 30px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
 """
@@ -163,7 +167,7 @@ class ConsoleWindow(QWidget):
     def paint_chrome(self, p: QPainter) -> None:
         frame = QRectF(self.frame_rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         window = QPainterPath()
-        window.addRoundedRect(frame, 8, 8)  # скругление как в Windows 11
+        window.addRoundedRect(frame, 12, 12)
         if (tail := self.tail_path()) is not None:
             window = window.united(tail)
         p.fillPath(window, BG)
