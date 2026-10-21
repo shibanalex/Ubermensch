@@ -33,8 +33,12 @@ PROTECTED_WORDS = re.compile(
     r"|Ubermensch|Übermensch|\.env\b|\.ssh\b|\.gnupg\b")
 
 
+HARMLESS_REDIRECTS = re.compile(r"\d*>&\d+|&?\d*>>?\s*/dev/null\b")  # 2>/dev/null, 2>&1
+
+
 def is_read_only(command: str) -> bool:
-    return not MUTATING.search(command)
+    """Ничего не меняет. Перенаправление в /dev/null и между потоками — не запись."""
+    return not MUTATING.search(HARMLESS_REDIRECTS.sub(" ", command))
 
 
 def is_dangerous(command: str) -> bool:
