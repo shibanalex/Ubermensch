@@ -477,8 +477,18 @@ class Investigation:
             self.collecting = False
 
     async def _collect_gemini(self) -> int:
-        """Чаты AI Studio / Gemini с Google Диска — раз в GEMINI_EVERY, если есть вход Google."""
-        if not google_calendar.TOKEN_FILE.exists() or not self._due("gemini", GEMINI_EVERY):
+        """Чаты AI Studio / Gemini — раз в GEMINI_EVERY: по запомненным ссылкам (без входа) и
+        все с Google Диска, если есть вход Google."""
+        if not self._due("gemini", GEMINI_EVERY):
+            return 0
+        import_dir = config.DATA_DIR / "raw" / "import"
+        for url in gdrive.shared_links():
+            try:
+                await asyncio.to_thread(gdrive.download_shared, url, import_dir)
+            except Exception as e:
+                log.warning("Чат Gemini по ссылке не забрался: %s", e)
+        if not google_calendar.TOKEN_FILE.exists():
+            self._mark("gemini")
             return 0
         try:
             saved, cursor = await asyncio.to_thread(

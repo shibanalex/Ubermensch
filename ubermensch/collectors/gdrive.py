@@ -4,6 +4,8 @@
 папку импорта («Gemini — <название> [id].json»). Дальше их разбирает обычный глубокий импорт
 (core.deep_import): изменившийся чат — новый хеш, и в память попадает только новое.
 Нужен вход Google с доступом к Диску (google_login.sh); без него сборщик молча ничего не делает.
+Чаты по ссылке «всем, у кого есть ссылка» (download_shared) забираются и без входа, а ссылки
+запоминаются: свежая версия каждого такого чата забирается при каждом сборе.
 """
 from __future__ import annotations
 
@@ -12,9 +14,10 @@ import json
 import re
 from pathlib import Path
 
-from .. import google_calendar
+from .. import config, google_calendar
 
 MIME = "application/vnd.google-makersuite.prompt"
+LINKS = config.DATA_DIR / "raw" / "shared_chats.json"
 UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
@@ -55,3 +58,55 @@ def collect(import_dir: Path, since: str | None) -> tuple[list[str], str | None]
             target.write_bytes(raw)
             saved.append(target.name)
     return saved, cursor
+
+
+SHARED_ID = re.compile(r"(?:ids%22:%5B%22|ids\":\[\"|/d/|[?&]id=)([A-Za-z0-9_-]{20,})")
+
+
+def file_id(url: str) -> str | None:
+    """ID файла из ссылки AI Studio (…/prompts?state={"ids":["…"]}) или Google Диска."""
+    found = SHARED_ID.search(url)
+    return found.group(1) if found else None
+
+
+def download_shared(url: str, import_dir: Path) -> str:
+    """Чат AI Studio по ссылке с доступом «всем, у кого есть ссылка» — без входа Google.
+    Кладёт его в папку импорта; дальше — глубокий импорт. Возвращает имя файла."""
+    import urllib.request
+
+    identifier = file_id(url)
+    if identifier is None:
+        raise ValueError("Не нашла в ссылке ID файла AI Studio или Диска")
+    request = urllib.request.Request(
+        f"https://drive.google.com/uc?export=download&id={identifier}",
+        headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        raw = response.read(100 * 1024 * 1024)
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        raise ValueError("По ссылке не чат AI Studio: нет доступа по ссылке или это другой файл") from None
+    if not isinstance(data, dict) or "chunkedPrompt" not in data:
+        raise ValueError("Файл по ссылке — не чат AI Studio")
+    first = next((c.get("text", "") for c in data["chunkedPrompt"].get("chunks", [])
+                  if c.get("role") == "user" and c.get("text")), "")
+    title = " ".join(first.lstrip("#* ").split()[:6]) or "чат"
+    target = _target(import_dir, {"id": identifier, "name": title})
+    existing = [p for p in import_dir.glob(f"*[[]{identifier[:8]}[]].json")]
+    if existing:  # тот же чат уже лежит — перезаписываем его, а не плодим копии
+        target = existing[0]
+    if not target.exists() or target.read_bytes() != raw:
+        target.write_bytes(raw)
+    links = shared_links()
+    if url not in links:
+        LINKS.parent.mkdir(parents=True, exist_ok=True)
+        LINKS.write_text(json.dumps(links + [url], ensure_ascii=False, indent=1), encoding="utf-8")
+    return target.name
+
+
+def shared_links() -> list[str]:
+    """Ссылки на чаты, которые пользователь дал: их свежая версия забирается регулярно."""
+    try:
+        return json.loads(LINKS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []

@@ -349,6 +349,12 @@ Start/end — дата целого дня либо локальный datetime;
 | `cancel_agent_task(task_id)` | Отменить поручение или расписание сразу |
 | `save_skill(name, when, steps)` | Записать навык в `OUTPUT_DIR/Навыки` сразу |
 
+### Импорт — `capabilities/imports.py`
+
+| Инструмент и аргументы | Политика |
+|---|---|
+| `import_shared_chat(url)` | Скачать чат AI Studio по ссылке в папку импорта сразу; ссылка запоминается |
+
 ### Вуз — `capabilities/university.py`
 
 | Инструмент и аргументы | Назначение |

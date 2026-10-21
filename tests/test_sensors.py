@@ -93,6 +93,29 @@ class SensorTests(unittest.TestCase):
             self.assertEqual(Path(temp, saved[0]).read_bytes(), chat)
         self.assertEqual(cursor, "2026-10-19T11:00:00Z")
 
+    def test_shared_chat_link_downloads_once_and_is_remembered(self):
+        chat = json.dumps({"chunkedPrompt": {"chunks": [{"role": "user", "text": "# План на осень"}]}})
+        url = ("https://aistudio.google.com/app/prompts?state=%7B%22ids%22:%5B%22"
+               "1am8XVHw0cG8PcJFesthoSPwQvZdANUoU%22%5D%7D&usp=sharing")
+        self.assertEqual(gdrive.file_id(url), "1am8XVHw0cG8PcJFesthoSPwQvZdANUoU")
+
+        class Opened:
+            def __enter__(self):
+                return SimpleNamespace(read=lambda size: chat.encode())
+
+            def __exit__(self, *args):
+                return False
+
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(gdrive, "LINKS", Path(temp) / "links.json"), \
+                patch("urllib.request.urlopen", return_value=Opened()):
+            first = gdrive.download_shared(url, Path(temp))
+            again = gdrive.download_shared(url, Path(temp))
+            self.assertEqual(first, again)
+            self.assertEqual(len(list(Path(temp).glob("Gemini*.json"))), 1)
+            self.assertEqual(gdrive.shared_links(), [url])
+
+
 if __name__ == "__main__":
     unittest.main()
 
