@@ -162,7 +162,9 @@ MCP и для корректной проверки, не успел ли ста
 
 `ClaudeApiBrain` — тот же интерфейс `ask`, что у `Brain` и `OpenAIBrain`, через официальный SDK
 `anthropic` (`AsyncAnthropic`, ключ `CLAUDE_AI_API_KEY`). Ответ — `output_config.format`
-(JSON Schema), effort — `output_config.effort`; системный промпт с `cache_control` (кешируется
+(JSON Schema; `claude_api.api_schema` снимает числовые и строковые границы, ставит каждому объекту
+`additionalProperties: false` и перечисляет поля `params` действия — иначе API отвечает 400),
+effort — `output_config.effort`; системный промпт с `cache_control` (кешируется
 вместе с инструментами). Инструменты — общий `HttpToolGateway` (те же подтверждения); весь ответ
 модели (с блоками рассуждений) возвращается в историю цикла, результаты — `tool_result`,
 ошибка инструмента — `is_error`. `refusal` и `max_tokens` — ошибка, а не ответ. Для `chat`

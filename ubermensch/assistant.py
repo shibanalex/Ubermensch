@@ -892,12 +892,15 @@ class Assistant:
             kind, fact_id = op.get("op"), op.get("id")
             area = op.get("area") if op.get("area") in AREAS else None
             content = (op.get("content") or "").strip() or None
+            try:  # 1–5; схема Claude API границ не держит, поэтому — здесь
+                importance = min(5, max(1, int(op["importance"]))) if op.get("importance") else None
+            except (TypeError, ValueError):
+                importance = None
             if kind == "add" and content:
-                new_id = self.store.add_fact(area or "profile", content,
-                                             op.get("importance") or 3, source)
+                new_id = self.store.add_fact(area or "profile", content, importance or 3, source)
                 changes.append(f"🧠 #{new_id} {content}")
             elif kind == "update" and fact_id and \
-                    self.store.update_fact(fact_id, area, content, op.get("importance")):
+                    self.store.update_fact(fact_id, area, content, importance):
                 changes.append(f"🧠 #{fact_id} обновлён" + (f": {content}" if content else ""))
             elif kind == "forget" and fact_id and self.store.forget_fact(fact_id):
                 changes.append(f"🧠 #{fact_id} забыт")

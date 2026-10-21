@@ -90,5 +90,19 @@ class ClaudeApiTests(unittest.IsolatedAsyncioTestCase):
             await self.brain.ask("?", system_prompt_file=self.system, schema=self.schema)
 
 
+    def test_schema_made_acceptable_for_structured_output(self):
+        from ubermensch.claude_api import api_schema
+        schema = {"type": "object", "properties": {
+            "importance": {"type": "integer", "minimum": 1, "maximum": 5},
+            "items": {"type": "array", "items": {"type": "object", "properties": {
+                "params": {"type": "object"}}}}}}
+        result = api_schema(schema)
+        self.assertEqual(result["properties"]["importance"], {"type": "integer"})
+        self.assertFalse(result["additionalProperties"])
+        item = result["properties"]["items"]["items"]
+        self.assertFalse(item["additionalProperties"])
+        self.assertEqual(set(item["properties"]["params"]["properties"]), {"at", "text"})
+        self.assertIn("minimum", schema["properties"]["importance"])  # исходная схема не тронута
+
 if __name__ == "__main__":
     unittest.main()

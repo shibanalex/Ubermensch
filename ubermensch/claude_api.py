@@ -43,6 +43,34 @@ PAUSE_AFTER_FAILURE = timedelta(hours=1)
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
+# Структурированный вывод API не принимает числовые и строковые границы в схеме — снимаем их
+# (значения и так проверяются при применении ответа).
+UNSUPPORTED = {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+               "minLength", "maxLength"}
+
+
+# Свободных объектов API тоже не принимает: каждый объект — с явным списком полей. Такой в схеме
+# ответа один — params действия (напоминание: at, text); новое действие — добавить его поля сюда.
+ACTION_PARAMS = {"type": "object", "additionalProperties": False,
+                 "properties": {"at": {"type": "string"}, "text": {"type": "string"}}}
+
+
+def api_schema(schema):
+    """Копия JSON Schema в виде, который принимает output_config.format: без числовых и
+    строковых границ, у каждого объекта — additionalProperties: false, свободный объект
+    (params действия) — с перечисленными полями."""
+    if isinstance(schema, list):
+        return [api_schema(v) for v in schema]
+    if not isinstance(schema, dict):
+        return schema
+    if schema.get("type") == "object" and not schema.get("properties"):
+        return dict(ACTION_PARAMS)
+    result = {k: api_schema(v) for k, v in schema.items() if k not in UNSUPPORTED}
+    if result.get("type") == "object":
+        result["additionalProperties"] = False
+    return result
+
+
 class ClaudeApiError(BrainError):
     def friendly(self) -> str:
         return str(self)
@@ -92,7 +120,7 @@ class ClaudeApiBrain:
                         "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": prompt}],
             "output_config": {"effort": EFFORT[role],
-                              "format": {"type": "json_schema", "schema": schema}},
+                              "format": {"type": "json_schema", "schema": api_schema(schema)}},
         }
         if tool_gateway is not None and (definitions := tool_gateway.definitions()):
             request["tools"] = [{"name": t.name, "description": t.description,
