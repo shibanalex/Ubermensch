@@ -59,6 +59,16 @@ class EmailSend(StrictModel):
     body: Text
 
 
+class EmailInbox(StrictModel):
+    days: Annotated[int, Field(ge=1, le=60)] = 3
+    query: Annotated[str, Field(max_length=500)] = ''
+    limit: Annotated[int, Field(ge=1, le=50)] = 20
+
+
+class EmailRead(StrictModel):
+    message_id: Annotated[str, Field(pattern=r'^\d{1,25}$')]
+
+
 class SearchRequest(StrictModel):
     query: Text
     limit: Annotated[int, Field(ge=1, le=50)] = 5

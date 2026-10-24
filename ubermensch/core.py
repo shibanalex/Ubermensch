@@ -276,6 +276,13 @@ class Core:
         await tg.send(chat_id, text)
         return f"Отправлено в «{name}» ({tg.profile.label} аккаунт)."
 
+    @staticmethod
+    def gmail_login() -> tuple[str, str]:
+        address, password = os.getenv("GMAIL_ADDRESS", ""), os.getenv("GMAIL_PASSWORD", "")
+        if not (address and password):
+            raise RuntimeError("Почта не подключена: нужны GMAIL_ADDRESS и GMAIL_PASSWORD в .env")
+        return address, password
+
     async def send_email(self, to: str, subject: str, body: str) -> str:
         if not await self.request_approval(f"Отправить письмо → {to}",
                                            f"Тема: {subject}\n\n{body}"):

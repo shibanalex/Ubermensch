@@ -66,6 +66,8 @@ aiohttp (`{id:\d+}`). Все штатные JSON-ответы ниже имею�
 | POST | `/api/tg/chats` | Найти Telegram-чаты |
 | POST | `/api/tg/history` | Прочитать последние сообщения |
 | POST | `/api/tg/send` | Отправить сообщение с подтверждением |
+| POST | `/api/email/inbox` | Свежие входящие Gmail прямо с сервера (только чтение) |
+| POST | `/api/email/read` | Письмо целиком по id из inbox |
 | POST | `/api/email/send` | Отправить письмо с подтверждением |
 | POST | `/api/lk/find` | Поиск по снимку личного кабинета |
 | POST | `/api/lk/read` | Прочитать страницу кабинета |
@@ -258,6 +260,8 @@ Approval появляется в `/api/state` и SSE. Применение ра�
 | `/api/tg/chats` | `query`, `account?` | Список найденных чатов |
 | `/api/tg/history` | `chat_id`, `limit?=30`, `account?` | Последние сообщения |
 | `/api/tg/send` | `chat_id`, `text`, `account?` | Сообщение о результате; обязательное подтверждение |
+| `/api/email/inbox` | `days` 1–60 (3), `query` — поиск Gmail, `limit` 1–50 (20) | `[{id, date, from, subject, unread, preview}]`, новые первыми; без рекламы, соцсетей и форумов |
+| `/api/email/read` | `message_id` — число из inbox | `{id, date, from, to, subject, text, attachments}` |
 | `/api/email/send` | `to`, `subject`, `body` | Сообщение о результате; обязательное подтверждение |
 | `/api/lk/find` | `query`, `limit?=5` | Совпадения в локальном снимке |
 | `/api/lk/read` | `url` | Прочитанная страница |

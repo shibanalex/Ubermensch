@@ -35,6 +35,20 @@ async def telegram_send(chat_id: int, text: str, account: Account = "personal") 
 
 
 @registry.tool()
+async def email_inbox(days: int = 3, query: str = "", limit: int = 20) -> list[dict]:
+    """Свежие входящие Gmail прямо с сервера (без рекламы, соцсетей и форумов), новые первыми:
+    id, дата, отправитель, тема, unread, начало текста. query — поиск Gmail: from:, subject:,
+    слова, is:unread. Письма не помечаются прочитанными."""
+    return await _core_result("/api/email/inbox", {"days": days, "query": query, "limit": limit})
+
+
+@registry.tool()
+async def email_read(message_id: str) -> dict:
+    """Письмо целиком по id из email_inbox: отправитель, получатели, тема, текст, вложения."""
+    return await _core_result("/api/email/read", {"message_id": message_id})
+
+
+@registry.tool()
 async def email_send(to: str, subject: str, body: str) -> str:
     """Отправить письмо с Gmail пользователя. Перед отправкой он увидит письмо и подтвердит."""
     return await _core_result("/api/email/send", {"to": to, "subject": subject, "body": body})

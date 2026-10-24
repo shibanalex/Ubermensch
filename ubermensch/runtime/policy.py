@@ -8,6 +8,7 @@ from .context import current
 BACKGROUND_TOOLS = {
     'read_file', 'read_document', 'read_excel', 'find_files', 'write_file', 'append_file', 'write_word',
     'write_excel', 'calendar_upcoming', 'telegram_find_chats', 'telegram_read',
+    'email_inbox', 'email_read',
     'agent_tasks', 'delegate_task', 'save_skill', 'university_search', 'university_read', 'lk_find', 'system_status',
     'planning_overview', 'career_search', 'career_get', 'career_save', 'career_assess',
     'career_draft', 'career_draft_read', 'recommendation_save',
