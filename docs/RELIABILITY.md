@@ -140,7 +140,11 @@ DATA_DIR, vault/ и documents/ — в выбранные пути, настро�
 
 `run_shell(command, reason, mode='sandbox')` использует bubblewrap без сети,
 с runtime /usr и записываемой workspace/shell. При отсутствии/ошибке bwrap нет
-перехода к host. `mode='host'` всегда требует подтверждения точной команды.
+перехода к host. `mode='host'` без подтверждения выполняет только `shell.runs_on_host_freely`:
+каждая часть цепочки из SAFE_HOST_COMMANDS (kwriteconfig6, qdbus6, wpctl, playerctl, ls, grep,
+journalctl…), без перенаправлений, подстановок, одиночного `&`, `find -exec/-delete`, меняющих
+подкоманд systemctl/loginctl/nmcli, выхода из сеанса, упоминаний секретов, системных папок и кода
+Ани. Остальные команды требуют подтверждения точного текста.
 Окружение не содержит API-ключей и startup hooks; это не ограничивает подтверждённый
 host-shell в чтении файлов. shell.is_dangerous больше не решает вопрос доступа.
 Проверки путей не защищают от другого процесса того же пользователя, меняющего

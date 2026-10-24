@@ -222,7 +222,7 @@ Desktop supervisor имеет собственный ротируемый жур
 Новые параметры UBERMENSCH_READ_ROOTS, UBERMENSCH_WRITE_ROOTS,
 UBERMENSCH_BACKGROUND_WRITE_ROOTS и UBERMENSCH_SHELL_MODE описаны в
 [RELIABILITY](RELIABILITY.md) и .env.example. Shell sandbox требует bubblewrap;
-без него команда не запускается, host-shell всегда требует подтверждения.
+без него команда не запускается, host-shell без подтверждения выполняет только безопасные системные команды (список в `system/shell.py`).
 Миграции 7–8 применяются Store при следующем старте. Перед обновлением установленной
 системы сохранить резервную копию. Для разработки доступно `pip install -e .`;
 проверенный путь запуска остаётся из checkout через run.sh/start.sh.

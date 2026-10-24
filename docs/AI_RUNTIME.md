@@ -316,7 +316,7 @@ JSON Schema всегда доступна через `/api/tools`. `account` п�
 | Инструмент и аргументы | Политика |
 |---|---|
 | `open_item(target)` | Открыть сразу: файл/папку/URL через `xdg-open`, программу — по ярлыку `.desktop` (имя файла или `Name=`) через `gio launch` |
-| `run_shell(command, reason, mode="sandbox")` | sandbox через bubblewrap; host всегда после подтверждения; в фоне недоступен |
+| `run_shell(command, reason, mode="sandbox")` | sandbox через bubblewrap; host — безопасные системные команды сразу, остальные после подтверждения; в фоне недоступен |
 | `media_key(action, times=1)` | play_pause, next, previous — плееру MPRIS (играющему или на паузе); volume_up/down, mute — PipeWire `wpctl` |
 | `screenshot()` | Проверить активное окно, снять Spectacle, сохранить `screens/request.jpg`, вернуть путь |
 | `lock_screen()` | `loginctl lock-session` сразу |
@@ -330,7 +330,7 @@ JSON Schema всегда доступна через `/api/tools`. `account` п�
 | `do_not_disturb(minutes)` | `Notifications.Inhibit` на N минут (0 — снять); держится, пока жив процесс ядра |
 | `suspend_computer(reason)` | `systemctl suspend` только с подтверждением |
 
-Host-shell работает с правами пользователя и всегда требует подтверждения. Sandbox ограничен bubblewrap без сети; отсутствие bwrap не вызывает переход к host. Режимы и ограничения: [RELIABILITY](RELIABILITY.md).
+Host-shell работает с правами пользователя. Управление рабочим столом и чтение состояния (`shell.runs_on_host_freely`) выполняются сразу, остальное требует подтверждения. Sandbox ограничен bubblewrap без сети; отсутствие bwrap не вызывает переход к host. Режимы и ограничения: [RELIABILITY](RELIABILITY.md).
 
 ### Связь — `capabilities/communication.py`
 

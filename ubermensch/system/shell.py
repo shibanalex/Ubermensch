@@ -50,6 +50,46 @@ def is_dangerous(command: str) -> bool:
         not is_read_only(command) and bool(PROTECTED_WORDS.search(command)))
 
 
+# Управление рабочим столом и чтение состояния: на компьютере пользователя без подтверждения.
+# Только сами эти программы — без перенаправлений, подстановок и цепочек с чем-то другим.
+SAFE_HOST_COMMANDS = frozenset({
+    "kwriteconfig6", "kreadconfig6", "qdbus6", "qdbus", "busctl", "wpctl", "pactl", "playerctl",
+    "brightnessctl", "notify-send", "plasma-apply-colorscheme", "plasma-apply-desktoptheme",
+    "plasma-apply-wallpaperimage", "plasma-apply-cursortheme", "kscreen-doctor", "xdg-open",
+    "spectacle", "loginctl", "nmcli", "bluetoothctl", "powerprofilesctl", "date",
+    "ls", "cat", "head", "tail", "grep", "rg", "find", "fd", "wc", "du", "df", "free", "uptime",
+    "ps", "pgrep", "top", "lscpu", "lsblk", "lspci", "lsusb", "sensors", "upower", "journalctl",
+    "systemctl", "uname", "whoami", "id", "which", "file", "stat", "echo", "printf", "sort",
+    "uniq", "cut", "tr", "jq", "xdg-mime", "fc-list", "locate", "plocate",
+})
+# Секреты, которые не должны попасть в вывод без вопроса.
+SECRETS = re.compile(r"(?i)id_(rsa|ed25519|ecdsa)|\.session\b|secrets?\b|\.password-store|keyring"
+                     r"|wallet|Cookies|Login Data|\.netrc|credentials|token")
+# systemctl/loginctl/nmcli/bluetoothctl меняют систему только этими подкомандами — их спрашиваем.
+RISKY_SUBCOMMANDS = re.compile(
+    r"(?i)\b(systemctl|loginctl)(\s+-\S+)*\s+(?!(status|show|is-active|is-enabled|is-failed|"
+    r"list-units|list-timers|list-sessions|show-session|cat)\b)[a-z]|\bnmcli\s+\S+\s+(delete|down|modify)\b"
+    r"|\bbluetoothctl\s+(remove|untrust)\b|\b(logout|reboot|shutdown|halt|suspend|hibernate)\b"
+    r"|\bjournalctl\b.*--(vacuum|rotate|flush|relinquish)")
+
+
+def runs_on_host_freely(command: str) -> bool:
+    """Безопасная системная команда: каждая часть цепочки — из SAFE_HOST_COMMANDS, без записи
+    в файлы, подстановок, sudo и упоминаний секретов, системных папок и кода Ани."""
+    if re.search(r"[`<>]|\$\(|\$\{|\|\||(?<!&)&(?!&)|&&\s*$", command) or "\n" in command:
+        return False
+    if is_dangerous(command) or PROTECTED_WORDS.search(command) or SECRETS.search(command) \
+            or RISKY_SUBCOMMANDS.search(command):
+        return False
+    if re.search(r"\bfind\b.*\s-(delete|exec|execdir|ok|okdir|fprint|fls|fprintf)\b", command):
+        return False
+    for part in re.split(r"\s*(?:;|&&|\|)\s*", command.strip()):
+        words = part.split()
+        if not words or Path(words[0]).name not in SAFE_HOST_COMMANDS:
+            return False
+    return True
+
+
 def _command(command: str, sandbox: bool):
     from .. import config
     folder = config.DATA_DIR / 'workspace' / 'shell'

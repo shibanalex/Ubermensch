@@ -25,14 +25,17 @@ async def open_item(target: str) -> str:
 
 @registry.tool()
 async def run_shell(command: str, reason: str, mode: Literal['sandbox', 'host'] = 'sandbox') -> str:
-    """Команда bash. sandbox — изолированная папка без сети через bubblewrap;
-    host — права пользователя, всегда требует подтверждения. В фоне shell запрещён.
-    reason — зачем команда нужна. При отсутствии bubblewrap sandbox не запускается."""
+    """Команда bash. sandbox — изолированная папка без сети через bubblewrap (расчёты, разбор
+    файлов из workspace). host — на компьютере пользователя: управление рабочим столом и
+    чтение состояния (kwriteconfig6, qdbus6, wpctl, playerctl, brightnessctl, systemctl status,
+    ls/cat/grep/journalctl …) выполняется сразу; всё остальное — после подтверждения.
+    В фоне shell запрещён. reason — зачем команда нужна."""
     if os.getenv('UBERMENSCH_SHELL_MODE', 'confirm') != 'confirm':
         return 'Shell отключён в настройках.'
     if mode == 'sandbox':
         return await shell.run_async(command, sandbox=True)
-    if not await _ask("Команда с правами пользователя", f"{reason}\n\n{command}"):
+    if not shell.runs_on_host_freely(command) and \
+            not await _ask("Команда с правами пользователя", f"{reason}\n\n{command}"):
         return "Пользователь не разрешил выполнить команду."
     return await shell.run_async(command)
 
