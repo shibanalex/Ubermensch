@@ -339,9 +339,9 @@ Host-shell работает с правами пользователя. Упра
 | `telegram_find_chats(query, account='personal')` | Чтение |
 | `telegram_read(chat_id, limit=30, account='personal')` | Чтение актуальных сообщений из Telegram |
 | `telegram_send(chat_id, text, account='personal')` | Обязательное подтверждение полного текста и получателя |
-| `email_inbox(days, query, limit)` | Свежие входящие прямо из Gmail; IMAP только для чтения, без отметок «прочитано»; доступен и в фоне |
-| `email_read(message_id)` | Письмо целиком по id из `email_inbox` |
-| `email_send(to, subject, body)` | Обязательное подтверждение письма |
+| `email_inbox(days, query, limit, account)` | Свежие входящие прямо из Gmail, всех ящиков или одного; IMAP только для чтения, без отметок «прочитано»; доступен и в фоне |
+| `email_read(message_id, account)` | Письмо целиком по id и ящику из `email_inbox` |
+| `email_send(to, subject, body, account)` | Обязательное подтверждение письма; account — ящик отправителя, по умолчанию основной |
 
 ### Календарь — `capabilities/calendar.py`
 

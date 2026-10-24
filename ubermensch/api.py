@@ -17,7 +17,6 @@ from pydantic import ValidationError
 
 from . import ingest
 from . import contracts
-from .collectors import gmail
 from .university import lk
 from .brain import BrainError
 from .core import Core
@@ -222,11 +221,11 @@ def create_app(core: Core, token: str) -> web.Application:
 
     async def post_email_inbox(request: web.Request) -> web.Response:
         return await tool_call(request, lambda d: asyncio.to_thread(
-            gmail.inbox, *core.gmail_login(), d['days'], d['query'], d['limit']), contracts.EmailInbox)
+            core.mail_inbox, d['days'], d['query'], d['limit'], d['account']), contracts.EmailInbox)
 
     async def post_email_read(request: web.Request) -> web.Response:
         return await tool_call(request, lambda d: asyncio.to_thread(
-            gmail.read, *core.gmail_login(), d['message_id']), contracts.EmailRead)
+            core.mail_read, d['message_id'], d['account']), contracts.EmailRead)
 
     async def post_email_send(request: web.Request) -> web.Response:
         return await tool_call(request, lambda d: core.call_tool('email_send', d), contracts.EmailSend)

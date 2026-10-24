@@ -74,6 +74,44 @@ def in_free_zone(path: Path) -> bool:
     return any(zone.resolve() == target or zone.resolve() in target.parents for zone in FREE_ZONES)
 
 
+@dataclass(frozen=True)
+class MailAccount:
+    key: str  # «1» — основной ящик, «2», «3»… — дополнительные
+    address: str
+    password: str
+    label: str
+
+
+def mail_accounts() -> list[MailAccount]:
+    """Ящики Gmail из .env: GMAIL_ADDRESS/GMAIL_PASSWORD — основной, GMAIL_ADDRESS_2 и
+    GMAIL_PASSWORD_2 … _9 — дополнительные; GMAIL_LABEL[_N] — имя ящика («работа»)."""
+    accounts = []
+    for n in range(1, 10):
+        suffix = "" if n == 1 else f"_{n}"
+        address = os.getenv("GMAIL_ADDRESS" + suffix, "").strip()
+        password = os.getenv("GMAIL_PASSWORD" + suffix, "").strip()
+        if address and password:
+            label = os.getenv("GMAIL_LABEL" + suffix, "").strip() or address.split("@")[0]
+            accounts.append(MailAccount(str(n), address, password, label))
+    return accounts
+
+
+def mail_account(name: str = "") -> MailAccount:
+    """Ящик по номеру, адресу, имени до @ или метке; пустое имя — основной."""
+    accounts = mail_accounts()
+    if not accounts:
+        raise RuntimeError("Почта не подключена: нужны GMAIL_ADDRESS и GMAIL_PASSWORD в .env")
+    if not name:
+        return accounts[0]
+    wanted = name.strip().casefold()
+    for account in accounts:
+        if wanted in {account.key, account.address.casefold(), account.label.casefold(),
+                      account.address.split("@")[0].casefold()}:
+            return account
+    raise ValueError(f"Нет ящика «{name}». Подключены: "
+                     + ", ".join(f"{a.label} ({a.address})" for a in accounts))
+
+
 def api_token(create: bool = False) -> str | None:
     """Токен локального API: ядро создаёт его при первом запуске, клиенты только читают."""
     if API_TOKEN_FILE.exists():

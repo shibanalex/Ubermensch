@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import imaplib
 import contextlib
 import hashlib
 import json
@@ -27,6 +28,7 @@ from . import actions, config, ingest, interview, mail, metrics, world
 from .analysis import SOURCES
 from .assistant import ONBOARDING_EVENT, Assistant, Outcome
 from .brain import BrainError
+from .collectors import gmail
 from .collectors.telegram import PROFILES, LoginStepError, TelegramAccount
 from .health import Health
 from .services import Supervisor
@@ -277,19 +279,34 @@ class Core:
         return f"Отправлено в «{name}» ({tg.profile.label} аккаунт)."
 
     @staticmethod
-    def gmail_login() -> tuple[str, str]:
-        address, password = os.getenv("GMAIL_ADDRESS", ""), os.getenv("GMAIL_PASSWORD", "")
-        if not (address and password):
+    def mail_inbox(days: int, query: str, limit: int, account: str = "all") -> list[dict]:
+        """Входящие одного ящика или всех сразу (account: all / номер / адрес / метка)."""
+        boxes = config.mail_accounts() if account.strip().casefold() in {"", "all", "все"} \
+            else [config.mail_account(account)]
+        if not boxes:
             raise RuntimeError("Почта не подключена: нужны GMAIL_ADDRESS и GMAIL_PASSWORD в .env")
-        return address, password
+        letters = []
+        for box in boxes:
+            try:
+                letters += [{**m, "account": box.address}
+                            for m in gmail.inbox(box.address, box.password, days, query, limit)]
+            except imaplib.IMAP4.error:
+                letters.append({"account": box.address, "date": "", "error":
+                                "Gmail не пускает: пароль приложения неверен или отозван"})
+        return sorted(letters, key=lambda m: m["date"], reverse=True)
 
-    async def send_email(self, to: str, subject: str, body: str) -> str:
-        if not await self.request_approval(f"Отправить письмо → {to}",
+    @staticmethod
+    def mail_read(message_id: str, account: str = "") -> dict:
+        box = config.mail_account(account)
+        return {**gmail.read(box.address, box.password, message_id), "account": box.address}
+
+    async def send_email(self, to: str, subject: str, body: str, account: str = "") -> str:
+        box = config.mail_account(account)
+        if not await self.request_approval(f"Отправить письмо {box.address} → {to}",
                                            f"Тема: {subject}\n\n{body}"):
             return "Пользователь не подтвердил отправку."
-        await asyncio.to_thread(mail.send, os.environ["GMAIL_ADDRESS"],
-                                os.environ["GMAIL_PASSWORD"], to, subject, body)
-        return f"Письмо для {to} отправлено."
+        await asyncio.to_thread(mail.send, box.address, box.password, to, subject, body)
+        return f"Письмо для {to} отправлено с {box.address}."
 
     def add_task(self, title: str, due: str | None) -> int:
         task_id = self.store.add_task(title, "", due, None, "user")

@@ -44,7 +44,8 @@ def _sent_folder(imap: imaplib.IMAP4_SSL) -> str | None:
     return None
 
 
-def _fetch(imap: imaplib.IMAP4_SSL, ids: list[bytes], outgoing: bool) -> list[dict]:
+def _fetch(imap: imaplib.IMAP4_SSL, ids: list[bytes], outgoing: bool,
+           account: str = "", prefix: str = "") -> list[dict]:
     events = []
     for i in range(0, len(ids), BATCH):
         _, data = imap.fetch(b",".join(ids[i:i + BATCH]), "(X-GM-MSGID BODY.PEEK[])")
@@ -63,18 +64,22 @@ def _fetch(imap: imaplib.IMAP4_SSL, ids: list[bytes], outgoing: bool) -> list[di
             body = _text(message)[:BODY_CHARS]
             events.append({
                 "source": "gmail",
-                "external_id": msgid.group(1).decode() if msgid else str(message["message-id"]),
+                "external_id": prefix + (msgid.group(1).decode() if msgid
+                                         else str(message["message-id"])),
                 "ts": local_iso(sent_at),
                 "thread": re.sub(r"^((re|fwd?|ответ|пересл)\s*:\s*)+", "", subject, flags=re.I)[:200],
                 "author": sender_name or sender,
                 "outgoing": int(outgoing),
                 "text": f"Тема: {subject}\n{body}",
-                "meta": {"from": sender, "to": recipients[:300]},
+                "meta": {"from": sender, "to": recipients[:300], "account": account},
             })
     return events
 
 
-def collect(address: str, password: str, since: datetime) -> list[dict]:
+def collect(address: str, password: str, since: datetime, own_ids: bool = False) -> list[dict]:
+    """own_ids — у дополнительного ящика id писем с префиксом адреса: у разных ящиков они
+    могут совпасть, а основной ящик сохраняет прежние id."""
+    prefix = f"{address}:" if own_ids else ""
     imap = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=60)
     try:
         imap.login(address, password.replace(" ", ""))
@@ -82,12 +87,12 @@ def collect(address: str, password: str, since: datetime) -> list[dict]:
         imap.select("INBOX", readonly=True)
         query = f'"after:{since:%Y/%m/%d} -category:promotions -category:social -category:forums"'
         _, found = imap.search(None, "X-GM-RAW", query)
-        events += _fetch(imap, found[0].split(), outgoing=False)
+        events += _fetch(imap, found[0].split(), outgoing=False, account=address, prefix=prefix)
         if sent := _sent_folder(imap):
             imap.select(sent, readonly=True)
             month = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()[since.month - 1]
             _, found = imap.search(None, "SINCE", f"{since.day:02d}-{month}-{since.year}")
-            events += _fetch(imap, found[0].split(), outgoing=True)
+            events += _fetch(imap, found[0].split(), outgoing=True, account=address, prefix=prefix)
         return events
     finally:
         try:

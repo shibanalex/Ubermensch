@@ -260,9 +260,9 @@ Approval появляется в `/api/state` и SSE. Применение ра�
 | `/api/tg/chats` | `query`, `account?` | Список найденных чатов |
 | `/api/tg/history` | `chat_id`, `limit?=30`, `account?` | Последние сообщения |
 | `/api/tg/send` | `chat_id`, `text`, `account?` | Сообщение о результате; обязательное подтверждение |
-| `/api/email/inbox` | `days` 1–60 (3), `query` — поиск Gmail, `limit` 1–50 (20) | `[{id, date, from, subject, unread, preview}]`, новые первыми; без рекламы, соцсетей и форумов |
-| `/api/email/read` | `message_id` — число из inbox | `{id, date, from, to, subject, text, attachments}` |
-| `/api/email/send` | `to`, `subject`, `body` | Сообщение о результате; обязательное подтверждение |
+| `/api/email/inbox` | `days` 1–60 (3), `query` — поиск Gmail, `limit` 1–50 (20), `account` (`all`) | `[{id, account, date, from, subject, unread, preview}]`, новые первыми; без рекламы, соцсетей и форумов |
+| `/api/email/read` | `message_id` — число из inbox, `account` — его ящик | `{id, date, from, to, subject, text, attachments}` |
+| `/api/email/send` | `to`, `subject`, `body`, `account` (пусто — основной) | Сообщение о результате; обязательное подтверждение |
 | `/api/lk/find` | `query`, `limit?=5` | Совпадения в локальном снимке |
 | `/api/lk/read` | `url` | Прочитанная страница |
 

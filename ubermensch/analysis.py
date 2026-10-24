@@ -395,22 +395,25 @@ class Investigation:
             except Exception:
                 log.exception("Сбор Chrome не удался")
 
-            if os.getenv("GMAIL_ADDRESS") and os.getenv("GMAIL_PASSWORD"):
+            for mailbox in config.mail_accounts():
+                # основной ящик — прежние ключи «gmail», дополнительные — «gmail_2», «gmail_3»…
+                key = "gmail" if mailbox.key == "1" else f"gmail_{mailbox.key}"
                 try:
-                    last = self.store.cursor("gmail")
+                    last = self.store.cursor(key)
                     start = datetime.fromisoformat(last) - timedelta(days=2) if last else since
-                    found["gmail"] = self.store.add_events(await asyncio.to_thread(
-                        gmail.collect, os.environ["GMAIL_ADDRESS"], os.environ["GMAIL_PASSWORD"],
-                        start))
-                    self.store.set_cursor("gmail", datetime.now().isoformat(timespec="seconds"))
-                    self.health.clear("gmail", "Почта снова собирается.")
+                    found[key] = self.store.add_events(await asyncio.to_thread(
+                        gmail.collect, mailbox.address, mailbox.password, start, key != "gmail"))
+                    self.store.set_cursor(key, datetime.now().isoformat(timespec="seconds"))
+                    self.health.clear(key, f"Почта {mailbox.address} снова собирается.")
                 except imaplib.IMAP4.error as e:
-                    log.error("Gmail не пускает: %s", e)
-                    self.health.report("gmail", "Gmail не пускает: пароль приложения отозван или "
-                                       "неверен. Создай новый на myaccount.google.com/apppasswords "
-                                       "и замени GMAIL_PASSWORD в .env.")
+                    log.error("Gmail %s не пускает: %s", mailbox.address, e)
+                    suffix = "" if key == "gmail" else f"_{mailbox.key}"
+                    self.health.report(key, f"Gmail {mailbox.address} не пускает: пароль приложения "
+                                       "отозван или неверен. Создай новый на "
+                                       "myaccount.google.com/apppasswords и замени "
+                                       f"GMAIL_PASSWORD{suffix} в .env.")
                 except Exception:
-                    log.exception("Сбор Gmail не удался")  # обычно сеть — повторим в следующий раз
+                    log.exception("Сбор Gmail %s не удался", mailbox.address)  # обычно сеть
 
             for account in self.telegrams.values():
                 profile = account.profile

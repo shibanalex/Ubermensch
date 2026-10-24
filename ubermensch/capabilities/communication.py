@@ -35,21 +35,28 @@ async def telegram_send(chat_id: int, text: str, account: Account = "personal") 
 
 
 @registry.tool()
-async def email_inbox(days: int = 3, query: str = "", limit: int = 20) -> list[dict]:
+async def email_inbox(days: int = 3, query: str = "", limit: int = 20,
+                      account: str = "all") -> list[dict]:
     """Свежие входящие Gmail прямо с сервера (без рекламы, соцсетей и форумов), новые первыми:
-    id, дата, отправитель, тема, unread, начало текста. query — поиск Gmail: from:, subject:,
-    слова, is:unread. Письма не помечаются прочитанными."""
-    return await _core_result("/api/email/inbox", {"days": days, "query": query, "limit": limit})
+    id, account, дата, отправитель, тема, unread, начало текста. account — all (все ящики),
+    адрес, имя до @ или метка. query — поиск Gmail: from:, subject:, слова, is:unread.
+    Письма не помечаются прочитанными."""
+    return await _core_result("/api/email/inbox", {"days": days, "query": query, "limit": limit,
+                                                   "account": account})
 
 
 @registry.tool()
-async def email_read(message_id: str) -> dict:
-    """Письмо целиком по id из email_inbox: отправитель, получатели, тема, текст, вложения."""
-    return await _core_result("/api/email/read", {"message_id": message_id})
+async def email_read(message_id: str, account: str) -> dict:
+    """Письмо целиком по id и account из email_inbox: отправитель, получатели, тема, текст,
+    вложения. id у разных ящиков свои — account обязателен."""
+    return await _core_result("/api/email/read", {"message_id": message_id, "account": account})
 
 
 @registry.tool()
-async def email_send(to: str, subject: str, body: str) -> str:
-    """Отправить письмо с Gmail пользователя. Перед отправкой он увидит письмо и подтвердит."""
-    return await _core_result("/api/email/send", {"to": to, "subject": subject, "body": body})
+async def email_send(to: str, subject: str, body: str, account: str = "") -> str:
+    """Отправить письмо с Gmail пользователя. Перед отправкой он увидит письмо и подтвердит.
+    account — с какого ящика (адрес, имя до @ или метка); пусто — основной. Отвечай с того
+    ящика, на который пришло письмо."""
+    return await _core_result("/api/email/send", {"to": to, "subject": subject, "body": body,
+                                                  "account": account})
 
