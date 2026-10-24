@@ -216,3 +216,13 @@ systemd пользователя `ubermensch` и `ubermensch-desktop`, прив�
 Desktop supervisor имеет собственный ротируемый журнал; stderr дочерних UI-процессов
 пишется отдельно. Под systemd вывод процессов также виден в `journalctl --user -u ubermensch`. Подробности диагностики — в [TESTING](TESTING.md) и
 [OPERATIONS](OPERATIONS.md).
+
+## Права и восстановление (23 октября 2026)
+
+Новые параметры UBERMENSCH_READ_ROOTS, UBERMENSCH_WRITE_ROOTS,
+UBERMENSCH_BACKGROUND_WRITE_ROOTS и UBERMENSCH_SHELL_MODE описаны в
+[RELIABILITY](RELIABILITY.md) и .env.example. Shell sandbox требует bubblewrap;
+без него команда не запускается, host-shell всегда требует подтверждения.
+Миграции 7–8 применяются Store при следующем старте. Перед обновлением установленной
+системы сохранить резервную копию. Для разработки доступно `pip install -e .`;
+проверенный путь запуска остаётся из checkout через run.sh/start.sh.

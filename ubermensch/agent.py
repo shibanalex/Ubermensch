@@ -30,6 +30,9 @@ from uuid import uuid4
 
 from . import config
 from .brain import BrainError
+from .runtime.http_tools import ToolExecutionUncertain
+from .runtime.router import InterruptedToolRun
+from .runtime.jobs import JobCancelled
 from .collectors import obsidian
 
 log = logging.getLogger(__name__)
@@ -150,7 +153,7 @@ def _update_task(task_id: str, **changes) -> None:
 
 
 def cancel_task(task_id: str) -> bool:
-    found = any(t["id"] == task_id and t["status"] == "pending" for t in tasks())
+    found = any(t["id"] == task_id and t["status"] in {'pending', 'interrupted'} for t in tasks())
     if found:
         _update_task(task_id, status="cancelled")
     return found
@@ -403,6 +406,12 @@ class Autonomy:
         try:
             data, outcome = await self.assistant.agent_ask(task, TASK_EXTRA, focus=item["instructions"],
                                                            source=f"task:{item['id']}")
+        except (ToolExecutionUncertain, InterruptedToolRun, JobCancelled) as e:
+            _update_task(item['id'], status='interrupted', notes=str(e))
+            raise
+        except asyncio.CancelledError:
+            _update_task(item['id'], status='interrupted', notes='Остановлено; проверь выполненные действия.')
+            raise
         except BrainError as e:
             _update_task(item["id"], status="pending" if item["sessions"] + 1 < TASK_SESSIONS
                          else "failed", notes=f"{item.get('notes', '')}\nОшибка: {e}".strip())
@@ -499,6 +508,13 @@ class Autonomy:
             + "\n".join(f"- {t} (срок {d})" for t, d in overdue) + "\n</overdue>\n<his_diary>\n"
             + "\n\n".join(f"### {p}\n{text[:4000]}" for p, text in diary)[:30_000]
             + f"\n</his_diary>\n<anya_journal>\n{anya_days[:20_000]}\n</anya_journal>")
+        task += ('\n\n<measured_week>\n' + json.dumps(self.store.planning_review(today), ensure_ascii=False)
+                 + '\n</measured_week>\nСопоставь реальные замеры, этапы откликов и результаты советов '
+                 'с personal_plan. Покажи, где данных не хватает. Предложи до трёх изменений '
+                 'на следующую неделю с обоснованием и затратами времени; проверь общий бюджет '
+                 'времени. Изменения целей не считай принятыми без решения пользователя. '
+                 'Сохрани полезные предложения через recommendation_save с датой проверки. '
+                 'Не выводи причинность из нескольких откликов и не подменяй результат числом действий.')
         data, outcome = await self.assistant.agent_ask(
             task, {"review": {"type": "string"}, "journal": {"type": "string"}},
             focus="итоги недели цели", effort="medium", timeout=900, source="weekly_review")
@@ -553,7 +569,7 @@ class Autonomy:
             await asyncio.sleep(60)
 
     def status(self) -> dict:
-        return {**self.state, "tasks": tasks("pending") + tasks("running"),
+        return {**self.state, "tasks": tasks("pending") + tasks("running") + tasks('interrupted'),
                 "schedules": [describe_schedule(s) for s in schedules()],
                 "messages_today": len(self._messages_today())}
 
@@ -565,6 +581,7 @@ def _read_feedback() -> list[dict]:
 
 
 def recover() -> None:
-    """После перезапуска ядра «выполняющиеся» поручения снова ждут своего захода."""
+    """Do not replay a whole task after a crash: some tools may have taken effect."""
     for item in tasks("running"):
-        _update_task(item["id"], status="pending")
+        _update_task(item["id"], status="interrupted", notes=item.get('notes', '') +
+                     '\nПрервано перезапуском. Проверь результат и дай новое поручение для оставшейся работы.')

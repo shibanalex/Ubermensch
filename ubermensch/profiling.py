@@ -386,6 +386,7 @@ class Profiler:
         self.state = {"stage": "ждёт", "done": 0, "total": 0}
         self.requested = False
         self._wake: asyncio.Event | None = None
+        self._build_lock = asyncio.Lock()
 
     def request(self) -> None:
         """Перестроить сейчас, не дожидаясь недели (кеш наблюдений сохраняется)."""
@@ -487,6 +488,10 @@ class Profiler:
         return None
 
     async def build(self) -> Path | None:
+        async with self._build_lock:
+            return await self._build()
+
+    async def _build(self) -> Path | None:
         started = datetime.now()
         stamp = started.strftime("%Y%m%d-%H%M%S-%f")
         corpus_dir = self.base / "corpus" / stamp

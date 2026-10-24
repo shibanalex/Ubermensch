@@ -4,7 +4,7 @@ from __future__ import annotations
 from PySide6.QtCore import QPoint, QRect, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeyEvent, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QSizeGrip,
-                               QVBoxLayout, QWidget)
+                               QVBoxLayout, QWidget, QScrollArea)
 
 from . import console
 from .client import Api
@@ -49,12 +49,31 @@ class AnswerConsole(console.ConsoleWindow):
 
         self.approvals = QVBoxLayout()
         layout.addLayout(self.approvals)
+        runs_holder = QWidget()
+        self.runs = QVBoxLayout(runs_holder)
+        run_scroll = QScrollArea()
+        run_scroll.setWidgetResizable(True)
+        run_scroll.setWidget(runs_holder)
+        run_scroll.setMaximumHeight(150)
+        layout.addWidget(run_scroll)
+        feedback = QHBoxLayout()
+        self._feedback_message = None
+        feedback.addWidget(QLabel('Последний ответ:'))
+        for text, rating in [('Полезно', 'helpful'), ('Не помогло', 'unhelpful'), ('Нужна поправка', 'correction')]:
+            button = QPushButton(text)
+            button.clicked.connect(lambda _=False, r=rating: self._rate(r))
+            feedback.addWidget(button)
+        layout.addLayout(feedback)
 
         bottom = QHBoxLayout()
         self.status = QLabel()
         self.status.setFont(QFont(MONO, 9))
         self.status.setStyleSheet(f"color: {DIM.name()};")
         bottom.addWidget(self.status, 1)
+        plan_button = QPushButton('План и карьера')
+        plan_button.clicked.connect(self._open_plan)
+        bottom.addWidget(plan_button)
+        self._plan_window = None
         bottom.addWidget(QSizeGrip(self), alignment=Qt.AlignmentFlag.AlignBottom
                          | Qt.AlignmentFlag.AlignRight)
         layout.addLayout(bottom)
@@ -69,6 +88,14 @@ class AnswerConsole(console.ConsoleWindow):
         self.button_clicked.connect(lambda name: self.hide())
         self.moved.connect(lambda: self._settings.setValue("answer_pos", self.pos()))
         api.state_changed.connect(self._render)
+
+    def _open_plan(self):
+        from .planning import PlanningWindow
+        if self._plan_window is None:
+            self._plan_window = PlanningWindow(self.api, self)
+        self._plan_window.refresh()
+        self._plan_window.show()
+        self._plan_window.raise_()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Escape:
@@ -156,6 +183,60 @@ class AnswerConsole(console.ConsoleWindow):
             self._last_id = m["id"]
         self._loaded = True
         self._render_approvals(state.get("approvals", []))
+        self._render_runs(state.get('runs', []))
+        replies = [m for m in state.get('messages', []) if m['role'] == 'assistant'
+                   and m.get('channel') != 'system']
+        self._feedback_message = replies[-1]['id'] if replies else None
+
+    def _rate(self, rating):
+        if self._feedback_message is not None:
+            self.api.feedback(self._feedback_message, rating,
+                lambda data: self._write('Оценка сохранена.\n' if data.get('ok') else
+                                         'Не удалось сохранить оценку.\n', _fmt(DIM)))
+
+    def _render_runs(self, runs):
+        while self.runs.count():
+            item = self.runs.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        labels = {'queued': 'в очереди', 'running': 'выполняется',
+                  'waiting_approval': 'ждёт подтверждения', 'completed': 'готово',
+                  'failed': 'ошибка', 'interrupted': 'прервано', 'cancelled': 'отменено',
+                  'cancelling': 'останавливается'}
+        kinds = {'chat': 'Ответ', 'agent': 'Поручение', 'collect': 'Сбор данных',
+                 'voice': 'Обновление стиля', 'import': 'Импорт', 'heartbeat': 'Проверка дел',
+                 'onboard': 'Знакомство', 'profile': 'Построение профиля'}
+        for run in runs:
+            row = QWidget()
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(0, 0, 0, 0)
+            label = QLabel(f"{kinds.get(run['kind'], run['kind'])}: {labels.get(run['status'], run['status'])}")
+            label.setToolTip(run.get('error') or '')
+            layout.addWidget(label, 1)
+            if run['status'] in {'queued', 'running', 'waiting_approval'}:
+                button = QPushButton('Остановить')
+                button.clicked.connect(lambda _=False, i=run['id']: self.api.cancel_run(i, lambda _: self.api.refresh()))
+            else:
+                button = QPushButton('Результат')
+                def show(value):
+                    result = value.get('result')
+                    if isinstance(result, list) and result:
+                        result = result[-1]
+                    if isinstance(result, dict):
+                        text = '\n'.join([result.get('reply', ''), *result.get('changes', []),
+                                          *result.get('done', [])]).strip() or 'Задание завершено.'
+                    else:
+                        text = str(result or 'Результат ещё не получен.')
+                    text = value.get('error') or text
+                    call_states = {'completed': 'выполнено', 'uncertain': 'результат нужно проверить',
+                                   'waiting_approval': 'ждёт подтверждения', 'running': 'выполняется'}
+                    calls = '\n'.join(f"{c['name']}: {call_states.get(c['status'], c['status'])}"
+                                      for c in value.get('calls', []))
+                    self._write(text + ('\n' + calls if calls else '') + '\n', _fmt(DIM))
+                button.clicked.connect(lambda _=False, i=run['id'], display=show:
+                                       self.api.run_result(i, display))
+            layout.addWidget(button)
+            self.runs.addWidget(row)
 
     def _write_message(self, m: dict, animate: bool) -> None:
         if m["role"] == "user":
@@ -205,6 +286,8 @@ class AnswerConsole(console.ConsoleWindow):
     def _update_status(self) -> None:
         if not self.api.online:
             text = PROMPT + "нет связи с ядром"
+        elif self.api.state.get('approvals'):
+            text = PROMPT + 'жду подтверждения'
         elif self.api.state.get("thinking") or self._busy:
             self._spin = (self._spin + 1) % len(SPINNER)
             text = PROMPT + "думаю " + SPINNER[self._spin]

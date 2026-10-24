@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Literal
 
 from .. import config
@@ -23,14 +24,17 @@ async def open_item(target: str) -> str:
 
 
 @registry.tool()
-async def run_shell(command: str, reason: str) -> str:
-    """Выполнить команду bash (Ubuntu, KDE Plasma) — сразу, в том числе меняющую настройки.
-    Подтверждение нужно только опасным: sudo, диски, загрузчик, выключение, учётные записи,
-    удаление пакетов, системные папки, память и код Ани. reason — зачем это нужно."""
-    if shell.is_dangerous(command) and \
-            not await _ask("Опасная команда", f"{reason}\n\n{command}"):
+async def run_shell(command: str, reason: str, mode: Literal['sandbox', 'host'] = 'sandbox') -> str:
+    """Команда bash. sandbox — изолированная папка без сети через bubblewrap;
+    host — права пользователя, всегда требует подтверждения. В фоне shell запрещён.
+    reason — зачем команда нужна. При отсутствии bubblewrap sandbox не запускается."""
+    if os.getenv('UBERMENSCH_SHELL_MODE', 'confirm') != 'confirm':
+        return 'Shell отключён в настройках.'
+    if mode == 'sandbox':
+        return await shell.run_async(command, sandbox=True)
+    if not await _ask("Команда с правами пользователя", f"{reason}\n\n{command}"):
         return "Пользователь не разрешил выполнить команду."
-    return await asyncio.to_thread(shell.run, command)
+    return await shell.run_async(command)
 
 
 

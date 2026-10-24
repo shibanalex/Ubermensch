@@ -91,11 +91,17 @@ async def _serve(settings: config.Settings) -> None:
     services.add("самостоятельность", core.autonomy.run)
 
     runner = await api.start(core, config.api_token(create=True), config.API_HOST, config.API_PORT)
+    core.execution.recover()
+    core.jobs.recover()
     services.start()
     try:
         await bot.run(settings, core)
     finally:
+        core.jobs.stopping = True
+        core.execution.stopping = True
         await services.stop()
+        await core.jobs.close()
+        await core.execution.close()
         await runner.cleanup()
 
 

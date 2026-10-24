@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import aiohttp
+from uuid import uuid4
 
 from .. import config
 from ..brain import BrainError
@@ -53,8 +54,12 @@ class HttpToolGateway:
     def definitions(self) -> list[ToolDefinition]:
         return self._definitions
 
-    async def call(self, name: str, arguments: dict):
-        data = await self._request("POST", "/api/tools/call", {
-            "name": name, "arguments": arguments, "run_id": self.run_id,
-        })
+    async def call(self, name: str, arguments: dict, *, call_id: str | None = None):
+        call_id = call_id or uuid4().hex
+        try:
+            data = await self._request("POST", "/api/tools/call", {
+                "name": name, "arguments": arguments, "run_id": self.run_id, 'call_id': call_id,
+            })
+        except ToolExecutionUncertain as error:
+            raise ToolExecutionUncertain(f'{error} Вызов: {call_id}.') from error
         return data["result"]

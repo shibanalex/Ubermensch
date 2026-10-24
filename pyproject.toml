@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ubermensch-assistant"
+version = "0.1.0"
+description = "Personal desktop and Telegram assistant"
+requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["ubermensch*"]
+
+[tool.setuptools.package-data]
+ubermensch = ["prompts/*.md", "system/*.js", "desktop/fonts/*", "university/certs/*.pem"]

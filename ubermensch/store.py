@@ -2,9 +2,15 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
+
+from .runtime.storage import RUNTIME_MIGRATION, RuntimeStorage
+from .planning import PLANNING_MIGRATION, PlanningStorage
 
 AREAS = {
     "profile": "Обо мне",
@@ -146,6 +152,22 @@ MIGRATIONS = [
         updated_at TEXT NOT NULL
     );
     """,
+    RUNTIME_MIGRATION,
+    """
+    CREATE VIRTUAL TABLE facts_fts USING fts5(content, content='facts', content_rowid='id');
+    INSERT INTO facts_fts(facts_fts) VALUES('rebuild');
+    CREATE TRIGGER facts_ai AFTER INSERT ON facts BEGIN
+        INSERT INTO facts_fts(rowid, content) VALUES(new.id, new.content);
+    END;
+    CREATE TRIGGER facts_ad AFTER DELETE ON facts BEGIN
+        INSERT INTO facts_fts(facts_fts, rowid, content) VALUES('delete', old.id, old.content);
+    END;
+    CREATE TRIGGER facts_au AFTER UPDATE ON facts BEGIN
+        INSERT INTO facts_fts(facts_fts, rowid, content) VALUES('delete', old.id, old.content);
+        INSERT INTO facts_fts(rowid, content) VALUES(new.id, new.content);
+    END;
+    """,
+    PLANNING_MIGRATION,
 ]
 
 
@@ -153,12 +175,27 @@ def now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-class Store:
+class Store(RuntimeStorage, PlanningStorage):
     def __init__(self, path: Path):
         self.db = sqlite3.connect(path, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode = WAL")
         self._migrate()
+        self.db.execute("PRAGMA foreign_keys = ON")
+
+    @contextmanager
+    def transaction(self):
+        """Nested synchronous transaction. Never hold this across an await."""
+        name = 'tx_' + uuid4().hex
+        self.db.execute(f'SAVEPOINT {name}')
+        try:
+            yield
+        except BaseException:
+            self.db.execute(f'ROLLBACK TO {name}')
+            self.db.execute(f'RELEASE {name}')
+            raise
+        else:
+            self.db.execute(f'RELEASE {name}')
 
     def _migrate(self) -> None:
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
@@ -198,6 +235,31 @@ class Store:
             "ORDER BY importance DESC, updated_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
+
+    def relevant_facts(self, query: str, limit: int) -> list[sqlite3.Row]:
+        """Lexical matches first; fill remaining slots with important context."""
+        stop = {'что', 'как', 'это', 'мне', 'меня', 'тебя', 'про', 'для', 'или', 'при',
+                'the', 'and', 'you', 'with', 'расскажи', 'пожалуйста'}
+        words = list(dict.fromkeys(w for w in re.findall(r'\w+', query.casefold())
+                                  if len(w) > 2 and w not in stop))[:24]
+        matched = []
+        if words and limit > 0:
+            expression = ' OR '.join('"' + w + '"*' for w in words)
+            matched = self.db.execute(
+                'SELECT f.* FROM facts_fts JOIN facts f ON f.id=facts_fts.rowid '
+                'WHERE facts_fts MATCH ? AND f.active=1 '
+                'ORDER BY bm25(facts_fts), f.importance DESC, f.id LIMIT ?',
+                (expression, limit)).fetchall()
+        seen = {r['id'] for r in matched}
+        return (matched + [r for r in self.facts(limit) if r['id'] not in seen])[:limit]
+
+    def patch_task(self, task_id: int, fields: dict) -> bool:
+        allowed = {'title', 'due', 'notes'}
+        if not fields or not fields.keys() <= allowed:
+            raise ValueError('invalid task fields')
+        values = {k: (v or '' if k == 'notes' else v) for k, v in fields.items()}
+        return self._changed('UPDATE tasks SET ' + ', '.join(k + '=?' for k in values)
+                             + " WHERE id=? AND status='open'", *values.values(), task_id)
 
     def add_fact(self, area: str, content: str, importance: int, source: str) -> int:
         ts = now()
@@ -303,10 +365,14 @@ class Store:
         ).fetchall()
 
     def close_reminder(self, reminder_id: int, status: str) -> bool:
-        return self._changed(
-            "UPDATE reminders SET status = ? WHERE id = ? AND status = 'pending'",
-            status, reminder_id,
-        )
+        with self.transaction():
+            changed = self._changed(
+                "UPDATE reminders SET status = ? WHERE id = ? AND status = 'pending'",
+                status, reminder_id)
+            if status == 'cancelled':
+                self.db.execute("UPDATE deliveries SET status='cancelled' WHERE reminder_id=? "
+                                "AND status='pending'", (reminder_id,))
+        return changed
 
     # --- действия ---
 

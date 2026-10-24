@@ -178,6 +178,7 @@ class MetricsWindow(console.ConsoleWindow):
             self._w("загружаю…", DIM)
         elif self._tab == "learning":
             self._learning(self._data["learning"])
+            self._quality(self._data.get('quality', {}))
         else:
             self._activity(self._data["activity"])
         bar.setValue(scroll)
@@ -205,12 +206,13 @@ class MetricsWindow(console.ConsoleWindow):
 
     def _learning(self, d: dict) -> None:
         filled, empty = _bar(d["mastery"], 100, 30)
-        self._w("ОСВОЕНИЕ  ", GREEN, bold=True)
+        self._w("ОБРАБОТКА ДАННЫХ  ", GREEN, bold=True)
         self._w(filled, GREEN)
         self._w(empty, DIM)
         self._ln(f"  {d['mastery']}%", BRIGHT, bold=True)
         self._ln("60% — сколько данных разобрано, 40% — насколько полно известна каждая сфера",
                  DIM)
+        self._ln('Этот показатель отражает объём обработки. Качество помощи — по оценкам ниже.', DIM)
 
         jobs = d["jobs"]
         self._head("Разбор данных", f"{jobs['done']} из {jobs['total']} порций · "
@@ -250,6 +252,20 @@ class MetricsWindow(console.ConsoleWindow):
             self._row("потрачено", openai["spent"], openai["budget"],
                       f"${openai['spent']:.2f} из ${openai['budget']:g}",
                       RED if openai["spent"] >= openai["budget"] * 0.8 else GREEN)
+
+    def _quality(self, data):
+        self._head('Качество помощи', 'оценки пользователя и результаты выполнения')
+        total = data.get('rated', 0)
+        if total:
+            ratings = data.get('ratings', {})
+            self._ln(f"  Полезных ответов: {ratings.get('helpful', 0)} из {total}")
+            self._ln(f"  Нужна поправка: {ratings.get('correction', 0)}")
+        else:
+            self._ln('  Оценок пока нет. Оценить последний ответ можно в истории.', DIM)
+        runs = data.get('runs', {})
+        self._ln(f"  Завершено заданий: {runs.get('completed', 0)}; ошибок: {runs.get('failed', 0)}")
+        self._ln(f"  Вызовов с неизвестным результатом: {data.get('tool_calls_uncertain', 0)}")
+        self._ln(f"  Уведомлений ожидают доставки: {data.get('deliveries_pending', 0)}")
 
     # --- «Мои действия» ---
 

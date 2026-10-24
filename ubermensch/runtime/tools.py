@@ -39,3 +39,21 @@ class LocalToolGateway:
 
     async def call(self, name: str, arguments: dict):
         return await self.registry.call(name, arguments, journal=self.journal)
+
+
+class JournalToolGateway:
+    """Record dispatch before crossing HTTP; a lost response must never allow replay."""
+    def __init__(self, gateway: ToolGateway, journal: ToolJournal, *, allowed=None):
+        self.gateway, self.journal = gateway, journal
+        self._definitions = [tool for tool in gateway.definitions()
+                             if allowed is None or tool.name in allowed]
+        self._names = {tool.name for tool in self._definitions}
+
+    def definitions(self) -> list[ToolDefinition]:
+        return self._definitions
+
+    async def call(self, name: str, arguments: dict):
+        if name not in self._names:
+            raise ValueError('Инструмент не выдан этому запросу')
+        self.journal.record(name, 'dispatched')
+        return await self.gateway.call(name, arguments)

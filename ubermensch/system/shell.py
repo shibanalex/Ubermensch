@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import asyncio
+import signal
 import re
 import shutil
 import subprocess
@@ -48,13 +50,61 @@ def is_dangerous(command: str) -> bool:
         not is_read_only(command) and bool(PROTECTED_WORDS.search(command)))
 
 
-def run(command: str, timeout: int = 120) -> str:
-    """Выполняет команду в bash и возвращает вывод (обрезанный)."""
-    done = subprocess.run(["bash", "-c", command], capture_output=True, timeout=timeout,
-                          stdin=subprocess.DEVNULL, cwd=Path.home(),
-                          env={**os.environ, "LC_ALL": os.environ.get("LANG", "C.UTF-8")})
+def _command(command: str, sandbox: bool):
+    from .. import config
+    folder = config.DATA_DIR / 'workspace' / 'shell'
+    folder.mkdir(parents=True, exist_ok=True)
+    args = ['bash', '--noprofile', '--norc', '-c', command]
+    if sandbox:
+        executable = shutil.which('bwrap')
+        if not executable:
+            raise RuntimeError('Для sandbox нужен bubblewrap (bwrap). Команда не запущена.')
+        prefix = [executable, '--unshare-all', '--die-with-parent', '--new-session',
+                  '--ro-bind', '/usr', '/usr']
+        for directory in ('/bin', '/sbin', '/lib', '/lib64'):
+            path = Path(directory)
+            if path.is_symlink():
+                prefix += ['--symlink', os.readlink(path), directory]
+            elif path.exists():
+                prefix += ['--ro-bind', directory, directory]
+        args = prefix + ['--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp',
+                         '--bind', str(folder), '/work', '--chdir', '/work',
+                         '--clearenv', '--setenv', 'PATH', '/usr/bin:/bin',
+                         '--setenv', 'HOME', '/work', '--', *args]
+    # Do not pass tokens, proxy credentials or Python/bash startup hooks to children.
+    environment = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': str(Path.home()),
+                   'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8'}
+    for key in ('XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'DISPLAY', 'WAYLAND_DISPLAY'):
+        if key in os.environ:
+            environment[key] = os.environ[key]
+    return args, folder, environment
+
+
+def run(command: str, timeout: int = 120, *, sandbox: bool = False) -> str:
+    """Synchronous diagnostic entry point; tools use cancellable run_async."""
+    args, folder, environment = _command(command, sandbox)
+    done = subprocess.run(args, capture_output=True, timeout=timeout,
+                          stdin=subprocess.DEVNULL, cwd=folder, env=environment)
     out = (done.stdout + done.stderr).decode("utf-8", errors="replace").strip()
     return (out or f"(нет вывода, код {done.returncode})")[:OUTPUT_CHARS]
+
+
+async def run_async(command: str, timeout: int = 120, *, sandbox: bool = False) -> str:
+    args, folder, environment = _command(command, sandbox)
+    process = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        cwd=folder, env=environment, start_new_session=True)
+    try:
+        output, _ = await asyncio.wait_for(process.communicate(), timeout)
+    except (asyncio.CancelledError, TimeoutError):
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        await process.wait()
+        raise
+    out = output.decode('utf-8', errors='replace').strip()
+    return (out or f'(нет вывода, код {process.returncode})')[:OUTPUT_CHARS]
 
 
 def _detached(args: list[str]) -> None:

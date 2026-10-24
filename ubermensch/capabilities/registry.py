@@ -39,7 +39,7 @@ class ToolRegistry:
                 for parameter in inspect.signature(function).parameters.values()
             }
             self._arguments[name] = create_model(
-                f"{name}_arguments", __config__=ConfigDict(extra="forbid"), **fields)
+                f"{name}_arguments", __config__=ConfigDict(extra="forbid", strict=True), **fields)
             self._functions[name] = function
             return function
         return register
@@ -55,13 +55,18 @@ class ToolRegistry:
     def has(self, name: str) -> bool:
         return name in self._functions
 
-    async def call(self, name: str, arguments: dict, *, journal=None):
+    def validate(self, name: str, arguments: dict) -> dict:
         if name not in self._functions:
             raise ToolArgumentsError(f"Неизвестный инструмент: {name}")
         try:
             values = self._arguments[name].model_validate(arguments).model_dump()
         except ValidationError as error:
-            raise ToolArgumentsError(str(error)) from None
+            raise ToolArgumentsError('Некорректные аргументы: ' + ', '.join(
+                '.'.join(map(str, e['loc'])) for e in error.errors())) from None
+        return values
+
+    async def call(self, name: str, arguments: dict, *, journal=None):
+        values = self.validate(name, arguments)
         # Запись делается до действия: после сбоя нельзя автоматически повторять запрос.
         if journal is not None:
             journal.record(name, "started")

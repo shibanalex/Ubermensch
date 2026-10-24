@@ -24,7 +24,7 @@ from ubermensch.assistant import Assistant, _schema
 from ubermensch.brain import Answer, BrainError
 from ubermensch.capabilities import load_registry
 from ubermensch.capabilities.registry import ToolArgumentsError, ToolRegistry
-from ubermensch.core import Core
+from ubermensch.core import Core, Bus
 from ubermensch.openai_brain import MAX_TOOL_ROUNDS, OpenAIBrain
 from ubermensch.runtime.http_tools import HttpToolGateway, ToolExecutionUncertain
 from ubermensch.runtime.router import ChatRouter, InterruptedToolRun
@@ -238,6 +238,13 @@ class ToolAPITests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.core = Core.__new__(Core)
+        self.core.store = Store(':memory:')
+        self.addCleanup(self.core.store.db.close)
+        self.core.bus = Bus()
+        self.addAsyncCleanup(self.core.execution.close)
+        access = patch.dict(os.environ, {'UBERMENSCH_READ_ROOTS': self.temp.name})
+        access.start()
+        self.addCleanup(access.stop)
         self.core.tool_registry = load_registry()
         self.telegram = SimpleNamespace(
             chat_name=AsyncMock(return_value="Test person"), send=AsyncMock(),
@@ -315,33 +322,27 @@ class ToolAPITests(unittest.IsolatedAsyncioTestCase):
             await gateway.call("partially_done", {"text": "once"})
         self.assertEqual(effects, ["once"])
 
-    async def test_limit_fallback_reads_via_api_and_applies_task_and_reminder(self):
-        path = Path(self.temp.name) / "requested.txt"
-        path.write_text("requested contents", encoding="utf-8")
+    def make_assistant(self, replies):
         assistant = Assistant.__new__(Assistant)
         assistant.workspace = Path(self.temp.name) / "workspace"
-        assistant.workspace.mkdir()
+        assistant.workspace.mkdir(exist_ok=True)
         assistant.mcp_config = assistant.workspace / "mcp.json"
         assistant.mcp_config.write_text(json.dumps({"mcpServers": {"ubermensch": {"env": {}}}}))
         assistant.schema = _schema()
         assistant._lock = asyncio.Lock()
-        assistant.store = Store(":memory:")
-        self.addCleanup(assistant.store.db.close)
+        assistant.store = self.core.store
+        assistant.jobs = self.core.jobs
+        self.addAsyncCleanup(assistant.jobs.close)
         assistant.router = ChatRouter()
         assistant.waiting_for_user = lambda: False
         assistant.brain = SimpleNamespace(ask=AsyncMock(side_effect=BrainError("limit")))
         assistant._context = Mock(return_value="context")
         assistant._render_system_prompt = Mock(return_value="system")
-        assistant._prompt_file = Mock(return_value=path)
+        assistant._prompt_file = Mock(return_value=assistant.workspace / 'prompt.md')
+        assistant.agent_prompt_file = assistant.workspace / 'agent.md'
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test", "OPENAI_BUDGET_USD": "9"}):
             assistant.helper = OpenAIBrain(MemoryCursors(), Mock(), Mock())
         assistant.helper._models["chat"] = "gpt-4.1"
-        final = {"reply": "requested contents", "emotion": "happy", "memory": [], "goals": [],
-                 "people": [],
-                 "tasks": [{"op": "add", "title": "test task"}],
-                 "actions": [{"kind": "reminder", "summary": "test", "params": {
-                     "at": (datetime.now() + timedelta(hours=1)).isoformat(), "text": "test"}}]}
-        replies = [response(calls=[call("read_file", {"path": str(path)})]), response(final)]
         requests = []
 
         async def fake_api(session, method, endpoint, body=None):
@@ -349,6 +350,22 @@ class ToolAPITests(unittest.IsolatedAsyncioTestCase):
             return replies.pop(0)
 
         assistant.helper._request = fake_api
+        return assistant, requests
+
+    @staticmethod
+    def final_answer(**changes):
+        return {'reply': 'done', 'emotion': 'happy', 'memory': [], 'goals': [],
+                'people': [], 'tasks': [], 'actions': [], **changes}
+
+    async def test_limit_fallback_reads_via_api_and_applies_task_and_reminder(self):
+        path = Path(self.temp.name) / "requested.txt"
+        path.write_text("requested contents", encoding="utf-8")
+        final = self.final_answer(reply='requested contents',
+            tasks=[{"op": "add", "title": "test task"}],
+            actions=[{"kind": "reminder", "summary": "test", "params": {
+                "at": (datetime.now() + timedelta(hours=1)).isoformat(), "text": "test"}}])
+        assistant, requests = self.make_assistant([
+            response(calls=[call('read_file', {'path': str(path)})]), response(final)])
         outcome = await assistant.handle("read, plan and remind", channel="desktop")
         self.assertEqual(outcome.engine, "openai")
         self.assertEqual(outcome.reply, "requested contents")
@@ -356,6 +373,127 @@ class ToolAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("requested contents", requests[1]["messages"][-1]["content"])
         self.assertEqual(len(assistant.store.tasks()), 1)
         self.assertEqual(len(assistant.store.pending_reminders()), 1)
+
+    async def test_failed_claude_api_reaches_openai_and_preserves_actions(self):
+        path = Path(self.temp.name) / 'written.txt'
+        assistant, requests = self.make_assistant([
+            response(calls=[call('write_file', {'path': str(path), 'content': 'written'})]),
+            response(calls=[call('media_key', {'action': 'play_pause'})]),
+            response(self.final_answer())])
+        assistant.claude_api = SimpleNamespace(usable=True, ask=AsyncMock(side_effect=BrainError('offline')))
+        self.core.request_approval.return_value = True
+        with patch('ubermensch.capabilities.computer.windows.press_media_key') as press:
+            outcome = await assistant.handle('write and pause', channel='desktop')
+        self.assertEqual(outcome.engine, 'openai')
+        self.assertEqual(path.read_text(), 'written')
+        press.assert_called_once_with('play_pause', 1)
+        assistant.claude_api.ask.assert_awaited_once()
+        self.assertEqual({t['function']['name'] for t in requests[0]['tools']},
+                         {t.name for t in self.core.tool_registry.definitions()})
+        self.assertIn('Записано', requests[1]['messages'][-1]['content'])
+        self.assertIn('Готово', requests[2]['messages'][-1]['content'])
+
+    async def test_openai_respects_confirmation_refusal(self):
+        assistant, requests = self.make_assistant([
+            response(calls=[call('telegram_send', {'chat_id': 42, 'text': 'test'})]),
+            response(self.final_answer())])
+        await assistant.handle('send', channel='desktop')
+        self.core.request_approval.assert_awaited_once()
+        self.telegram.send.assert_not_awaited()
+        self.assertIn('не подтвердил', requests[1]['messages'][-1]['content'])
+
+    async def test_openai_waits_for_durable_approval_and_sends_once(self):
+        assistant, requests = self.make_assistant([
+            response(calls=[call('telegram_send', {'chat_id': 42, 'text': 'test'})]),
+            response(self.final_answer())])
+        self.core.request_approval = Core.request_approval.__get__(self.core)
+        task = asyncio.create_task(assistant.jobs.inline('chat', {},
+            lambda: assistant.handle('send', channel='desktop'), mode='interactive'))
+        try:
+            async with asyncio.timeout(3):
+                while not self.core._approvals:
+                    await asyncio.sleep(0.01)
+            self.telegram.send.assert_not_awaited()
+            action_id = next(iter(self.core._approvals))
+            self.assertEqual(self.core.store.list_runs()[0]['status'], 'waiting_approval')
+            self.core.execution.decide(action_id, True)
+            outcome = await asyncio.wait_for(task, 3)
+            self.assertEqual(outcome.engine, 'openai')
+            self.telegram.send.assert_awaited_once_with(42, 'test')
+            self.assertEqual(len(requests), 2)
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+    async def test_api_failure_after_dispatch_does_not_replay_on_openai(self):
+        path = Path(self.temp.name) / 'once.txt'
+        assistant, requests = self.make_assistant([])
+        self.core.request_approval.return_value = True
+
+        async def fail_after_write(prompt, **kwargs):
+            await kwargs['tool_gateway'].call('write_file', {'path': str(path), 'content': 'once'})
+            raise BrainError('connection lost after action')
+
+        assistant.claude_api = SimpleNamespace(usable=True, ask=AsyncMock(side_effect=fail_after_write))
+        with self.assertRaises(ToolExecutionUncertain):
+            await assistant.handle('write once', channel='desktop')
+        self.assertEqual(path.read_text(), 'once')
+        self.assertEqual(requests, [])
+
+    async def test_background_task_falls_back_to_openai_with_scoped_tools(self):
+        path = Path(self.temp.name) / 'source.txt'
+        path.write_text('source text')
+        assistant, requests = self.make_assistant([
+            response(calls=[call('read_file', {'path': str(path)})]),
+            response(self.final_answer(report='report text'))])
+        data, outcome = await assistant.agent_ask('read', {'report': {'type': 'string'}})
+        self.assertEqual(outcome.engine, 'openai')
+        self.assertEqual(data['report'], 'report text')
+        names = {t['function']['name'] for t in requests[0]['tools']}
+        self.assertIn('read_file', names)
+        self.assertIn('write_file', names)
+        self.assertNotIn('telegram_send', names)
+        self.assertNotIn('run_shell', names)
+        self.assertIn('source text', requests[1]['messages'][-1]['content'])
+        run = self.core.store.list_runs()[0]
+        self.assertEqual(run['status'], 'completed')
+        self.assertEqual(self.core.store.get_run(run['id'])['mode'], 'background')
+
+    async def test_heartbeat_does_not_retry_failed_api_before_openai(self):
+        assistant, requests = self.make_assistant([response(self.final_answer())])
+        assistant.claude_api = SimpleNamespace(usable=True, ask=AsyncMock(side_effect=BrainError('offline')))
+        _, outcome = await assistant.agent_ask('heartbeat', {}, api=True)
+        self.assertEqual(outcome.engine, 'openai')
+        assistant.claude_api.ask.assert_awaited_once()
+        assistant.brain.ask.assert_awaited_once()
+        self.assertEqual(len(requests), 1)
+
+    async def test_openai_career_workflow_creates_plan_assessment_and_draft(self):
+        assistant, requests = self.make_assistant([
+            response(calls=[call('goal_plan', {'goal_id':None,'title':'Find Python job',
+                'metric':'interviews','unit':'count','baseline':0.,'target':3.,'weekly_minutes':120,
+                'next_step':'prepare CV','evidence':'user confirmed target'})]),
+            response(calls=[call('career_search', {'query':'Python'})]),
+            response(calls=[call('career_get', {'opportunity_id':1})]),
+            response(calls=[call('career_assess', {'opportunity_id':1,'goal_id':1,
+                'fit':'Python matches','evidence':'CV and vacancy','gaps':'location unconfirmed',
+                'eligibility':'unknown','next_step':'clarify location','estimated_minutes':15})]),
+            response(calls=[call('career_draft', {'opportunity_id':1,'resume':'Python experience',
+                'letter':'Application draft','evidence':'provided CV'})]),
+            response(self.final_answer())])
+        vacancy = {'id':'100','name':'Python developer','employer':{'name':'Example'},
+                   'description':'Python developer needed'}
+        with patch('ubermensch.career.request_json', new=AsyncMock(side_effect=[
+                {'items':[vacancy],'found':1,'pages':1}, vacancy])):
+            outcome = await assistant.handle('prepare application', channel='desktop')
+        self.assertEqual(outcome.engine, 'openai')
+        self.assertEqual(len(self.core.store.measured_goals()), 1)
+        job = self.core.store.opportunity(1)
+        self.assertEqual(job['assessment']['eligibility'], 'unknown')
+        self.assertEqual(len(job['drafts']), 1)
+        self.assertEqual(job['events'], [])
+        self.assertIn('Application draft', requests[-1]['messages'][-1]['content'])
 
 
 class FallbackOutcomeTests(unittest.IsolatedAsyncioTestCase):

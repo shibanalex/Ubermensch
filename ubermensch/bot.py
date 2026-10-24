@@ -335,7 +335,28 @@ async def forward_events(bot: Bot, core: Core, chat_id: int) -> None:
     queue = core.bus.subscribe()
     try:
         while True:
-            event = await queue.get()
+            # Durable deliveries survive offline Telegram and a core restart.
+            for delivery in core.store.pending_deliveries('telegram'):
+                event = delivery['event']
+                try:
+                    if event['type'] == 'approval':
+                        action = core.store.get_action(event['id'])
+                        if action and action['status'] == 'pending':
+                            await bot.send_message(chat_id,
+                                f"🔐 <b>{html.escape(event['title'])}</b>\n\n"
+                                + html.escape(event.get('details', '')[:3000]),
+                                reply_markup=_approval_keyboard(event['id']))
+                    else:
+                        prefix = '⏰ ' if event['type'] == 'reminder' else ''
+                        await send(bot, chat_id, prefix + event['text'])
+                    core.store.acknowledge_delivery(delivery['id'], 'telegram')
+                except Exception as error:
+                    core.store.fail_delivery(delivery['id'], type(error).__name__)
+                    log.warning('Доставка #%s отложена: %s', delivery['id'], type(error).__name__)
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=2)
+            except TimeoutError:
+                continue
             try:
                 if event["type"] in ("reminder", "notify"):
                     prefix = "⏰ " if event["type"] == "reminder" else ""
@@ -361,4 +382,5 @@ async def run(settings: Settings, core: Core) -> None:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         forwarder.cancel()
+        await asyncio.gather(forwarder, return_exceptions=True)
         await bot.session.close()

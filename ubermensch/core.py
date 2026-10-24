@@ -22,7 +22,6 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import asdict
 from typing import TYPE_CHECKING
-from uuid import UUID, uuid4
 
 from . import actions, config, ingest, interview, mail, metrics, world
 from .analysis import SOURCES
@@ -33,7 +32,8 @@ from .health import Health
 from .services import Supervisor
 from .store import Store
 from .capabilities import load_registry
-from .runtime.tools import LocalToolGateway, ToolJournal
+from .runtime.context import current
+from .runtime.execution import DurableTools
 
 if TYPE_CHECKING:
     from .analysis import Investigation
@@ -85,15 +85,29 @@ class Core:
         self._approvals: dict[int, asyncio.Future] = {}  # действия, ждущие «да/нет»
         self.login: dict | None = None  # идёт вход в Telegram: {"account", "step"}
         self.tool_registry = load_registry()
+        self.assistant.jobs = self.jobs
 
     def tool_definitions(self) -> list[dict]:
         return [asdict(tool) for tool in self.tool_registry.definitions()]
 
-    async def call_tool(self, name: str, arguments: dict, run_id: str | None = None):
-        # Клиент задаёт только UUID, никогда путь к файлу журнала.
-        identifier = UUID(run_id).hex if run_id is not None else uuid4().hex
-        journal = ToolJournal(config.DATA_DIR / "workspace" / "runs" / identifier / "tools.jsonl")
-        return await LocalToolGateway(self.tool_registry, journal).call(name, arguments)
+    @property
+    def execution(self):
+        if not hasattr(self, '_execution'):
+            self._execution = DurableTools(self)
+            if not hasattr(self, '_approvals'):
+                self._approvals = {}
+        return self._execution
+
+    @property
+    def jobs(self):
+        if not hasattr(self, '_jobs'):
+            from .runtime.jobs import Jobs
+            self._jobs = Jobs(self)
+        return self._jobs
+
+    async def call_tool(self, name: str, arguments: dict, run_id: str | None = None,
+                        call_id: str | None = None):
+        return await self.execution.call(name, arguments, run_id, call_id)
 
     @property
     def thinking(self) -> bool:
@@ -111,6 +125,9 @@ class Core:
             self.bus.publish({"type": "changed"})
 
     async def chat(self, text: str, channel: str, *, from_user: bool = True) -> Outcome:
+        if current.get() is None:
+            return await self.jobs.inline('chat', {'text': text, 'channel': channel},
+                lambda: self.chat(text, channel, from_user=from_user), mode='interactive')
         self.investigation.touch()  # фоновый разбор притихнет и не съест лимит разговора
         if from_user:
             interview.record_answer(text)  # ответ на вопрос интервью, если он был
@@ -123,8 +140,9 @@ class Core:
 
     def notify(self, text: str) -> None:
         """Сообщение от системы: появится у маскота и придёт в Telegram."""
-        self.store.add_message("assistant", text, "system")
-        self.bus.publish({"type": "notify", "text": text})
+        with self.store.transaction():
+            message_id = self.store.add_message("assistant", text, "system")
+            self.store.enqueue_delivery(f'message:{message_id}', {'type': 'notify', 'text': text})
         self.bus.publish({"type": "changed"})
 
     def say(self, text: str) -> None:
@@ -139,6 +157,12 @@ class Core:
 
     def decide(self, action_id: int, approve: bool) -> str | None:
         """None — решение по действию уже принято раньше (например, в другом клиенте)."""
+        row = self.store.get_action(action_id)
+        if row and row['call_id']:
+            return self.execution.decide(action_id, approve)
+        if row and row['kind'] == 'approval' and action_id not in self._approvals:
+            self.store.decide_action(action_id, 'rejected')
+            return 'Подтверждение устарело; действие не выполнено.'
         if not self.store.decide_action(action_id, "approved" if approve else "rejected"):
             return None
         if (waiting := self._approvals.get(action_id)) is not None:
@@ -154,6 +178,8 @@ class Core:
 
     async def request_approval(self, title: str, details: str = "") -> bool:
         """Спрашивает пользователя (Telegram + приложение) и ждёт ответа. Молчание — это «нет»."""
+        if (context := current.get()) and context.call_id:
+            return await self.execution.approval(title, details)
         action_id = self.store.add_action("approval", title, {"details": details}, "external")
         waiting = asyncio.get_running_loop().create_future()
         self._approvals[action_id] = waiting
@@ -282,6 +308,9 @@ class Core:
         """Снимок для клиентов: всё, что нужно нарисовать на экране."""
         return {
             "thinking": self.thinking,
+            "runs": self.store.list_runs(),
+            "deliveries": [{'id': r['id'], 'event': r['event']}
+                           for r in self.store.pending_deliveries('desktop')],
             "problems": self.health.problems(),
             "messages": [{**dict(m), "notes": json.loads(m["notes"] or "[]")}
                          for m in self.store.recent_messages(60)],
@@ -342,7 +371,7 @@ class Core:
             learning["openai"] = self.assistant.helper.status()
         if self.assistant.claude_api is not None:
             learning["claude_api"] = self.assistant.claude_api.status()
-        return {"learning": learning,
+        return {"learning": learning, "quality": self.store.quality_metrics(),
                 "activity": metrics.activity(self.store)}
 
     async def deep_import(self, path: Path, digest: str | None = None) -> str:
@@ -399,9 +428,10 @@ class Core:
     async def reminder_loop(self) -> None:
         while True:
             try:
+                self.execution.expire_approvals()
                 for r in self.store.due_reminders():
-                    self.store.close_reminder(r["id"], "sent")
-                    self.bus.publish({"type": "reminder", "text": r["text"]})
+                    self.store.enqueue_delivery(f"reminder:{r['id']}",
+                        {"type": "reminder", "text": r["text"]}, reminder_id=r['id'])
                     self.bus.publish({"type": "changed"})
             except Exception:
                 log.exception("Ошибка в цикле напоминаний")

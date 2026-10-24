@@ -1,8 +1,8 @@
 """Обслуживание: ночные резервные копии и проверка места на диске.
 
-Бэкап — зашифрованный архив 7-Zip (AES-256, имена файлов тоже скрыты) с базой (память, цели,
-задачи, история, собранные данные), стилем переписки и досье. Пароль — BACKUP_PASSWORD в .env;
-без него архив не открыть, поэтому хранить его нужно отдельно от ноутбука.
+Бэкап — зашифрованный архив 7-Zip с manifest, SQLite snapshot, данными агента, raw,
+профилем, workspace, Obsidian и документами Ани. Проверяется пробной распаковкой.
+Пароль — BACKUP_PASSWORD в .env; хранить отдельно от ноутбука.
 
 Архивы лежат в <данные>/backups (последние 7) и копируются на внешний диск или флешку,
 если в корне носителя есть папка AnyaBackup (последние 14). Сессия Telegram и ключи из .env
@@ -14,14 +14,12 @@ import asyncio
 import logging
 import os
 import shutil
-import sqlite3
-import subprocess
-import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import config
 from .health import Health
+from .backups import create_archive
 
 log = logging.getLogger(__name__)
 
@@ -108,30 +106,15 @@ class Maintenance:
                                "(sudo apt install 7zip).")
             return None
         LOCAL_DIR.mkdir(parents=True, exist_ok=True)
-        archive = LOCAL_DIR / f"anya-{datetime.now():%Y-%m-%d_%H-%M}.7z"
-        with tempfile.TemporaryDirectory() as tmp:
-            snapshot = Path(tmp) / "ubermensch.db"
-            source = sqlite3.connect(self.db_path)
-            target = sqlite3.connect(snapshot)
-            source.backup(target)  # целостная копия, даже пока ядро пишет в базу
-            source.close()
-            target.close()
-            parts = [str(snapshot)]
-            workspace = config.DATA_DIR / "workspace"
-            for extra in (workspace / "tg_style.md", workspace / "anya_persona.md",
-                          config.DATA_DIR / "dossier"):
-                if extra.exists():
-                    parts.append(str(extra))
-            done = subprocess.run(
-                # пароль — через stdin: в аргументах его видит любой процесс (ps)
-                [SEVEN_ZIP, "a", "-t7z", "-mhe=on", "-mx=5", "-p", str(archive), *parts],
-                input=f"{password}\n".encode(), capture_output=True)
-        if done.returncode != 0:
-            archive.unlink(missing_ok=True)
-            self.health.report("backup", "Резервная копия не создалась: 7-Zip вернул ошибку "
-                               f"{done.returncode}. Подробности в логе.")
-            log.error("7-Zip: %s", done.stderr.decode("utf-8", errors="replace")[:2000])
+        archive = LOCAL_DIR / f"anya-{datetime.now():%Y-%m-%d_%H-%M-%S}.7z"
+        try:
+            manifest = create_archive(self.db_path, archive, password)
+        except Exception as error:
+            self.health.report("backup", "Резервная копия не прошла создание или восстановление: "
+                               + type(error).__name__)
+            log.warning("Backup failed: %s", type(error).__name__)
             return None
+        log.info("Восстановление проверено: %d файлов", len(manifest['files']))
         for old in _archives(LOCAL_DIR)[:-KEEP_LOCAL]:
             old.unlink(missing_ok=True)
         self.health.clear("backup", "Резервные копии снова делаются.")
@@ -142,7 +125,14 @@ class Maintenance:
         latest = _archives(LOCAL_DIR)[-1:] if LOCAL_DIR.exists() else []
         for folder in _external_folders():
             if latest and not (folder / latest[0].name).exists():
-                shutil.copy2(latest[0], folder / latest[0].name)
+                target = folder / latest[0].name
+                temporary = target.with_suffix('.partial')
+                shutil.copy2(latest[0], temporary)
+                from .backups import checksum
+                if checksum(temporary) != checksum(latest[0]):
+                    temporary.unlink(missing_ok=True)
+                    raise OSError('Внешняя копия не совпадает с архивом')
+                temporary.replace(target)
                 log.info("Копия на внешний носитель: %s", folder)
             for old in _archives(folder)[:-KEEP_EXTERNAL]:
                 old.unlink(missing_ok=True)

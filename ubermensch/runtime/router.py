@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from ..brain import Answer, BrainError, MCP_SERVER
 from .tools import ToolJournal
+from .context import current
 
 log = logging.getLogger(__name__)
 
@@ -23,8 +24,9 @@ class ChatRouter:
     async def ask(self, primary, prompt: str, *, options: dict, fallback,
                   fallback_available, waiting_for_user, watchdog: float) -> tuple[Answer, str]:
         source = Path(options["mcp_config"])
-        run_dir = source.parent / "runs" / uuid4().hex
-        run_dir.mkdir(parents=True)
+        context = current.get()
+        run_dir = source.parent / "runs" / (context.run_id if context else uuid4().hex)
+        run_dir.mkdir(parents=True, exist_ok=True)
         config_path = run_dir / "mcp.json"
         journal = ToolJournal(run_dir / "tools.jsonl")
         config = json.loads(source.read_text(encoding="utf-8"))
@@ -40,7 +42,9 @@ class ChatRouter:
                     "ИИ прервался после запуска инструментов. Часть запроса могла выполниться; "
                     "автоматически повторять его другим ИИ не буду. Проверь результат и уточни "
                     "оставшиеся действия.") from error
-            return await fallback(journal), "openai"
+            result = await fallback(journal)
+            # Keep support for simple single-provider callbacks.
+            return result if isinstance(result, tuple) else (result, "openai")
 
         try:
             while True:

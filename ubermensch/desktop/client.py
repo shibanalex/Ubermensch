@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from uuid import uuid4
 from collections.abc import Callable
 
 from PySide6.QtCore import QObject, QTimer, QUrl, Signal
@@ -10,7 +11,6 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequ
 from .. import config
 
 Callback = Callable[[dict], None]
-BRAIN_TIMEOUT_MS = 330_000  # чуть больше, чем ядро ждёт Claude
 
 
 class Api(QObject):
@@ -26,6 +26,11 @@ class Api(QObject):
         self.state: dict = {}
         self._events: QNetworkReply | None = None
         self._buffer = b""
+        self._runs: dict[str, Callback] = {}
+        self._seen_deliveries: set[int] = set()
+        self._poll_timer = QTimer(self, interval=2000)
+        self._poll_timer.timeout.connect(self.refresh)
+        self._poll_timer.start()
         # Несколько событий подряд — один запрос состояния.
         self._refresh_timer = QTimer(self, singleShot=True, interval=120)
         self._refresh_timer.timeout.connect(lambda: self._get("/api/state", self._on_state))
@@ -61,6 +66,7 @@ class Api(QObject):
             data = {}
         if reply.error() != QNetworkReply.NetworkError.NoError and "error" not in data:
             data = {"error": "ядро недоступно"}
+        data['_http_status'] = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
         if callback:
             callback(data)
 
@@ -71,12 +77,58 @@ class Api(QObject):
         if "error" not in data:
             self.state = data
             self.state_changed.emit(data)
+            for delivery in data.get('deliveries', []):
+                if delivery['id'] not in self._seen_deliveries:
+                    self._seen_deliveries.add(delivery['id'])
+                    self.event.emit(delivery['event'])
+                self._post(f"/api/deliveries/{delivery['id']}/ack", {})
+            for run_id in list(self._runs):
+                self._get(f'/api/runs/{run_id}', lambda run, i=run_id: self._on_run(i, run))
+
+    def _on_run(self, run_id: str, run: dict):
+        if run_id not in self._runs:
+            return
+        if run.get('status') in {'completed', 'failed', 'interrupted', 'cancelled'}:
+            callback = self._runs.pop(run_id)
+            callback(run.get('result') or {'error': run.get('error') or 'Работа завершена.'})
+            self.refresh()
 
     def chat(self, text: str, callback: Callback) -> None:
-        self._post("/api/chat", {"text": text}, callback, BRAIN_TIMEOUT_MS)
+        self._submit_job('chat', {'text': text}, callback)
+
+    def _submit_job(self, kind: str, arguments: dict, callback: Callback):
+        run_id = uuid4().hex
+        payload = {**arguments, 'run_id': run_id}
+        self._runs[run_id] = callback
+
+        def submitted(data):
+            if 'error' in data:
+                if data.get('_http_status') in {400, 401, 403, 404}:
+                    self._runs.pop(run_id, None)
+                    callback(data)
+                    return
+                # The server may have accepted the request before connection loss.
+                # Retrying with the same ID cannot start a duplicate conversation.
+                QTimer.singleShot(3000, lambda: self._post(f'/api/runs/{kind}', payload, submitted))
+            else:
+                self._on_run(run_id, data)
+                self.refresh()
+        self._post(f'/api/runs/{kind}', payload, submitted)
+
+    def cancel_run(self, run_id: str, callback: Callback | None = None):
+        self._post(f'/api/runs/{run_id}/cancel', {}, callback)
+
+    def run_result(self, run_id: str, callback: Callback):
+        self._get(f'/api/runs/{run_id}', callback)
+
+    def feedback(self, message_id: int, rating: str, callback: Callback | None = None):
+        self._post('/api/feedback', {'message_id': message_id, 'rating': rating}, callback)
+
+    def planning(self, callback: Callback):
+        self._get('/api/planning', callback)
 
     def onboard(self, callback: Callback) -> None:
-        self._post("/api/onboard", {}, callback, BRAIN_TIMEOUT_MS)
+        self._submit_job('onboard', {}, callback)
 
     def add_task(self, title: str) -> None:
         self._post("/api/tasks", {"title": title})
