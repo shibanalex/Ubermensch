@@ -14,6 +14,7 @@ import asyncio
 import logging
 import os
 import shutil
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -29,6 +30,9 @@ LOCAL_DIR = Path(os.getenv("BACKUP_DIR", "") or config.DATA_DIR / "backups").exp
 MARKER = "AnyaBackup"  # папка в корне внешнего носителя: сюда копировать архивы
 MARKERS = (MARKER, "OswaldBackup")  # старое имя тоже понимаем
 KEEP_LOCAL, KEEP_EXTERNAL = 7, 14
+EXTERNAL_SHARE = 0.5  # на внешнем носителе архивы Ани занимают не больше половины его объёма
+FAT_LIMIT = 4 * 1024 ** 3 - 1  # vfat/exFAT-старые: файл больше 4 ГБ не запишется
+CHUNK = 8 * 1024 * 1024
 CHECK_EVERY = 10 * 60
 RETRY_AFTER_FAILURE = timedelta(hours=6)  # сбой бэкапа не повторять каждые 10 минут
 NIGHT = range(2, 6)  # бэкап ночью, когда компьютер свободен…
@@ -54,6 +58,20 @@ def _mount_points() -> list[Path]:
     return points
 
 
+def _filesystem(path: Path) -> str:
+    """Тип файловой системы, на которой лежит path (по /proc/mounts: самая длинная точка)."""
+    best, kind = "", ""
+    try:
+        for line in Path("/proc/mounts").read_text().splitlines():
+            parts = line.split()
+            point = parts[1].replace("\\040", " ")
+            if str(path).startswith(point) and len(point) > len(best):
+                best, kind = point, parts[2]
+    except OSError:
+        pass
+    return kind
+
+
 def _external_folders() -> list[Path]:
     """Подключённые носители с папкой AnyaBackup в корне (кроме диска с самими данными)."""
     folders = []
@@ -74,14 +92,44 @@ class Maintenance:
         self.db_path = db_path
         self.health = health
         self._failed_at: datetime | None = None
+        self._stop = threading.Event()  # копирование на флешку прерывается при остановке ядра
 
     async def run(self) -> None:
-        while True:
-            self._check_disk()
-            if self._backup_due():
-                await asyncio.to_thread(self.backup)
-            await asyncio.to_thread(self._copy_external)
-            await asyncio.sleep(CHECK_EVERY)
+        try:
+            while True:
+                self._check_disk()
+                if self._backup_due():
+                    await asyncio.to_thread(self.backup)
+                await asyncio.to_thread(self._copy_external)
+                await asyncio.sleep(CHECK_EVERY)
+        finally:
+            self._stop.set()  # поток копирования увидит и бросит недописанный файл
+
+    def _copy(self, source: Path, target: Path) -> None:
+        """Копия кусками: прерывается флагом остановки (иначе запись на медленную флешку
+        держит ядро даже после SIGKILL)."""
+        with source.open("rb") as src, target.open("wb") as dst:
+            while chunk := src.read(CHUNK):
+                if self._stop.is_set():
+                    raise InterruptedError("ядро останавливается")
+                dst.write(chunk)
+            dst.flush()
+            os.fsync(dst.fileno())
+        shutil.copystat(source, target)
+
+    @staticmethod
+    def _prune_external(folder: Path, incoming: int) -> bool:
+        """Освободить место под новый архив: старые — пока архивы Ани укладываются в
+        EXTERNAL_SHARE носителя и KEEP_EXTERNAL штук. False — места всё равно не хватит."""
+        for stale in folder.glob("*.partial"):  # оборванные прошлые копии
+            stale.unlink(missing_ok=True)
+        archives = _archives(folder)
+        usage = shutil.disk_usage(folder)
+        budget = usage.total * EXTERNAL_SHARE
+        while archives and (len(archives) >= KEEP_EXTERNAL or
+                            sum(a.stat().st_size for a in archives) + incoming > budget):
+            archives.pop(0).unlink(missing_ok=True)
+        return shutil.disk_usage(folder).free > incoming * 1.1
 
     def _check_disk(self) -> None:
         free_gb = shutil.disk_usage(config.DATA_DIR).free / 1024 ** 3
@@ -132,17 +180,28 @@ class Maintenance:
         latest = _archives(LOCAL_DIR)[-1:] if LOCAL_DIR.exists() else []
         for folder in _external_folders():
             if latest and not (folder / latest[0].name).exists():
+                size = latest[0].stat().st_size
+                if size > FAT_LIMIT and _filesystem(folder) in {"vfat", "msdos"}:
+                    self.health.report("backup_external", f"Архив {size / 1024 ** 3:.1f} ГБ не помещается "
+                                       f"в файл на {folder} (FAT, до 4 ГБ): отформатируй носитель в exFAT или ext4.")
+                    continue
+                if not self._prune_external(folder, size):
+                    self.health.report("backup_external", f"На {folder} мало места для копии "
+                                       f"({size / 1024 ** 3:.1f} ГБ): освободи место или подключи другой носитель.")
+                    continue
                 target = folder / latest[0].name
                 temporary = target.with_suffix('.partial')
-                shutil.copy2(latest[0], temporary)
+                try:
+                    self._copy(latest[0], temporary)
+                except BaseException:
+                    temporary.unlink(missing_ok=True)
+                    raise
                 from .backups import checksum
                 if checksum(temporary) != checksum(latest[0]):
                     temporary.unlink(missing_ok=True)
                     raise OSError('Внешняя копия не совпадает с архивом')
                 temporary.replace(target)
                 log.info("Копия на внешний носитель: %s", folder)
-            for old in _archives(folder)[:-KEEP_EXTERNAL]:
-                old.unlink(missing_ok=True)
             self.health.clear("backup_external", "Копия на внешний диск сделана.")
         # давно не было копии вне ноутбука — напомнить подключить носитель
         newest_external = max((a.stat().st_mtime for f in _external_folders()
