@@ -86,6 +86,15 @@ class GoalLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(self.store.due_goal(NOON + timedelta(days=1)))
         self.assertEqual(goal_loop.proposals_context(self.store), "")
 
+    def test_effectiveness_counts_fallback_replies(self):
+        for fallback in (False, True, True, False):
+            reply = self.store.add_message("assistant", "ответ", "tg")
+            if fallback:
+                self.store.set_message_notes(reply, ["ответил запасной ИИ (Claude API): общие инструменты доступны"])
+        self.store.add_message("assistant", "📥 импорт", "import")  # не разговор
+        score = self.store.effectiveness(7)
+        self.assertEqual((score["chat_replies"], score["fallback_reply_share"]), (4, 0.5))
+
     async def test_short_subscription_limit_defers_step_long_one_does_not(self):
         self.plan()
         self.assistant.brain.blocked_until = datetime.now() + timedelta(hours=2)

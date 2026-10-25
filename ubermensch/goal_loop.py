@@ -102,12 +102,19 @@ class GoalLoopStorage:
             "SELECT rating, COUNT(*) FROM quality_feedback WHERE created_at>=? GROUP BY rating",
             (since,)).fetchall())
         attempted = sum(steps.values())
+        # Кто отвечал ему в чате: запасная модель (лимит подписки) — заметно слабее Opus
+        local_since = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+        replies, fallback = self.db.execute(
+            "SELECT COUNT(*), COALESCE(SUM(notes LIKE '%запасной ИИ%'), 0) FROM messages "
+            "WHERE role='assistant' AND channel IN ('tg','desktop') AND ts>=?", (local_since,)).fetchone()
         return {
             "days": days,
             "goal_steps": dict(steps), "goal_plans": dict(plans),
             "verified_step_share": round(steps["done"] / attempted, 2) if attempted else None,
             "repeated_blockers": [b for b, n in blockers.most_common(5) if n > 1],
             "recommendations": recommendations, "answer_ratings": quality,
+            "chat_replies": replies,
+            "fallback_reply_share": round(fallback / replies, 2) if replies else None,
             "note": "Доля подтверждённых шагов — по журналу вызовов, не по словам модели. "
                     "Малые числа не доказывают, что подход работает.",
         }
