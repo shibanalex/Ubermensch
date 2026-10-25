@@ -155,9 +155,11 @@ class GoalLoopStorage:
                                    (goal["id"],)).fetchone()
             if last is not None:
                 when = datetime.fromisoformat(last["created_at"]).astimezone()  # в базе UTC
-                if when.date() == now.astimezone().date():
-                    continue
                 answered = plan is not None and plan["updated_at"] >= last["created_at"]
+                # сегодня уже был заход — кроме вопроса о плане, на который он уже ответил:
+                # первый шаг по утверждённому плану не ждёт завтра
+                if when.date() == now.astimezone().date() and not (last["kind"] == "plan" and answered):
+                    continue
                 if last["status"] == "needs_user" and not answered \
                         and now.astimezone() - when < ASK_AGAIN_AFTER:
                     continue

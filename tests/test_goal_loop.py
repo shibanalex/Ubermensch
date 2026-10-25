@@ -80,8 +80,9 @@ class GoalLoopTests(unittest.IsolatedAsyncioTestCase):
         # сегодня и следующие дни без ответа — не переспрашивать
         self.assertIsNone(await self.autonomy.goal_cycle(NOON + timedelta(hours=3)))
         self.assertIsNone(self.store.due_goal(NOON + timedelta(days=2)))
-        # он утвердил план — цель снова в работе, предложение из контекста ушло
+        # он утвердил план — цель снова в работе уже сегодня, предложение из контекста ушло
         self.plan()
+        self.assertIsNotNone(self.store.due_goal(NOON + timedelta(hours=1)))
         self.assertIsNotNone(self.store.due_goal(NOON + timedelta(days=1)))
         self.assertEqual(goal_loop.proposals_context(self.store), "")
 
