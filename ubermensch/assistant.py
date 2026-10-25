@@ -1047,6 +1047,8 @@ class Assistant:
                 changes.append(f"✅ Задача #{task_id} выполнена")
             elif kind == "drop" and task_id and self.store.set_task_status(task_id, "dropped"):
                 changes.append(f"📋 Задача #{task_id} снята")
+            elif kind in {"done", "drop", "update"} and task_id:
+                log.info("Задача #%s уже закрыта или не найдена — %s пропущено", task_id, kind)
             else:
                 log.warning("Пропущена операция с задачей: %s", op)
         return changes

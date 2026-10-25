@@ -76,3 +76,20 @@ class LkApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CollectionIsolationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unexpected_cabinet_error_does_not_crash_collection(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        from ubermensch import analysis
+
+        marked = []
+        fake = SimpleNamespace(
+            _due=lambda key, every: True, _university_news=AsyncMock(),
+            _university_lk=AsyncMock(side_effect=RuntimeError("страница недоступна: 404")),
+            health=SimpleNamespace(clear=lambda *a: None, report=lambda *a: None), _mark=marked.append)
+        with patch.object(lk, "credentials", return_value=("l", "p")), self.assertLogs(analysis.log, "ERROR"):
+            self.assertEqual(await analysis.Investigation._collect_university(fake), 0)
+        self.assertEqual(marked, [])  # не отмечаем «прочитано» — попробуем при следующем сборе

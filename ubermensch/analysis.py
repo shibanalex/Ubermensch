@@ -579,6 +579,9 @@ class Investigation:
             except BrainError as e:
                 ok = False
                 log.warning("Изменения в ЛК не разобраны: %s", e)
+            except Exception:  # неожиданный ответ кабинета не должен ронять весь сбор данных
+                ok = False
+                log.exception("Личный кабинет не прочитан")
         if ok:
             self._mark("university")
         return added

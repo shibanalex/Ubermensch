@@ -373,14 +373,32 @@ async def forward_events(bot: Bot, core: Core, chat_id: int) -> None:
         core.bus.unsubscribe(queue)
 
 
+COMMANDS_RETRY = 5  # с, первая пауза перед повтором меню команд
+
+
+async def _set_commands(bot: Bot) -> None:
+    """Меню команд — оформление. Без сети при старте (например, сразу после сна) это не повод
+    падать всему ядру: повторяем с растущей паузой, опрос Telegram тем временем ждёт сеть сам."""
+    delay = COMMANDS_RETRY
+    while True:
+        try:
+            await bot.set_my_commands(COMMANDS)
+            return
+        except Exception as e:  # сеть, 5xx, flood control
+            log.info("Меню команд Telegram не задано (%s) — повторю через %d с", type(e).__name__, delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 600)
+
+
 async def run(settings: Settings, core: Core) -> None:
     bot = Bot(settings.tg_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = create_dispatcher(settings, core)
-    await bot.set_my_commands(COMMANDS)
-    forwarder = asyncio.create_task(forward_events(bot, core, settings.tg_chat_id))
+    helpers = [asyncio.create_task(_set_commands(bot)),
+               asyncio.create_task(forward_events(bot, core, settings.tg_chat_id))]
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
-        forwarder.cancel()
-        await asyncio.gather(forwarder, return_exceptions=True)
-        await bot.session.close()
+        for task in helpers:
+            task.cancel()
+        await asyncio.gather(*helpers, return_exceptions=True)
+        await bot.session.close()  # и при сбое: иначе «Unclosed client session»
