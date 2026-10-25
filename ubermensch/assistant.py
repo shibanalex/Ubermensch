@@ -458,7 +458,8 @@ class Assistant:
                                                         reports=config.REPORTS_DIR)
                          if config.VAULT_DIR else "")
                 .replace("{{NOTES}}", str(config.OUTPUT_DIR))
-                .replace("{{DOCUMENTS}}", str(config.DOCUMENTS_DIR)))
+                .replace("{{DOCUMENTS}}", str(config.DOCUMENTS_DIR))
+                .replace("{{CAREER}}", str(config.DATA_DIR / "career")))
         if telegram:
             text += (PROMPTS / "telegram.md").read_text(encoding="utf-8")
         if self.persona_file.exists():  # кто такая Аня: характер и голос

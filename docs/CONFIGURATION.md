@@ -224,7 +224,9 @@ Desktop supervisor имеет собственный ротируемый жур
 
 Новые параметры UBERMENSCH_READ_ROOTS, UBERMENSCH_WRITE_ROOTS,
 UBERMENSCH_BACKGROUND_WRITE_ROOTS и UBERMENSCH_SHELL_MODE описаны в
-[RELIABILITY](RELIABILITY.md) и .env.example. Shell sandbox требует bubblewrap;
+[RELIABILITY](RELIABILITY.md) и .env.example. Без UBERMENSCH_READ_ROOTS чтение разрешено в личных
+папках, хранилище, свободных зонах и `DATA_DIR/career` (его резюме `resume_ru.txt`,
+`resume_en.txt` и шаблоны писем); остальной `DATA_DIR` (база, секреты) закрыт. Shell sandbox требует bubblewrap;
 без него команда не запускается, host-shell без подтверждения выполняет только безопасные системные команды (список в `system/shell.py`).
 Миграции 7–8 применяются Store при следующем старте. Перед обновлением установленной
 системы сохранить резервную копию. Для разработки доступно `pip install -e .`;

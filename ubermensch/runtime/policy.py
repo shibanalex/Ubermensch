@@ -39,6 +39,7 @@ def readable(target: Path) -> bool:
         return False
     allowed = roots('UBERMENSCH_READ_ROOTS',
                     (*config.PERSONAL_DIRS, *config.EXTRA_ROOTS, *config.FREE_ZONES,
+                     config.DATA_DIR / 'career',  # его резюме и шаблоны писем
                      *((config.VAULT_DIR,) if config.VAULT_DIR else ())))
     return within(target, allowed)
 

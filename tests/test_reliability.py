@@ -397,6 +397,12 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(policy.readable(allowed / 'link'))
             self.assertFalse(policy.readable(allowed / '.env'))
 
+    async def test_resumes_readable_but_not_rest_of_data_dir(self):
+        with patch.object(config, 'DATA_DIR', self.root):
+            self.assertTrue(policy.readable(self.root / 'career' / 'resume_en.txt'))
+            self.assertFalse(policy.readable(self.root / 'db' / 'ubermensch.db'))
+            self.assertFalse(policy.readable(self.root / 'secrets' / 'api_token'))
+
     async def test_feedback_endpoint_records_real_target_only(self):
         response = await self.post('/api/feedback', {'message_id': 99, 'rating': 'helpful'})
         self.assertEqual(response.status, 404)
