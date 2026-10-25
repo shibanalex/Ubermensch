@@ -61,6 +61,7 @@ HH_HOURS = range(11, 20)
 HH_IDLE = 10 * 60  # бот открывает окно браузера — только когда он отошёл
 GOAL_HOURS = range(10, 23)  # работа над целями — днём
 GOAL_EVERY = timedelta(hours=2)
+GOAL_DEFER = timedelta(hours=6)  # лимит подписки короче — заход ждёт его сброса, длиннее — идёт на запасном ИИ
 GOAL_MESSAGES = 3  # своих сообщений о целях в день (отдельно от heartbeat)
 LESSONS_CHARS, JOURNAL_CHARS, SKILLS_CHARS = 6000, 3000, 4000
 HEARTBEAT_MODEL, HEARTBEAT_EFFORT = "sonnet", "medium"
@@ -503,6 +504,11 @@ class Autonomy:
         now = now or datetime.now()
         due = self.store.due_goal(now)
         if due is None:
+            return None
+        # Лимит подписки скоро сбросится — ждём: на запасной Haiku шаг выходил пустым
+        # («не выполнила поиск»), а пустой «blocked» портит историю и счёт цели.
+        until = getattr(self.assistant.brain, "blocked_until", None)
+        if until is not None and until - datetime.now() < GOAL_DEFER:
             return None
         goal, plan = due
         kind = "plan" if plan is None else "step"

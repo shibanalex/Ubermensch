@@ -86,6 +86,17 @@ class GoalLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(self.store.due_goal(NOON + timedelta(days=1)))
         self.assertEqual(goal_loop.proposals_context(self.store), "")
 
+    async def test_short_subscription_limit_defers_step_long_one_does_not(self):
+        self.plan()
+        self.assistant.brain.blocked_until = datetime.now() + timedelta(hours=2)
+        self.assertIsNone(await self.autonomy.goal_cycle(NOON))
+        self.assertEqual(self.assistant.calls, [])  # не на Haiku вполсилы, а после сброса
+        self.assistant.brain.blocked_until = datetime.now() + timedelta(days=3)  # недельный лимит
+        self.assistant.answers = [({"outcome": "done", "action": "Оценила", "result": "ok",
+                                    "next_step": "Дальше", "blocker": "", "ask_user": "", "reply": ""},
+                                   [("career_assess", "completed")])]
+        self.assertEqual(await self.autonomy.goal_cycle(NOON), "done")
+
     async def test_step_counts_as_done_only_with_completed_tool_calls(self):
         self.plan()
         self.assistant.answers = [({"outcome": "done", "action": "Нашла и оценила 5 вакансий",

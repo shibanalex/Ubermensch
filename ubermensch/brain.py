@@ -152,6 +152,13 @@ class Brain:
         self.health.clear("brain", "Claude снова на связи.")
         return answer
 
+    @property
+    def blocked_until(self) -> datetime | None:
+        """До когда подписка недоступна (лимит, вход); None — доступна."""
+        if self._blocked_until and datetime.now() < self._blocked_until:
+            return self._blocked_until
+        return None
+
     async def wait_out(self, error: BrainError) -> bool:
         """Для фоновой работы: ждать, пока Claude снова доступен (лимит — до сброса, вход и
         программа — проверка раз в 5 минут). False — ошибка не из тех, что проходят сами."""

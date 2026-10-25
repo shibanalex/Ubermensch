@@ -800,7 +800,9 @@ class Assistant:
                 prompt, False, journal, schema=schema, timeout=timeout, background=True,
                 candidates=self._fallback_candidates(excluded)),
             fallback_available=lambda: bool(self._fallback_candidates(excluded)),
-            waiting_for_user=self.waiting_for_user, watchdog=min(timeout, CHAT_WATCHDOG['pc']))
+            # Фон никто не ждёт: сторож чата (4 мин) обрывал долгие шаги и отдавал их Haiku.
+            # Зависание всё равно ловит timeout самого вызова — тогда и запасной.
+            waiting_for_user=self.waiting_for_user, watchdog=timeout)
 
     async def _helper_first(self, build_prompt, **kwargs) -> tuple[Answer, str]:
         """Нечувствительная фоновая работа: сначала второй ИИ (не тратит лимит Claude, контекст
