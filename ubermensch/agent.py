@@ -639,7 +639,10 @@ class Autonomy:
         if invited:
             text += "\n🎉 Приглашения: " + "; ".join(f"{i['vacancy']} — {i['company']} {i['url']}"
                                                    for i in invited)
-        if code != 0:
+        if "hhbot login" in output:  # вход в hh истёк: без него бот не откликается
+            text += ("\n🔑 Вход в hh истёк. Войди заново (откроется окно браузера): "
+                     f"cd {career_bot.folder()} && .venv/bin/hhbot login")
+        elif code != 0:
             text += "\n⚠️ Бот завершился с ошибкой — подробности в его data/hhbot.log"
         self.core.notify("💼 " + text)
         journal(f"[hh · {'live' if live else 'dry'}] {text[:300]}")

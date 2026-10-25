@@ -94,6 +94,16 @@ class CareerBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("без отправки", notes[0])
         self.assertIn("🎉 Приглашения: Python 1", notes[0])
 
+    async def test_expired_hh_login_is_explained(self):
+        notes = []
+        core = SimpleNamespace(notify=notes.append, thinking=False, bus=SimpleNamespace(publish=lambda e: None))
+        autonomy = agent.Autonomy(self.store, SimpleNamespace(brain=None), SimpleNamespace(_last_chat=datetime.min), core)
+        run = AsyncMock(return_value=(1, "ERROR Вход в hh.ru не выполнен. Запустите: hhbot login"))
+        with patch.object(career_bot, "command", run):
+            await autonomy.hh_session(datetime.now().replace(hour=12))
+        self.assertIn("Вход в hh истёк", notes[0])
+        self.assertIn(".venv/bin/hhbot login", notes[0])
+
     def test_not_due_when_he_is_at_the_computer_or_bot_missing(self):
         autonomy = agent.Autonomy(self.store, SimpleNamespace(brain=None), SimpleNamespace(_last_chat=datetime.min),
                                   SimpleNamespace(notify=lambda t: None))
