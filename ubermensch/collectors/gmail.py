@@ -115,6 +115,13 @@ def _logout(imap: imaplib.IMAP4_SSL) -> None:
         pass
 
 
+def gmail_search(imap: imaplib.IMAP4_SSL, query: str) -> list[bytes]:
+    """Поиск в синтаксисе Gmail (X-GM-RAW). Кириллицу IMAP принимает только литералом UTF-8."""
+    imap.literal = query.encode("utf-8")
+    _, found = imap.search("UTF-8", "X-GM-RAW")
+    return found[0].split()
+
+
 def _split_fetch(data: list) -> list[dict]:
     """Ответ FETCH по письмам: метаданные (номер, X-GM-MSGID, FLAGS) и тела частей HEADER/TEXT.
     Порядок частей и место FLAGS у Gmail не гарантированы — распознаём по описанию."""
@@ -163,8 +170,8 @@ def inbox(address: str, password: str, days: int = 3, query: str = "",
     imap = _connect(address, password)
     try:
         search = f"newer_than:{days}d -category:promotions -category:social -category:forums {query}"
-        _, found = imap.search(None, "X-GM-RAW", f'"{search.strip().replace(chr(34), "")}"')
-        ids = found[0].split()[-limit:]
+        found = gmail_search(imap, search.strip())
+        ids = found[-limit:]
         letters = []
         for i in range(0, len(ids), BATCH):
             _, data = imap.fetch(b",".join(ids[i:i + BATCH]),
