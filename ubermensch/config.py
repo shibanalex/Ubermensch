@@ -38,7 +38,8 @@ USER_DOCUMENTS = _user_dir("DOCUMENTS", "Documents")
 # Личные папки, где лежат документы, конспекты и работы пользователя.
 PERSONAL_DIRS = tuple(dict.fromkeys(
     d for d in (DESKTOP_DIR, USER_DOCUMENTS, DOWNLOADS_DIR, Path.home() / "Documents",
-                Path.home() / "Учеба", Path.home() / "Мои Работы") if d.is_dir()))
+                Path.home() / "Учеба", Path.home() / "Мои Работы",
+                Path.home() / "Партитуры") if d.is_dir()))  # его музыка (MuseScore)
 # Дополнительные места для поиска и сбора (диски с данными): через «:» в UBERMENSCH_ROOTS.
 EXTRA_ROOTS = tuple(Path(p).expanduser() for p in os.getenv("UBERMENSCH_ROOTS", "").split(":") if p)
 
