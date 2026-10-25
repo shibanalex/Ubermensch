@@ -80,15 +80,20 @@ function noteText(app) {
 class Sections {
   constructor(plugin, root, refresh) { this.plugin = plugin; this.root = root; this.refresh = refresh; }
 
-  async render(names = SECTIONS) {
-    this.root.empty();
+  async render(names = SECTIONS, force = false) {
     let data;
     try {
       data = await this.plugin.api.call("/api/dashboard");
     } catch (e) {
+      this.signature = null;
+      this.root.empty();
       el(this.root, "div", { cls: "anya-error", text: "Аня не на связи: " + e.message });
       return;
     }
+    const signature = JSON.stringify(data);  // ничего не поменялось — не сбивать прокрутку
+    if (!force && signature === this.signature) return;
+    this.signature = signature;
+    this.root.empty();
     for (const name of names) {
       const method = this["section_" + name];
       if (method) method.call(this, data);
@@ -107,7 +112,8 @@ class Sections {
     const b = el(parent, "button", { text, cls: "anya-button " + cls });
     b.onclick = async () => {
       b.disabled = true;
-      try { await action(); await this.refresh(); } catch (e) { new Notice("Аня: " + e.message); b.disabled = false; }
+      try { await action(); this.signature = null; await this.refresh(); }
+      catch (e) { new Notice("Аня: " + e.message); b.disabled = false; }
     };
     return b;
   }
@@ -192,6 +198,7 @@ class Sections {
       check.onchange = async () => {
         try {
           await this.plugin.api.call(`/api/tasks/${task.id}`, { method: "POST", body: { status: "done" } });
+          this.signature = null;
           await this.refresh();
         } catch (e) { new Notice("Аня: " + e.message); check.checked = false; }
       };
@@ -286,7 +293,7 @@ class DashboardView extends ItemView {
     el(head, "span", { cls: "anya-head-title", text: "Аня" });
     const refresh = el(head, "button", { cls: "anya-button" });
     setIcon(refresh, "refresh-cw");
-    refresh.onclick = () => this.sections.render();
+    refresh.onclick = () => this.sections.render(SECTIONS, true);
     this.sections = new Sections(this.plugin, el(this.contentEl, "div"), () => this.sections.render());
     await this.sections.render();
     this.timer = window.setInterval(() => this.sections.render(), this.plugin.settings.refreshSeconds * 1000);
@@ -327,15 +334,23 @@ class ChatView extends ItemView {
       el(this.log, "div", { cls: "anya-error", text: "Аня не на связи: " + e.message });
       return;
     }
+    // перерисовывать, только если что-то пришло: иначе сбивается прокрутка, пока он читает
+    const messages = state.messages.slice(-30);
+    const signature = JSON.stringify([messages.map((m) => m.id), state.approvals.map((a) => a.id)]);
+    if (signature === this.signature) return;
+    this.signature = signature;
     this.log.empty();
-    for (const m of state.messages.slice(-30)) await this.bubble(m.role, m.text, m.channel, m.ts);
+    for (const m of messages) await this.bubble(m.role, m.text, m.channel, m.ts);
     for (const a of state.approvals) {
       const box = el(this.log, "div", { cls: "anya-approval" });
       el(box, "div", { cls: "anya-goal-title", text: "Подтверди: " + a.summary });
       const actions = el(box, "div", { cls: "anya-actions" });
       for (const [text, approve] of [["Да", true], ["Нет", false]]) {
         el(actions, "button", { cls: "anya-button" + (approve ? " mod-cta" : ""), text }).onclick = async () => {
-          await this.plugin.api.call(`/api/actions/${a.id}`, { method: "POST", body: { approve } });
+          try {
+            await this.plugin.api.call(`/api/actions/${a.id}`, { method: "POST", body: { approve } });
+          } catch (e) { new Notice("Аня: " + e.message); }
+          this.signature = null;
           await this.renderHistory();
         };
       }
@@ -366,6 +381,7 @@ class ChatView extends ItemView {
       waiting.setText("Не вышло: " + e.message);
     } finally {
       this.busy = false;
+      this.signature = null;  // своё сообщение уже нарисовано — показать историю целиком
       await this.renderHistory();
     }
   }
