@@ -1,0 +1,36 @@
+/* Аня (Übermensch): цвета — из темы Obsidian */
+.anya-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.anya-head-title { font-weight: 600; font-size: 1.1em; }
+.anya-box { border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: var(--background-secondary); }
+.anya-box-title { display: flex; align-items: center; gap: 6px; font-weight: 600; margin-bottom: 6px; }
+.anya-icon { display: inline-flex; color: var(--interactive-accent); }
+.anya-goal { padding: 6px 0; border-top: 1px solid var(--background-modifier-border-hover); }
+.anya-goal:first-of-type { border-top: none; }
+.anya-goal-title { font-weight: 600; }
+.anya-muted { color: var(--text-muted); font-size: 0.9em; }
+.anya-ask { color: var(--text-warning); font-size: 0.9em; }
+.anya-error { color: var(--text-error); }
+.anya-bar { height: 6px; border-radius: 3px; background: var(--background-modifier-border); margin: 4px 0; overflow: hidden; }
+.anya-bar-fill { height: 100%; background: var(--interactive-accent); }
+.anya-cycle { font-size: 0.9em; margin-top: 3px; }
+.anya-done { color: var(--text-success); }
+.anya-blocked, .anya-failed { color: var(--text-error); }
+.anya-needs_user, .anya-unverified { color: var(--text-warning); }
+.anya-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.anya-button { padding: 2px 10px; }
+.anya-task { display: flex; gap: 6px; align-items: center; padding: 2px 0; cursor: pointer; }
+.anya-approval { border-left: 3px solid var(--text-warning); padding-left: 8px; margin: 6px 0; }
+.anya-details { white-space: pre-wrap; font-size: 0.85em; max-height: 160px; overflow: auto; }
+.anya-table { width: 100%; font-size: 0.85em; margin-top: 6px; }
+.anya-table th, .anya-table td { text-align: left; padding: 2px 4px; }
+.anya-chat { display: flex; flex-direction: column; height: 100%; }
+.anya-log { flex: 1; overflow-y: auto; padding-bottom: 8px; }
+.anya-msg { border-radius: 10px; padding: 6px 10px; margin: 6px 0; max-width: 95%; }
+.anya-msg p { margin: 0.2em 0; }
+.anya-user { background: var(--interactive-accent); color: var(--text-on-accent); margin-left: auto; }
+.anya-anya { background: var(--background-secondary); }
+.anya-meta { font-size: 0.75em; opacity: 0.7; }
+.anya-form { border-top: 1px solid var(--background-modifier-border); padding-top: 6px; }
+.anya-input { width: 100%; resize: vertical; }
+.anya-thinking { font-style: italic; }
+.anya-embed .anya-box { background: var(--background-primary-alt); }

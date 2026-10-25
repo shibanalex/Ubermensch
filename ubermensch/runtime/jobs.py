@@ -100,7 +100,7 @@ class Jobs:
         run = self.store.get_run(run_id)
         kind, payload = run['kind'], run['payload']
         if kind == 'chat':
-            return await self.core.chat(payload['text'], 'desktop')
+            return await self.core.chat(payload['text'], payload.get('channel', 'desktop'))
         if kind == 'onboard':
             if not self.core.needs_onboarding() or self.store.recent_messages(1):
                 return {'skipped': True}

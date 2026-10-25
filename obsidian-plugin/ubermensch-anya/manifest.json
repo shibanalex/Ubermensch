@@ -1,0 +1,9 @@
+{
+  "id": "ubermensch-anya",
+  "name": "Аня (Übermensch)",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "Аня внутри Obsidian: чат, цели и планы, эксперименты, задачи и отклики — через локальное ядро Übermensch.",
+  "author": "allegro",
+  "isDesktopOnly": true
+}

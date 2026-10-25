@@ -30,6 +30,23 @@ class ChatRequest(StrictModel):
 
 class ChatJobRequest(ChatRequest):
     run_id: str
+    channel: Literal['desktop', 'obsidian'] = 'desktop'
+    note: Annotated[str, Field(max_length=20_000)] = ''  # открытая заметка Obsidian, если приложил
+
+
+class ExperimentDecision(StrictModel):
+    accept: bool
+    consent: Annotated[str, Field(min_length=1, max_length=1000)]
+
+
+class GoalPlanApproval(StrictModel):
+    metric: Annotated[str, Field(min_length=1, max_length=200)]
+    unit: Annotated[str, Field(min_length=1, max_length=80)]
+    baseline: float
+    target: float
+    weekly_minutes: Annotated[int, Field(ge=0, le=10080)]
+    next_step: Text
+    evidence: Text
 
 
 class JobID(StrictModel):
