@@ -404,6 +404,7 @@ class Outcome:
     engine: str = "claude"  # кто ответил: claude или openai
     emotion: str = ""  # выражение маскота для этого ответа (EMOTIONS)
     run_id: str = ""  # задание, в котором шла работа: по нему видны вызовы инструментов
+    message_id: int | None = None  # его ответ в messages — к нему цепляется оценка 👍/👎
 
 
 class Assistant:
@@ -706,6 +707,7 @@ class Assistant:
             with self.store.transaction():
                 self._apply_answer(data, outcome)
                 reply_id = self.store.add_message("assistant", outcome.reply, channel)
+                outcome.message_id = reply_id
                 if outcome.changes or outcome.done:
                     self.store.set_message_notes(reply_id, outcome.changes + outcome.done)
             return outcome

@@ -172,6 +172,18 @@ class RuntimeStorage:
                         'created_at=excluded.created_at',
                         (target, message_id, run_id, rating, note, stamp()))
 
+    def rated_replies(self, day: str) -> list[dict]:
+        """Его оценки ответов за день (по дате ответа): что спросил, что ответила, оценка и почему."""
+        items = []
+        for rating, note, message_id, text in self.db.execute(
+                'SELECT f.rating,f.note,m.id,m.text FROM quality_feedback f JOIN messages m '
+                'ON m.id=f.message_id WHERE substr(m.ts,1,10)=? ORDER BY m.id', (day,)):
+            asked = self.db.execute("SELECT text FROM messages WHERE id<? AND role='user' "
+                                    'ORDER BY id DESC LIMIT 1', (message_id,)).fetchone()
+            items.append({'rating': rating, 'why': note, 'asked': (asked[0] if asked else '')[:400],
+                          'reply': text[:800]})
+        return items
+
     def quality_metrics(self) -> dict:
         ratings = {r[0]: r[1] for r in self.db.execute(
             'SELECT rating,COUNT(*) FROM quality_feedback GROUP BY rating')}

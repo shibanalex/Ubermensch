@@ -30,6 +30,7 @@ from .store import AREAS
 log = logging.getLogger(__name__)
 
 TG_LIMIT = 4000
+WHY_WINDOW = 10 * 60  # столько ждём пояснения к 👎
 COMMANDS = [
     BotCommand(command="tasks", description="Задачи на сегодня"),
     BotCommand(command="goals", description="Мои цели"),
@@ -71,18 +72,28 @@ def split(text: str, limit: int = TG_LIMIT) -> list[str]:
 
 
 async def send(bot: Bot, chat_id: int, text: str, **kwargs) -> None:
-    for chunk in split(text):
+    markup = kwargs.pop("reply_markup", None)  # кнопки — под последним куском, а не под каждым
+    chunks = split(text)
+    for number, chunk in enumerate(chunks):
+        extra = {**kwargs, "reply_markup": markup} if number == len(chunks) - 1 and markup else kwargs
         try:
-            await bot.send_message(chat_id, to_html(chunk), **kwargs)
+            await bot.send_message(chat_id, to_html(chunk), **extra)
         except TelegramBadRequest:
             # Модель выдала разметку, которую Telegram не принял — шлём как есть.
-            await bot.send_message(chat_id, chunk, parse_mode=None, **kwargs)
+            await bot.send_message(chat_id, chunk, parse_mode=None, **extra)
 
 
 def _approval_keyboard(action_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Выполнить", callback_data=f"act:{action_id}:y"),
         InlineKeyboardButton(text="❌ Отмена", callback_data=f"act:{action_id}:n"),
+    ]])
+
+
+def _rating_keyboard(message_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="👍", callback_data=f"fb:{message_id}:+"),
+        InlineKeyboardButton(text="👎", callback_data=f"fb:{message_id}:-"),
     ]])
 
 
@@ -117,6 +128,8 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
     strangers = Router(name="strangers")
     started_at = time.monotonic()
     stats = {"calls": 0, "last_ms": 0}
+    # После 👎 его следующее сообщение (в пределах WHY_WINDOW) — пояснение «что не так»
+    why = {"message_id": None, "until": 0.0}
 
     async def deliver(bot: Bot, outcome: Outcome) -> None:
         # Как человек в мессенджере: несколько коротких сообщений с паузой «печатает…».
@@ -126,7 +139,9 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
             if number:
                 await bot.send_chat_action(settings.tg_chat_id, "typing")
                 await asyncio.sleep(min(2.5, 0.6 + len(part) / 120))
-            await send(bot, settings.tg_chat_id, part)
+            last = number == len(parts) - 1 and outcome.message_id is not None
+            await send(bot, settings.tg_chat_id, part,
+                       **({"reply_markup": _rating_keyboard(outcome.message_id)} if last else {}))
         for p in outcome.pending:
             await send(
                 bot, settings.tg_chat_id,
@@ -303,7 +318,31 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
                     await message.delete()
             await send(message.bot, message.chat.id, reply)
             return
+        if why["message_id"] is not None and time.monotonic() < why["until"]:
+            rated, why["message_id"] = why["message_id"], None
+            store.record_feedback("unhelpful", message.text[:2000], message_id=rated)
+            await think(message.bot, f"(Про твой прошлый ответ — я поставил 👎) {message.text}")
+            return
         await think(message.bot, message.text)
+
+    @owner.callback_query(F.data.startswith("fb:"))
+    async def on_rating(query: CallbackQuery) -> None:
+        _, raw_id, sign = query.data.split(":")
+        message_id = int(raw_id)
+        if store.db.execute("SELECT 1 FROM messages WHERE id=? AND role='assistant'",
+                            (message_id,)).fetchone() is None:
+            await query.answer("Этого ответа уже нет")
+            return
+        store.record_feedback("helpful" if sign == "+" else "unhelpful", message_id=message_id)
+        with contextlib.suppress(TelegramBadRequest):
+            await query.message.edit_reply_markup(reply_markup=None)
+        if sign == "+":
+            await query.answer("Спасибо, запомню, что так хорошо")
+            return
+        await query.answer()
+        why.update(message_id=message_id, until=time.monotonic() + WHY_WINDOW)
+        await send(query.bot, settings.tg_chat_id,
+                   "Что было не так? Напиши следующим сообщением, чего не хватило, — учту и отвечу лучше.")
 
     @owner.message()
     async def on_other(message: Message) -> None:

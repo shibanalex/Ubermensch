@@ -591,6 +591,9 @@ class Autonomy:
             "реально получилось из твоей работы: заходы по целям (статус по журналу вызовов), "
             "поручения, советы и его оценки. Учись прежде всего на них: в «Мои ошибки» — "
             "неподтверждённые «сделано», повторяющиеся препятствия, отклонённые советы. "
+            "answer_ratings — его 👍/👎 под твоими ответами: 👎 с пояснением (why) — самый точный "
+            "урок, запиши, чего не хватило и как отвечать на такое в следующий раз; 👍 — что "
+            "сработало, сохрани это. "
             "strategies — по каждой цели, где есть заходы или итоги: что работает, что нет и "
             "одна проверяемая гипотеза на следующий шаг, с основанием; нет оснований — не "
             "пиши. Не выводи причинность из одного-двух случаев. reply — пусто, если "
@@ -693,7 +696,8 @@ class Autonomy:
         changed = [experiments.compact(self.store.experiment(r[0])) for r in self.store.db.execute(
             "SELECT id FROM experiments WHERE substr(updated_at,1,10)=? ORDER BY id", (day.isoformat(),))]
         return {"goal_cycles": cycles, "tasks": finished, "recommendations": recommendations,
-                "experiments": changed, "week": self.store.effectiveness(7)}
+                "experiments": changed, "answer_ratings": self.store.rated_replies(day.isoformat()),
+                "week": self.store.effectiveness(7)}
 
     # --- обзор недели ---
 
