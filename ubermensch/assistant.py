@@ -697,10 +697,15 @@ class Assistant:
             if from_user:
                 self.store.add_message("user", text, channel)
             telegram = channel == "tg"
-            answer, engine = await self._chat_ask(prompt, telegram)
+            deep = from_user and models.deep(text)
+            if deep:
+                prompt += "\n\n" + models.DEEP_NOTE
+            answer, engine = await self._chat_ask(prompt, telegram, deep=deep)
             data = answer.data
             outcome = Outcome(reply=str(data.get("reply", "")).strip() or "…", engine=engine,
                               emotion=data.get("emotion") if data.get("emotion") in EMOTIONS else "")
+            if deep:  # видно в консоли и в счёте: сколько вопросов шло глубоким разбором
+                outcome.done.append("глубокий разбор: важная тема, проверка норм и себя")
             if engine in {"openai", "claude_api"}:
                 outcome.done.append("ответил запасной ИИ ("
                                     + ("Claude API" if engine == "claude_api" else "OpenAI")
@@ -842,17 +847,19 @@ class Assistant:
                     raise
                 log.info("Claude снова доступен — продолжаю с того же места")
 
-    async def _chat_ask(self, prompt: str, telegram: bool) -> tuple[Answer, str]:
+    async def _chat_ask(self, prompt: str, telegram: bool, *, deep: bool = False) -> tuple[Answer, str]:
+        model, effort = models.cli("chat_deep" if deep else "chat_tg" if telegram else "chat")
         return await self.router.ask(
             self.brain, prompt,
             options=dict(system_prompt_file=self._prompt_file(telegram), schema=self.schema,
                          tools=CHAT_TOOLS, mcp_config=self.mcp_config, read_dirs=READ_DIRS,
-                         timeout=ACTION_TIMEOUT, model=TG_MODEL if telegram else None,
-                         effort=TG_EFFORT if telegram else None, agents=models.helpers("chat")),
+                         timeout=ACTION_TIMEOUT, model=model, effort=effort,
+                         agents=models.helpers("chat")),
             fallback=lambda journal: self._fallback_ask(prompt, telegram, journal),
             fallback_available=lambda: self._fallback_brain() is not None,
             waiting_for_user=self.waiting_for_user,
-            watchdog=CHAT_WATCHDOG["tg" if telegram else "pc"],
+            # глубокий разбор с поиском идёт дольше — не отдавать его запасной модели на 4-й минуте
+            watchdog=CHAT_WATCHDOG["tg" if telegram else "pc"] * (2 if deep else 1),
         )
 
     def _fallback_brain(self):

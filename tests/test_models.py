@@ -38,6 +38,17 @@ class TierTests(unittest.TestCase):
             self.assertNotIn(forbidden, own)
 
 
+class DeepModeTests(unittest.TestCase):
+    def test_important_topics_go_deep_small_talk_does_not(self):
+        for text in ("Все плохо ань. Мне отказали, нужно заключение ВКК",
+                     "Сколько просить на оффере?", "Подумай как следует, куда вложить 4 млн",
+                     "банк заблокировал карту"):
+            self.assertTrue(models.deep(text), text)
+        for text in ("спок нок котя", "наглая рожа утютю~", "как дела?", "включи Баха"):
+            self.assertFalse(models.deep(text), text)
+        self.assertEqual(models.cli("chat_deep"), (None, "high"))
+
+
 class CliArgsTests(unittest.IsolatedAsyncioTestCase):
     async def test_agents_flag_and_agent_tool(self):
         temp = tempfile.TemporaryDirectory()
