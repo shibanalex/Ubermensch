@@ -64,7 +64,6 @@ GOAL_EVERY = timedelta(hours=2)
 GOAL_DEFER = timedelta(hours=6)  # лимит подписки короче — заход ждёт его сброса, длиннее — идёт на запасном ИИ
 GOAL_MESSAGES = 3  # своих сообщений о целях в день (отдельно от heartbeat)
 LESSONS_CHARS, JOURNAL_CHARS, SKILLS_CHARS = 6000, 3000, 4000
-HEARTBEAT_MODEL, HEARTBEAT_EFFORT = "sonnet", "medium"
 WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
 
 DEFAULT_CHECKLIST = """# Heartbeat — за чем Аня следит сама
@@ -425,8 +424,8 @@ class Autonomy:
             "от его имени без его просьбы.\n\n<heartbeat>\n" + _read(checklist_path(), 4000)
             + "\n</heartbeat>")
         data, outcome = await self.assistant.agent_ask(
-            task, HEARTBEAT_EXTRA, focus="heartbeat", model=HEARTBEAT_MODEL,
-            effort=HEARTBEAT_EFFORT, timeout=600, source="heartbeat", api=True)
+            task, HEARTBEAT_EXTRA, focus="heartbeat", timeout=600, source="heartbeat", api=True,
+            kind="heartbeat")
         decision = data.get("decision", "silent")
         if decision != "silent" and outcome.reply and (can_write or decision == "act"):
             self.core.notify(outcome.reply)
@@ -460,7 +459,7 @@ class Autonomy:
             "почему и что нужно от него. Сообщения и письма людям — только если он это поручил.")
         try:
             data, outcome = await self.assistant.agent_ask(task, TASK_EXTRA, focus=item["instructions"],
-                                                           source=f"task:{item['id']}")
+                                                           source=f"task:{item['id']}", kind="task")
         except (ToolExecutionUncertain, InterruptedToolRun) as e:
             _update_task(item['id'], status='interrupted', interrupted_by='uncertain', notes=str(e))
             raise
@@ -518,7 +517,7 @@ class Autonomy:
             if plan is None:
                 data, outcome = await self.assistant.agent_ask(
                     goal_loop.plan_task(goal, history), goal_loop.PLAN_EXTRA, focus=goal["title"],
-                    source=f"goal:{goal['id']}")
+                    source=f"goal:{goal['id']}", kind="goal_plan")
                 proposal = data.get("proposal") or None
                 status = "needs_user" if proposal else "failed"
                 self.store.record_goal_cycle(
@@ -535,7 +534,7 @@ class Autonomy:
                                         self.store.experiments(goal["id"]),
                                         self.store.goal_options(goal["id"])), goal_loop.STEP_EXTRA,
                     focus=f"{goal['title']} {plan['next_step']}", source=f"goal:{goal['id']}",
-                    timeout=900)
+                    timeout=900, kind="goal_step")
                 evidence = self.store.run_evidence(outcome.run_id)
                 status = goal_loop.verify(str(data.get("outcome", "")), evidence)
                 next_step = str(data.get("next_step") or "").strip()
@@ -603,8 +602,8 @@ class Autonomy:
                                           for i in feedback) + "\n</corrections>\n<results>\n"
             + json.dumps(results, ensure_ascii=False) + "\n</results>\n</day>")
         data, outcome = await self.assistant.agent_ask(task, REFLECT_EXTRA, focus="рефлексия",
-                                                       effort="medium", timeout=900,
-                                                       source="reflection")
+                                                       timeout=900, source="reflection",
+                                                       kind="reflection")
         if lessons := str(data.get("lessons") or "").strip():
             _write_text(lessons_path(), lessons[:LESSONS_CHARS] + "\n")
         for skill in data.get("skills") or []:
@@ -742,7 +741,7 @@ class Autonomy:
                  'Не выводи причинность из нескольких откликов и не подменяй результат числом действий.')
         data, outcome = await self.assistant.agent_ask(
             task, {"review": {"type": "string"}, "journal": {"type": "string"}},
-            focus="итоги недели цели", effort="medium", timeout=900, source="weekly_review")
+            focus="итоги недели цели", timeout=900, source="weekly_review", kind="weekly_review")
         path = config.OUTPUT_DIR / "Обзоры недели" / f"{year}-W{week:02d}.md"
         _write_text(path, f"---\ntype: review\nperiod: weekly\nweek: {year}-W{week:02d}\n---\n"
                     f"{str(data.get('review') or '').strip()}\n")

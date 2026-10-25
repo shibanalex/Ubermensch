@@ -28,6 +28,7 @@ from pathlib import Path
 
 from . import behavior, config, interview
 from .brain import BrainError
+from .runtime import models
 from .personalization import (AnalysisClaim, AnalysisSection, EvidenceQuote, SupportRule,
                               UserProfile, load_profile, render_report, save_profile)
 from .profile_corpus import _readonly, prepare_corpus, validate_refs
@@ -44,7 +45,7 @@ REBUILD_EVERY = timedelta(days=7)
 CHECK_EVERY = 3600
 MAX_DEFER = timedelta(hours=6)  # очередь разбора важнее, но не бесконечно
 MAP_ATTEMPTS = 3
-MAP_MODEL = "sonnet"
+MAP_MODEL = models.cli("profile")[0]  # уровни моделей — runtime/models.py
 CALL_TIMEOUT = 900
 KEEP_CORPORA = 1
 

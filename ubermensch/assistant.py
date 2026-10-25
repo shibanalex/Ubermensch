@@ -17,6 +17,7 @@ from .collectors import obsidian
 from .brain import MCP_SERVER, Answer, Brain, BrainError
 from .config import Settings
 from .store import AREAS, Store
+from .runtime import models
 from .runtime.router import ChatRouter
 from .runtime.tools import JournalToolGateway, ToolJournal
 from .runtime.http_tools import HttpToolGateway, ToolExecutionUncertain
@@ -43,8 +44,8 @@ VAULT_NOTE = (
     "{reports} (Markdown со [[ссылками]] на его заметки) — это твоя зона. Правила из "
     "«08 AI/Правила для агента.md» — его пожелания к тебе: соблюдай их.")
 ACTION_TIMEOUT = 900  # с запасом на «да/нет» пользователя внутри инструмента
-TG_MODEL, TG_EFFORT = None, "medium"  # в Telegram — основная модель (opus), без долгих раздумий
-SCREEN_MODEL = "sonnet"  # комментарий к экрану — быстро и дёшево
+TG_MODEL, TG_EFFORT = models.cli("chat_tg")  # уровни моделей по задачам — runtime/models.py
+SCREEN_MODEL = models.cli("screen")[0]  # комментарий к экрану — быстро и дёшево
 AGENT_TIMEOUT = 1800  # поручение: несколько шагов с инструментами и поиском
 HISTORY_LIMIT = 20
 FACTS_LIMIT = 150
@@ -136,7 +137,7 @@ ONBOARDING_EVENT = (
     "(2–3 предложения: кто ты и чем будешь полезен) и начни знакомство с одного вопроса.]"
 )
 
-ANALYSIS_MODEL = "sonnet"  # массовый разбор данных; чат и досье — на основной модели
+ANALYSIS_MODEL = models.cli("analysis")[0]  # массовый разбор данных; чат и досье — на основной модели
 ANALYSIS_TASK = (
     "[Системная задача: расследование. Пользователь сам попросил изучить его данные и составить "
     "о нём максимально точное представление.] В блоке <data> — фрагмент: {title}.\n"
@@ -745,11 +746,13 @@ class Assistant:
 
     async def agent_ask(self, task: str, extra: dict, *, focus: str = "", model: str | None = None,
                         effort: str | None = None, timeout: int = AGENT_TIMEOUT,
-                        source: str = "agent", api: bool = False) -> tuple[dict, Outcome]:
+                        source: str = "agent", api: bool = False,
+                        kind: str = "agent") -> tuple[dict, Outcome]:
+        """kind — вид работы (runtime/models.TASKS): от него уровень модели и помощники."""
         async def action():
             data, outcome = await self._agent_ask(task, extra, focus=focus, model=model,
                                                   effort=effort, timeout=timeout, source=source,
-                                                  api=api)
+                                                  api=api, kind=kind)
             if context := current.get():
                 outcome.run_id = context.run_id
             return data, outcome
@@ -759,7 +762,8 @@ class Assistant:
         return await action()
 
     async def _agent_ask(self, task: str, extra: dict, *, focus: str = '', model=None,
-                         effort=None, timeout=AGENT_TIMEOUT, source='agent', api=False):
+                         effort=None, timeout=AGENT_TIMEOUT, source='agent', api=False,
+                         kind='agent'):
         """Самостоятельная работа Ани (heartbeat, поручение, рефлексия): полный контекст,
         инструменты в пределах фоновых прав. extra — дополнительные поля ответа (их схема).
         Применяет память, задачи и действия; возвращает (весь ответ, итог)."""
@@ -767,16 +771,18 @@ class Assistant:
         schema["properties"].update(extra)
         schema["required"] += list(extra)
         prompt = f"{self._context(focus or task)}\n\n<message>\n{task}\n</message>"
+        tier_model, tier_effort = models.cli(kind)
+        model, effort = model or tier_model, effort or tier_effort
         answer = None
         excluded = set()
         if api and self.claude_api is not None and self.claude_api.usable:
             context = current.get()
             journal = ToolJournal(self.workspace / 'runs' /
                                   (context.run_id if context else uuid4().hex) / 'tools.jsonl')
-            try:  # мимо подписки — Claude API (Haiku), с теми же инструментами
+            try:  # мимо подписки — Claude API (модель по уровню задачи), с теми же инструментами
                 answer, engine = await self._api_ask(
                     prompt, False, journal, schema=schema, timeout=timeout, background=True,
-                    candidates=[('claude_api', self.claude_api)])
+                    candidates=[('claude_api', self.claude_api)], kind=kind)
             except ToolExecutionUncertain:
                 raise
             except BrainError as e:
@@ -784,7 +790,7 @@ class Assistant:
                 log.warning("Claude API не справился (%s) — делаю на подписке", e)
         if answer is None:
             answer, engine = await self._subscription_agent(
-                prompt, schema, model, effort, timeout, excluded=excluded)
+                prompt, schema, model, effort, timeout, excluded=excluded, kind=kind)
         data = answer.data
         outcome = Outcome(reply=str(data.get("reply", "")).strip(), engine=engine,
                           emotion=data.get("emotion") if data.get("emotion") in EMOTIONS else "")
@@ -793,15 +799,15 @@ class Assistant:
         return data, outcome
 
     async def _subscription_agent(self, prompt: str, schema: dict, model, effort, timeout,
-                                  *, excluded=frozenset()):
+                                  *, excluded=frozenset(), kind='agent'):
         return await self.router.ask(
             self.brain, prompt,
             options=dict(system_prompt_file=self.agent_prompt_file, schema=schema,
                          tools=('WebSearch', 'WebFetch'), mcp_config=self.mcp_config, read_dirs=(),
-                         timeout=timeout, model=model, effort=effort),
+                         timeout=timeout, model=model, effort=effort, agents=models.helpers(kind)),
             fallback=lambda journal: self._api_ask(
                 prompt, False, journal, schema=schema, timeout=timeout, background=True,
-                candidates=self._fallback_candidates(excluded)),
+                candidates=self._fallback_candidates(excluded), kind=kind),
             fallback_available=lambda: bool(self._fallback_candidates(excluded)),
             # Фон никто не ждёт: сторож чата (4 мин) обрывал долгие шаги и отдавал их Haiku.
             # Зависание всё равно ловит timeout самого вызова — тогда и запасной.
@@ -842,7 +848,7 @@ class Assistant:
             options=dict(system_prompt_file=self._prompt_file(telegram), schema=self.schema,
                          tools=CHAT_TOOLS, mcp_config=self.mcp_config, read_dirs=READ_DIRS,
                          timeout=ACTION_TIMEOUT, model=TG_MODEL if telegram else None,
-                         effort=TG_EFFORT if telegram else None),
+                         effort=TG_EFFORT if telegram else None, agents=models.helpers("chat")),
             fallback=lambda journal: self._fallback_ask(prompt, telegram, journal),
             fallback_available=lambda: self._fallback_brain() is not None,
             waiting_for_user=self.waiting_for_user,
@@ -864,7 +870,7 @@ class Assistant:
                                    timeout=ACTION_TIMEOUT, candidates=self._fallback_candidates())
 
     async def _api_ask(self, prompt: str, telegram: bool, journal: ToolJournal, *,
-                       schema: dict, timeout: int, candidates, background=False):
+                       schema: dict, timeout: int, candidates, background=False, kind='chat'):
         if not candidates:
             raise BrainError("Запасной ИИ недоступен")
         gateway = JournalToolGateway(
@@ -889,7 +895,8 @@ class Assistant:
             try:
                 # OpenAI's background role is deliberately a tool-free data analyser.
                 # Agent work uses the chat model; permissions come from the run and gateway.
-                role = 'background' if background and engine == 'claude_api' else 'chat'
+                # Claude API: модель по уровню задачи — цели и поручения на Sonnet, heartbeat на Haiku.
+                role = models.api_role(kind) if engine == 'claude_api' else 'chat'
                 answer = await brain.ask(prompt, system_prompt_file=system, schema=schema,
                                          role=role, tool_gateway=gateway, timeout=timeout)
                 return answer, engine

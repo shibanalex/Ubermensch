@@ -188,7 +188,8 @@ class Brain:
     async def _ask(self, prompt: str, *, system_prompt_file: Path, schema: dict,
                    tools: tuple[str, ...] = (), model: str | None = None,
                    effort: str | None = None, mcp_config: Path | None = None,
-                   read_dirs: tuple[Path, ...] = (), timeout: int | None = None) -> Answer:
+                   read_dirs: tuple[Path, ...] = (), timeout: int | None = None,
+                   agents: str | None = None) -> Answer:
         """Один изолированный вызов: без сохранения сессии и без чужих MCP-серверов.
 
         tools — встроенные инструменты Claude Code (только безопасные), mcp_config — наш
@@ -196,6 +197,8 @@ class Brain:
         Промпт идёт через stdin (длинный контекст не влезает в аргументы командной строки),
         ответ — JSON по схеме.
         """
+        if agents:  # помощники (runtime/models.py): основная модель вызывает их инструментом Agent
+            tools = (*tools, "Agent")
         args = [
             self._resolve_binary(), "-p",
             "--model", model or self.settings.claude_model,
@@ -216,6 +219,8 @@ class Brain:
             args += ["--allowedTools", ",".join(allowed)]
         if effort:
             args += ["--effort", effort]
+        if agents:
+            args += ["--agents", agents]
         for folder in read_dirs:
             args += ["--add-dir", str(folder)]
         limit = timeout or self.settings.claude_timeout
