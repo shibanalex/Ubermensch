@@ -259,6 +259,12 @@ class Sections {
       el(box, "div", { text: `Подтверждено журналом: ${Math.round(e.verified_step_share * 100)}%` });
     }
     if (e.repeated_blockers.length) el(box, "div", { cls: "anya-ask", text: "Повторяется: " + e.repeated_blockers.join("; ") });
+    if (e.fallback_reply_share !== null && e.fallback_reply_share !== undefined) {
+      el(box, "div", { cls: e.fallback_reply_share > 0.2 ? "anya-ask" : "",
+                       text: `Ответов от запасной модели (лимит подписки): ${Math.round(e.fallback_reply_share * 100)}% из ${e.chat_replies}` });
+    }
+    const r = e.answer_ratings || {};
+    if (r.helpful || r.unhelpful) el(box, "div", { text: `Оценки ответов: 👍 ${r.helpful || 0}, 👎 ${r.unhelpful || 0}` });
     el(box, "div", { cls: "anya-muted", text: e.note });
   }
 }
