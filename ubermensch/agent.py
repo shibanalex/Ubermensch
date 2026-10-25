@@ -14,6 +14,10 @@
 - Рефлексия — раз в сутки вечером: что было за день, что он поправлял, на что отвечал и
   что пропускал → обновлённые «Уроки Ани» (как ему помогать) и запись в её дневнике.
 - Навыки — удачные способы решения задач, которые Аня записывает себе сама.
+- Цели — раз в GOAL_EVERY одна активная цель (каждая не чаще раза в день): без плана Аня
+  предлагает измеримый план и ждёт его «да», с планом — делает следующий шаг сама и
+  сдвигает его, только если в журнале запуска есть успешные вызовы инструментов
+  (goal_loop.py).
 Уроки, дневник за два дня, подходящие навыки и открытые поручения — в каждом разговоре.
 """
 from __future__ import annotations
@@ -28,7 +32,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from . import config
+from . import config, goal_loop
 from .brain import BrainError
 from .runtime.http_tools import ToolExecutionUncertain
 from .runtime.router import InterruptedToolRun
@@ -47,6 +51,9 @@ REFLECT_FROM = 23  # рефлексия — после этого часа (ил
 REVIEW_WEEKDAY, REVIEW_FROM = 6, 19  # обзор недели — в воскресенье с 19:00
 TASK_SESSIONS = 3  # поручение: столько заходов, потом — «не вышло»
 REST_AFTER_TASK = 15 * 60
+GOAL_HOURS = range(10, 23)  # работа над целями — днём
+GOAL_EVERY = timedelta(hours=2)
+GOAL_MESSAGES = 3  # своих сообщений о целях в день (отдельно от heartbeat)
 LESSONS_CHARS, JOURNAL_CHARS, SKILLS_CHARS = 6000, 3000, 4000
 HEARTBEAT_MODEL, HEARTBEAT_EFFORT = "sonnet", "medium"
 WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
@@ -312,7 +319,7 @@ class Autonomy:
             store, assistant, investigation, core
         self._last_fingerprint = ""
         self._last_heartbeat = datetime.min
-        self.state = {"heartbeat": None, "task": None}
+        self.state = {"heartbeat": None, "task": None, "goal": None}
 
     # --- heartbeat ---
 
@@ -438,6 +445,66 @@ class Autonomy:
         log.info("Поручение «%s»: %s", item["title"], status)
         return status
 
+    # --- цели ---
+
+    async def goal_cycle(self, now: datetime | None = None) -> str | None:
+        """Один заход по одной цели. Возвращает статус захода или None, если работать не над чем."""
+        now = now or datetime.now()
+        due = self.store.due_goal(now)
+        if due is None:
+            return None
+        goal, plan = due
+        kind = "plan" if plan is None else "step"
+        history = self.store.goal_cycles(goal["id"])
+        self.state["goal"] = goal["title"]
+        try:
+            if plan is None:
+                data, outcome = await self.assistant.agent_ask(
+                    goal_loop.plan_task(goal, history), goal_loop.PLAN_EXTRA, focus=goal["title"],
+                    source=f"goal:{goal['id']}")
+                proposal = data.get("proposal") or None
+                status = "needs_user" if proposal else "failed"
+                self.store.record_goal_cycle(
+                    goal["id"], kind, status, run_id=outcome.run_id or None,
+                    ask_user=str(data.get("ask_user") or ""), proposal=proposal,
+                    evidence=self.store.run_evidence(outcome.run_id))
+            else:
+                recommendations = [dict(r) for r in self.store.db.execute(
+                    "SELECT action, status, outcome FROM recommendations WHERE goal_id=? "
+                    "ORDER BY id DESC LIMIT 5", (goal["id"],))]
+                data, outcome = await self.assistant.agent_ask(
+                    goal_loop.step_task(goal, plan, history, recommendations), goal_loop.STEP_EXTRA,
+                    focus=f"{goal['title']} {plan['next_step']}", source=f"goal:{goal['id']}",
+                    timeout=900)
+                evidence = self.store.run_evidence(outcome.run_id)
+                status = goal_loop.verify(str(data.get("outcome", "")), evidence)
+                next_step = str(data.get("next_step") or "").strip()
+                self.store.record_goal_cycle(
+                    goal["id"], kind, status, run_id=outcome.run_id or None,
+                    action=str(data.get("action") or ""), result=str(data.get("result") or ""),
+                    next_step=next_step, blocker=str(data.get("blocker") or ""),
+                    ask_user=str(data.get("ask_user") or ""), evidence=evidence)
+                if status == "done" and next_step:
+                    self.store.advance_goal_step(goal["id"], next_step)
+        except (ToolExecutionUncertain, InterruptedToolRun, JobCancelled, asyncio.CancelledError):
+            self.store.record_goal_cycle(goal["id"], kind, "blocked",
+                                         blocker="Прервано; проверь выполненные действия")
+            raise
+        except BrainError as e:
+            self.store.record_goal_cycle(goal["id"], kind, "failed", blocker=str(e)[:500])
+            raise
+        finally:
+            self.state["goal"] = None
+        sent = [m for m in _read_json("goal_messages.json") if m["at"] >= date.today().isoformat()]
+        if outcome.reply and status in {"done", "needs_user"} and len(sent) < GOAL_MESSAGES:
+            self.core.notify(f"🎯 {goal['title']}: {outcome.reply}")
+            with _lock:
+                _write_json("goal_messages.json", sent + [{"at": now.isoformat(timespec="seconds")}])
+        journal(f"[цель #{goal['id']} · {kind} · {status}] "
+                + (str(data.get("action") or data.get("ask_user") or "")[:300]))
+        log.info("Цель #%s (%s): %s", goal["id"], kind, status)
+        return status
+
     # --- рефлексия ---
 
     async def reflect(self, day: date | None = None) -> None:
@@ -542,7 +609,7 @@ class Autonomy:
 
     async def run(self) -> None:
         await asyncio.sleep(300)
-        last_heartbeat_try = datetime.min
+        last_heartbeat_try = last_goal_try = datetime.min
         while True:
             now = datetime.now()
             try:
@@ -558,6 +625,10 @@ class Autonomy:
                 elif pending := [t for t in tasks("pending")]:
                     await self.run_task(pending[0])
                     await asyncio.sleep(REST_AFTER_TASK if not 1 <= now.hour < 8 else 120)
+                elif now.hour in GOAL_HOURS and now - last_goal_try >= GOAL_EVERY \
+                        and self.store.due_goal(now) is not None:
+                    last_goal_try = now  # до вызова: при сбое модели не перебирать цели подряд
+                    await self.goal_cycle(now)
                 elif now.hour in HEARTBEAT_HOURS and \
                         (now - last_heartbeat_try).total_seconds() >= HEARTBEAT_EVERY:
                     last_heartbeat_try = now

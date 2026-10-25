@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 from pydantic import ValidationError
 
-from . import actions, agent, config, ingest, world
+from . import actions, agent, config, goal_loop, ingest, world
 from .collectors import obsidian
 from .brain import MCP_SERVER, Answer, Brain, BrainError
 from .config import Settings
@@ -403,6 +403,7 @@ class Outcome:
     pending: list[actions.Submitted] = field(default_factory=list)  # ждут подтверждения
     engine: str = "claude"  # кто ответил: claude или openai
     emotion: str = ""  # выражение маскота для этого ответа (EMOTIONS)
+    run_id: str = ""  # задание, в котором шла работа: по нему видны вызовы инструментов
 
 
 class Assistant:
@@ -580,6 +581,8 @@ class Assistant:
 
         goals = self.store.goals()
         parts.append(self.store.planning_context())
+        if proposals := goal_loop.proposals_context(self.store):
+            parts.append(proposals)
         parts.append("<goals>\n" + ("\n".join(
             f"#{g['id']} [{AREAS.get(g['area'], g['area'])}] {g['title']}"
             + (f" — срок {g['deadline']}" if g["deadline"] else "")
@@ -731,8 +734,12 @@ class Assistant:
                         effort: str | None = None, timeout: int = AGENT_TIMEOUT,
                         source: str = "agent", api: bool = False) -> tuple[dict, Outcome]:
         async def action():
-            return await self._agent_ask(task, extra, focus=focus, model=model, effort=effort,
-                                         timeout=timeout, source=source, api=api)
+            data, outcome = await self._agent_ask(task, extra, focus=focus, model=model,
+                                                  effort=effort, timeout=timeout, source=source,
+                                                  api=api)
+            if context := current.get():
+                outcome.run_id = context.run_id
+            return data, outcome
         if getattr(self, 'jobs', None) is not None:
             # A background job invoked from an interactive context still gets background rights.
             return await self.jobs.inline('agent', {'source': source}, action, mode='background')
