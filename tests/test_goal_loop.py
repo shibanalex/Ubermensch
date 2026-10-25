@@ -151,5 +151,54 @@ class GoalLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.due_goal(NOON)[0]["id"], sooner)  # без плана — по сроку
 
 
+    async def test_reflection_learns_strategy_from_results_and_next_step_uses_it(self):
+        self.plan()
+        self.assistant.answers = [
+            ({"outcome": "blocked", "action": "Искала на hh", "result": "", "next_step": "Remotive",
+              "blocker": "hh отказал в доступе (403)", "ask_user": "", "reply": ""},
+             [("career_search", "failed")]),
+            ({"lessons": "## Мои ошибки\n- hh без токена", "journal": "день", "skills": [], "reply": "",
+              "strategies": [
+                  {"goal_id": self.goal, "works": "Remotive отвечает", "fails": "hh без токена — 403",
+                   "hypothesis": "Remotive + английское CV дадут 3 подходящих вакансии за заход",
+                   "evidence": "заход сегодня: career_search failed (403)"},
+                  {"goal_id": 999, "works": "", "fails": "", "hypothesis": "x", "evidence": "y"},
+                  {"goal_id": self.goal, "works": "", "fails": "", "hypothesis": "без основания",
+                   "evidence": ""}]}, []),
+            ({"outcome": "done", "action": "Remotive", "result": "3 вакансии", "next_step": "Оценить",
+              "blocker": "", "ask_user": "", "reply": ""}, [("career_search", "completed")])]
+        await self.autonomy.goal_cycle(NOON)
+        await self.autonomy.reflect(NOON.date())
+        self.assertIn("hh отказал в доступе (403)", self.assistant.calls[1])  # <results>
+        self.assertIn('"verified_step_share": 0.0', self.assistant.calls[1])
+        strategy = self.store.goal_strategy(self.goal)
+        self.assertEqual(strategy["hypothesis"], "Remotive + английское CV дадут 3 подходящих вакансии за заход")
+        await self.autonomy.goal_cycle(NOON + timedelta(days=1))
+        self.assertIn("Remotive + английское CV", self.assistant.calls[2])  # <strategy>
+
+    async def test_declined_recommendation_is_marked_in_the_next_step(self):
+        self.plan()
+        recommendation = self.store.save_recommendation(
+            self.goal, "Пройти курс по алгоритмам", "пробелы с собесов", "отказы", "2 собеседования", 120,
+            NOON.date().isoformat())
+        self.store.recommendation_feedback(recommendation, "declined", "уже проходил, не помогло")
+        self.assistant.answers = [({"outcome": "done", "action": "x", "result": "y", "next_step": "z",
+                                    "blocker": "", "ask_user": "", "reply": ""}, [("career_search", "completed")])]
+        await self.autonomy.goal_cycle(NOON)
+        task = self.assistant.calls[0]
+        self.assertIn("[declined] Пройти курс по алгоритмам → уже проходил, не помогло", task)
+        self.assertIn("которые он отклонил (declined)", task)
+
+    def test_effectiveness_counts_only_verified_steps_and_repeated_blockers(self):
+        self.plan()
+        for status, blocker in (("done", ""), ("unverified", ""), ("blocked", "hh 403"),
+                                ("blocked", "HH  403")):
+            self.store.record_goal_cycle(self.goal, "step", status, blocker=blocker)
+        score = self.store.effectiveness(7)
+        self.assertEqual(score["goal_steps"], {"done": 1, "unverified": 1, "blocked": 2})
+        self.assertEqual(score["verified_step_share"], 0.25)
+        self.assertEqual(score["repeated_blockers"], ["hh 403"])
+
+
 if __name__ == "__main__":
     unittest.main()

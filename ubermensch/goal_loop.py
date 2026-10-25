@@ -4,10 +4,15 @@
 точку и цель меняет только он (goal_plan в разговоре). С планом — делает следующий шаг сама
 в пределах фоновых прав. «Сделано» засчитывается, только если в журнале этого запуска есть
 успешные вызовы инструментов; иначе заход «не подтверждён» и следующий шаг не сдвигается.
+
+Обучение на результатах: вечерняя рефлексия видит счёт эффективности (effectiveness) и
+заходы дня и записывает по каждой цели стратегию — что работает, что нет и какую гипотезу
+проверить следующим шагом (goal_strategy); следующий заход получает её в <strategy>.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 
 from .planning import encoded, required, stamp
 
@@ -23,6 +28,13 @@ CREATE TABLE goal_cycles (
     created_at TEXT NOT NULL
 );
 CREATE INDEX goal_cycles_goal ON goal_cycles(goal_id, id);
+"""
+GOAL_STRATEGY_MIGRATION = """
+CREATE TABLE goal_strategy (
+    goal_id INTEGER PRIMARY KEY REFERENCES goals(id),
+    works TEXT NOT NULL, fails TEXT NOT NULL, hypothesis TEXT NOT NULL, evidence TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 ASK_AGAIN_AFTER = timedelta(days=3)  # не переспрашивать о том же чаще
@@ -54,6 +66,50 @@ PLAN_EXTRA = {
 
 
 class GoalLoopStorage:
+    def goal_strategy(self, goal_id: int) -> dict | None:
+        row = self.db.execute("SELECT * FROM goal_strategy WHERE goal_id=?", (goal_id,)).fetchone()
+        return dict(row) if row else None
+
+    def set_goal_strategy(self, goal_id: int, works: str, fails: str, hypothesis: str,
+                          evidence: str) -> None:
+        """Стратегия цели из рефлексии. Без основания (evidence) не сохраняется."""
+        self._planning_goal(goal_id)
+        evidence = required(evidence, "Основание стратегии", 3000)
+        self.db.execute(
+            "INSERT INTO goal_strategy VALUES (?,?,?,?,?,?) ON CONFLICT(goal_id) DO UPDATE SET "
+            "works=excluded.works, fails=excluded.fails, hypothesis=excluded.hypothesis, "
+            "evidence=excluded.evidence, updated_at=excluded.updated_at",
+            (goal_id, works.strip()[:3000], fails.strip()[:3000], hypothesis.strip()[:2000],
+             evidence, stamp()))
+
+    def effectiveness(self, days: int = 7) -> dict:
+        """Счёт самой Ани: что из её работы подтвердилось результатом. Только наблюдения."""
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+        steps = Counter(dict(self.db.execute(
+            "SELECT status, COUNT(*) FROM goal_cycles WHERE kind='step' AND created_at>=? "
+            "GROUP BY status", (since,)).fetchall()))
+        plans = Counter(dict(self.db.execute(
+            "SELECT status, COUNT(*) FROM goal_cycles WHERE kind='plan' AND created_at>=? "
+            "GROUP BY status", (since,)).fetchall()))
+        blockers = Counter(" ".join(r[0].casefold().split())[:100] for r in self.db.execute(
+            "SELECT blocker FROM goal_cycles WHERE blocker!='' AND created_at>=?", (since,)))
+        recommendations = dict(self.db.execute(
+            "SELECT status, COUNT(*) FROM recommendations WHERE updated_at>=? GROUP BY status",
+            (since,)).fetchall())
+        quality = dict(self.db.execute(
+            "SELECT rating, COUNT(*) FROM quality_feedback WHERE created_at>=? GROUP BY rating",
+            (since,)).fetchall())
+        attempted = sum(steps.values())
+        return {
+            "days": days,
+            "goal_steps": dict(steps), "goal_plans": dict(plans),
+            "verified_step_share": round(steps["done"] / attempted, 2) if attempted else None,
+            "repeated_blockers": [b for b, n in blockers.most_common(5) if n > 1],
+            "recommendations": recommendations, "answer_ratings": quality,
+            "note": "Доля подтверждённых шагов — по журналу вызовов, не по словам модели. "
+                    "Малые числа не доказывают, что подход работает.",
+        }
+
     def goal_cycles(self, goal_id: int | None = None, limit: int = HISTORY) -> list[dict]:
         where, args = ("WHERE goal_id=?", (goal_id,)) if goal_id is not None else ("", ())
         rows = self.db.execute(f"SELECT * FROM goal_cycles {where} ORDER BY id DESC LIMIT ?",
@@ -127,7 +183,8 @@ def verify(outcome: str, evidence: list[dict]) -> str:
     return outcome if outcome in {"blocked", "needs_user"} else "failed"
 
 
-def step_task(goal: dict, plan: dict, history: list[dict], recommendations: list[dict]) -> str:
+def step_task(goal: dict, plan: dict, history: list[dict], recommendations: list[dict],
+              strategy: dict | None = None) -> str:
     return (
         f"[Системная задача: работа над целью #{goal['id']} «{goal['title']}».] Это его "
         "утверждённая цель с измеримым планом. Сделай следующий шаг сама — сейчас, "
@@ -136,7 +193,8 @@ def step_task(goal: dict, plan: dict, history: list[dict], recommendations: list
         "Не отправляй ничего людям от его имени, не трать деньги, не меняй показатель и цель. "
         "Проверь результат: перечитай созданное, сверь найденное с источником. Если шаг "
         "слишком большой — сделай первую проверяемую часть. Не повторяй то, что в <tried> уже "
-        "не сработало, без новых оснований. outcome: done — сделано и проверено; blocked — "
+        "не сработало, и советы, которые он отклонил (declined), без новых оснований. Если в "
+        "<strategy> есть гипотеза — проверь её этим шагом, когда это возможно. outcome: done — сделано и проверено; blocked — "
         "не вышло (blocker — почему, next_step — обход); needs_user — нужно его решение "
         "(ask_user). next_step — следующий конкретный шаг. reply — 1–3 предложения ему "
         "по сути, пусто, если писать незачем.\n\n"
@@ -147,7 +205,9 @@ def step_task(goal: dict, plan: dict, history: list[dict], recommendations: list
             + (f" | мешало: {c['blocker'][:200]}" if c['blocker'] else "") for c in history)
         + "\n</tried>\n<recommendations>\n" + "\n".join(
             f"- [{r['status']}] {r['action'][:200]}" + (f" → {r['outcome'][:200]}" if r.get('outcome') else "")
-            for r in recommendations) + "\n</recommendations>")
+            for r in recommendations) + "\n</recommendations>\n<strategy>"
+        + (encoded({k: strategy[k] for k in ('works', 'fails', 'hypothesis', 'evidence')})
+           if strategy else "") + "</strategy>")
 
 
 def plan_task(goal: dict, history: list[dict]) -> str:

@@ -305,6 +305,15 @@ TASK_EXTRA = {
 }
 REFLECT_EXTRA = {
     "lessons": {"type": "string", "description": "полный новый текст «Уроков Ани», Markdown"},
+    "strategies": {"type": "array", "description": "по целям, где в <results> есть основания", "items": {
+        "type": "object", "additionalProperties": False,
+        "required": ["goal_id", "works", "fails", "hypothesis", "evidence"],
+        "properties": {"goal_id": {"type": "integer"},
+                       "works": {"type": "string", "description": "что по фактам приближает цель"},
+                       "fails": {"type": "string", "description": "что не сработало и почему"},
+                       "hypothesis": {"type": "string",
+                                      "description": "что проверить следующим шагом и как понять результат"},
+                       "evidence": {"type": "string", "description": "на какие заходы и данные опираешься"}}}},
     "journal": {"type": "string", "description": "итог дня в твой дневник, 3–8 предложений"},
     "skills": {"type": "array", "items": {
         "type": "object", "additionalProperties": False, "required": ["name", "when", "steps"],
@@ -473,7 +482,8 @@ class Autonomy:
                     "SELECT action, status, outcome FROM recommendations WHERE goal_id=? "
                     "ORDER BY id DESC LIMIT 5", (goal["id"],))]
                 data, outcome = await self.assistant.agent_ask(
-                    goal_loop.step_task(goal, plan, history, recommendations), goal_loop.STEP_EXTRA,
+                    goal_loop.step_task(goal, plan, history, recommendations,
+                                        self.store.goal_strategy(goal["id"])), goal_loop.STEP_EXTRA,
                     focus=f"{goal['title']} {plan['next_step']}", source=f"goal:{goal['id']}",
                     timeout=900)
                 evidence = self.store.run_evidence(outcome.run_id)
@@ -512,7 +522,9 @@ class Autonomy:
         rows = self.store.db.execute(
             "SELECT ts, role, channel, text FROM messages WHERE substr(ts,1,10)=? ORDER BY id",
             (day.isoformat(),)).fetchall()
-        if not rows and not journal_path(day).exists():
+        results = self._results(day)
+        if not rows and not journal_path(day).exists() and not results["goal_cycles"] \
+                and not results["tasks"]:
             return
         talk = "\n".join(f"[{r['ts'][11:16]} {r['channel']}] {'Он' if r['role'] == 'user' else 'Аня'}: "
                          f"{r['text'][:1500]}" for r in rows)[-60_000:]
@@ -525,11 +537,18 @@ class Autonomy:
             "новый текст (до 5000 символов, разделы «Как с ним говорить», «Что ему помогает», "
             "«Чего избегать», «Мои ошибки», «Открытые вопросы»), сохрани старое верное, убери "
             "устаревшее, обобщай, а не пересказывай. journal — итог дня. skills — 0–3 навыка, если "
-            "сегодня нашёлся удачный способ решать повторяющуюся задачу. reply — пусто, если "
+            "сегодня нашёлся удачный способ решать повторяющуюся задачу. В <results> — что "
+            "реально получилось из твоей работы: заходы по целям (статус по журналу вызовов), "
+            "поручения, советы и его оценки. Учись прежде всего на них: в «Мои ошибки» — "
+            "неподтверждённые «сделано», повторяющиеся препятствия, отклонённые советы. "
+            "strategies — по каждой цели, где есть заходы или итоги: что работает, что нет и "
+            "одна проверяемая гипотеза на следующий шаг, с основанием; нет оснований — не "
+            "пиши. Не выводи причинность из одного-двух случаев. reply — пусто, если "
             "писать ему незачем.\n\n<day date=\"" + day.isoformat() + "\">\n<talk>\n" + talk
             + "\n</talk>\n<anya_day>\n" + _read(journal_path(day), 8000) + "\n</anya_day>\n"
             "<corrections>\n" + "\n".join(f"- «{i['claim']}»: {i['verdict']} {i.get('comment', '')}"
-                                          for i in feedback) + "\n</corrections>\n</day>")
+                                          for i in feedback) + "\n</corrections>\n<results>\n"
+            + json.dumps(results, ensure_ascii=False) + "\n</results>\n</day>")
         data, outcome = await self.assistant.agent_ask(task, REFLECT_EXTRA, focus="рефлексия",
                                                        effort="medium", timeout=900,
                                                        source="reflection")
@@ -538,10 +557,31 @@ class Autonomy:
         for skill in data.get("skills") or []:
             if skill.get("name") and skill.get("steps"):
                 save_skill(skill["name"], skill.get("when", ""), skill["steps"])
+        for item in data.get("strategies") or []:
+            try:
+                self.store.set_goal_strategy(int(item["goal_id"]), str(item.get("works", "")),
+                                             str(item.get("fails", "")), str(item.get("hypothesis", "")),
+                                             str(item.get("evidence", "")))
+            except (KeyError, TypeError, ValueError) as e:  # чужая или закрытая цель, нет основания
+                log.warning("Стратегия цели не сохранена: %s", e)
         if data.get("journal"):
             journal(f"[итог дня] {data['journal']}", datetime.combine(day, datetime.now().time()))
         self.store.set_cursor("reflected_on", day.isoformat())
         log.info("Рефлексия за %s: уроки обновлены, навыков %d", day, len(data.get("skills") or []))
+
+    def _results(self, day: date) -> dict:
+        """Что за день реально получилось из работы Ани — основа рефлексии."""
+        cycles = [{k: c[k] for k in ("goal_id", "kind", "status", "action", "result", "blocker",
+                                     "ask_user")}
+                  for c in self.store.goal_cycles(limit=50)
+                  if datetime.fromisoformat(c["created_at"]).astimezone().date() == day]
+        finished = [{"title": i["title"], "status": i["status"], "notes": str(i.get("notes", ""))[:300]}
+                    for i in tasks() if str(i.get("finished_at", ""))[:10] == day.isoformat()]
+        recommendations = [dict(r) for r in self.store.db.execute(
+            "SELECT goal_id, action, status, outcome FROM recommendations WHERE "
+            "substr(updated_at,1,10)=? ORDER BY id", (day.isoformat(),))]
+        return {"goal_cycles": cycles, "tasks": finished, "recommendations": recommendations,
+                "week": self.store.effectiveness(7)}
 
     # --- обзор недели ---
 
@@ -575,7 +615,9 @@ class Autonomy:
             + "\n".join(f"- {t} (срок {d})" for t, d in overdue) + "\n</overdue>\n<his_diary>\n"
             + "\n\n".join(f"### {p}\n{text[:4000]}" for p, text in diary)[:30_000]
             + f"\n</his_diary>\n<anya_journal>\n{anya_days[:20_000]}\n</anya_journal>")
-        task += ('\n\n<measured_week>\n' + json.dumps(self.store.planning_review(today), ensure_ascii=False)
+        task += ('\n\n<measured_week>\n' + json.dumps({**self.store.planning_review(today),
+                                                         'anya_effectiveness': self.store.effectiveness(7)},
+                                                        ensure_ascii=False)
                  + '\n</measured_week>\nСопоставь реальные замеры, этапы откликов и результаты советов '
                  'с personal_plan. Покажи, где данных не хватает. Предложи до трёх изменений '
                  'на следующую неделю с обоснованием и затратами времени; проверь общий бюджет '

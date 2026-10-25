@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from .runtime.storage import RUNTIME_MIGRATION, RuntimeStorage
 from .planning import PLANNING_MIGRATION, PlanningStorage
-from .goal_loop import GOAL_LOOP_MIGRATION, GoalLoopStorage
+from .goal_loop import GOAL_LOOP_MIGRATION, GOAL_STRATEGY_MIGRATION, GoalLoopStorage
 
 AREAS = {
     "profile": "Обо мне",
@@ -170,6 +170,7 @@ MIGRATIONS = [
     """,
     PLANNING_MIGRATION,
     GOAL_LOOP_MIGRATION,
+    GOAL_STRATEGY_MIGRATION,
 ]
 
 
