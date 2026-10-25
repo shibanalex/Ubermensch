@@ -342,6 +342,10 @@ Host-shell работает с правами пользователя. Упра
 | `email_inbox(days, query, limit, account)` | Свежие входящие прямо из Gmail, всех ящиков или одного; IMAP только для чтения, без отметок «прочитано»; доступен и в фоне |
 | `email_read(message_id, account)` | Письмо целиком по id и ящику из `email_inbox` |
 | `email_send(to, subject, body, account)` | Обязательное подтверждение письма; account — ящик отправителя, по умолчанию основной |
+| `experiment_propose(goal_id, subject, sensitive, …)` | Эксперимент по цели: гипотеза, основание, что меняем, замер, критерии успеха и остановки, время, риски, минимум замеров, дата пересмотра. `subject=anya` начинается сразу, `owner` ждёт его согласия; `sensitive` (сон, питание, тренировки, здоровье) — только `owner` |
+| `experiment_decide(experiment_id, accept, consent)` | Его согласие или отказ, только в разговоре: в фоне недоступен |
+| `experiment_observe(experiment_id, value, evidence, observed_on)` | Замер идущего эксперимента; не из будущего |
+| `experiment_stop` / `experiment_conclude(…, verdict, result, next_step)` | Остановка и вывод; keep/adjust/drop — только после минимума замеров, раньше — inconclusive. Эксперимент над ним фон не закрывает |
 
 ### Календарь — `capabilities/calendar.py`
 

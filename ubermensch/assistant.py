@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 from pydantic import ValidationError
 
-from . import actions, agent, config, goal_loop, ingest, world
+from . import actions, agent, config, experiments, goal_loop, ingest, world
 from .collectors import obsidian
 from .brain import MCP_SERVER, Answer, Brain, BrainError
 from .config import Settings
@@ -583,6 +583,8 @@ class Assistant:
         parts.append(self.store.planning_context())
         if proposals := goal_loop.proposals_context(self.store):
             parts.append(proposals)
+        if running := experiments.experiments_context(self.store):
+            parts.append(running)
         parts.append("<goals>\n" + ("\n".join(
             f"#{g['id']} [{AREAS.get(g['area'], g['area'])}] {g['title']}"
             + (f" — срок {g['deadline']}" if g["deadline"] else "")

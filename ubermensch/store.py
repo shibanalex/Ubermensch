@@ -12,6 +12,7 @@ from uuid import uuid4
 from .runtime.storage import RUNTIME_MIGRATION, RuntimeStorage
 from .planning import PLANNING_MIGRATION, PlanningStorage
 from .goal_loop import GOAL_LOOP_MIGRATION, GOAL_STRATEGY_MIGRATION, GoalLoopStorage
+from .experiments import EXPERIMENT_MIGRATION, ExperimentStorage
 
 AREAS = {
     "profile": "Обо мне",
@@ -171,6 +172,7 @@ MIGRATIONS = [
     PLANNING_MIGRATION,
     GOAL_LOOP_MIGRATION,
     GOAL_STRATEGY_MIGRATION,
+    EXPERIMENT_MIGRATION,
 ]
 
 
@@ -178,7 +180,7 @@ def now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage):
+class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage):
     def __init__(self, path: Path):
         self.db = sqlite3.connect(path, isolation_level=None)
         self.db.row_factory = sqlite3.Row

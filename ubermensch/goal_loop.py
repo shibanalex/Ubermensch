@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
+from .experiments import compact
 from .planning import encoded, required, stamp
 
 GOAL_LOOP_MIGRATION = """
@@ -184,7 +185,7 @@ def verify(outcome: str, evidence: list[dict]) -> str:
 
 
 def step_task(goal: dict, plan: dict, history: list[dict], recommendations: list[dict],
-              strategy: dict | None = None) -> str:
+              strategy: dict | None = None, experiments: list[dict] | None = None) -> str:
     return (
         f"[Системная задача: работа над целью #{goal['id']} «{goal['title']}».] Это его "
         "утверждённая цель с измеримым планом. Сделай следующий шаг сама — сейчас, "
@@ -194,7 +195,11 @@ def step_task(goal: dict, plan: dict, history: list[dict], recommendations: list
         "Проверь результат: перечитай созданное, сверь найденное с источником. Если шаг "
         "слишком большой — сделай первую проверяемую часть. Не повторяй то, что в <tried> уже "
         "не сработало, и советы, которые он отклонил (declined), без новых оснований. Если в "
-        "<strategy> есть гипотеза — проверь её этим шагом, когда это возможно. outcome: done — сделано и проверено; blocked — "
+        "<strategy> есть гипотеза — проверь её этим шагом, когда это возможно: если меняется "
+        "только твой способ работы — experiment_propose subject=anya, если его действия или "
+        "привычки — subject=owner (начнётся после его «да»). По идущим из <experiments> запиши "
+        "замер из данных (experiment_observe); наступил review_on и замеров хватает — вывод "
+        "(experiment_conclude для anya, для owner — предложи вывод ему в reply). outcome: done — сделано и проверено; blocked — "
         "не вышло (blocker — почему, next_step — обход); needs_user — нужно его решение "
         "(ask_user). next_step — следующий конкретный шаг. reply — 1–3 предложения ему "
         "по сути, пусто, если писать незачем.\n\n"
@@ -207,7 +212,8 @@ def step_task(goal: dict, plan: dict, history: list[dict], recommendations: list
             f"- [{r['status']}] {r['action'][:200]}" + (f" → {r['outcome'][:200]}" if r.get('outcome') else "")
             for r in recommendations) + "\n</recommendations>\n<strategy>"
         + (encoded({k: strategy[k] for k in ('works', 'fails', 'hypothesis', 'evidence')})
-           if strategy else "") + "</strategy>")
+           if strategy else "") + "</strategy>\n<experiments>\n"
+        + "\n".join(encoded(compact(e)) for e in experiments or []) + "\n</experiments>")
 
 
 def plan_task(goal: dict, history: list[dict]) -> str:

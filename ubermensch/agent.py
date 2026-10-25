@@ -32,7 +32,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from . import config, goal_loop
+from . import config, experiments, goal_loop
 from .brain import BrainError
 from .runtime.http_tools import ToolExecutionUncertain
 from .runtime.router import InterruptedToolRun
@@ -483,7 +483,8 @@ class Autonomy:
                     "ORDER BY id DESC LIMIT 5", (goal["id"],))]
                 data, outcome = await self.assistant.agent_ask(
                     goal_loop.step_task(goal, plan, history, recommendations,
-                                        self.store.goal_strategy(goal["id"])), goal_loop.STEP_EXTRA,
+                                        self.store.goal_strategy(goal["id"]),
+                                        self.store.experiments(goal["id"])), goal_loop.STEP_EXTRA,
                     focus=f"{goal['title']} {plan['next_step']}", source=f"goal:{goal['id']}",
                     timeout=900)
                 evidence = self.store.run_evidence(outcome.run_id)
@@ -580,8 +581,10 @@ class Autonomy:
         recommendations = [dict(r) for r in self.store.db.execute(
             "SELECT goal_id, action, status, outcome FROM recommendations WHERE "
             "substr(updated_at,1,10)=? ORDER BY id", (day.isoformat(),))]
+        changed = [experiments.compact(self.store.experiment(r[0])) for r in self.store.db.execute(
+            "SELECT id FROM experiments WHERE substr(updated_at,1,10)=? ORDER BY id", (day.isoformat(),))]
         return {"goal_cycles": cycles, "tasks": finished, "recommendations": recommendations,
-                "week": self.store.effectiveness(7)}
+                "experiments": changed, "week": self.store.effectiveness(7)}
 
     # --- обзор недели ---
 

@@ -12,6 +12,7 @@ BACKGROUND_TOOLS = {
     'agent_tasks', 'delegate_task', 'save_skill', 'university_search', 'university_read', 'lk_find', 'system_status',
     'planning_overview', 'career_search', 'career_get', 'career_save', 'career_assess',
     'career_draft', 'career_draft_read', 'recommendation_save',
+    'experiment_propose', 'experiment_observe', 'experiment_stop', 'experiment_conclude',
 }
 
 
