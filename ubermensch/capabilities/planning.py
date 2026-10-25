@@ -164,3 +164,31 @@ async def recommendation_feedback(recommendation_id: int, status: Literal['accep
     outcome — что получилось или что помешало. Не объявляй собственный совет успешным без данных."""
     checked(store().recommendation_feedback, recommendation_id, status, outcome)
     return {'id': recommendation_id, 'status': status}
+
+
+@registry.tool()
+async def hh_status() -> dict:
+    """Отклики на hh через его бота: настоящие отклики или только письма (HHBOT_LIVE), лимит
+    за день, когда была последняя сессия и конверсия по шаблонам писем (отправлено /
+    просмотрено / приглашения / отказы). Малые числа — не доказательство."""
+    from .. import career_bot
+
+    blocked = career_bot.available()
+    return {"available": blocked is None, "problem": blocked, "live": career_bot.live(),
+            "daily_limit": career_bot.daily_limit(), "last_session_day": store().cursor("hh_day"),
+            "templates": career_bot.template_stats() if blocked is None else [],
+            "note": "Настоящие отклики включает он сам: HHBOT_LIVE=1 в .env."}
+
+
+@registry.tool()
+async def hh_session_now() -> dict:
+    """Провести сессию hh сейчас по его просьбе: статусы, отклики или письма без отправки
+    (как настроено), перенос в воронку. Откроется окно браузера — предупреди его."""
+    from .. import career_bot
+
+    if blocked := career_bot.available():
+        raise ToolArgumentsError(blocked)
+    autonomy = current.get().core.autonomy
+    if autonomy is None:
+        raise ToolArgumentsError("Самостоятельная работа не запущена")
+    return await autonomy.hh_session()

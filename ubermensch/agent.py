@@ -13,6 +13,9 @@
   Каждый заход видит журнал уже выполненных вызовов поручения (не повторяет их); прерванное
   перезапуском без вызовов с неизвестным итогом Аня продолжает сама (до RESUME_LIMIT раз).
 - Расписание — регулярные поручения: каждый день / по дню недели / каждые N часов.
+- hh — раз в день (HH_HOURS, когда он HH_IDLE не трогает ПК: бот открывает окно браузера):
+  обновить статусы, отклики или подготовка писем (career_bot), перенос в воронку, итог
+  и новые приглашения — ему.
 - Рефлексия — раз в сутки вечером: что было за день, что он поправлял, на что отвечал и
   что пропускал → обновлённые «Уроки Ани» (как ему помогать) и запись в её дневнике.
 - Навыки — удачные способы решения задач, которые Аня записывает себе сама.
@@ -34,7 +37,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from . import config, experiments, goal_loop
+from . import career_bot, config, experiments, goal_loop
 from .brain import BrainError
 from .runtime.http_tools import ToolExecutionUncertain
 from .runtime.router import InterruptedToolRun
@@ -54,6 +57,8 @@ REVIEW_WEEKDAY, REVIEW_FROM = 6, 19  # обзор недели — в воскр
 TASK_SESSIONS = 3  # поручение: столько заходов, потом — «не вышло»
 REST_AFTER_TASK = 15 * 60
 RESUME_LIMIT = 2  # столько раз Аня сама продолжает поручение, прерванное перезапуском
+HH_HOURS = range(11, 20)
+HH_IDLE = 10 * 60  # бот открывает окно браузера — только когда он отошёл
 GOAL_HOURS = range(10, 23)  # работа над целями — днём
 GOAL_EVERY = timedelta(hours=2)
 GOAL_MESSAGES = 3  # своих сообщений о целях в день (отдельно от heartbeat)
@@ -359,7 +364,7 @@ class Autonomy:
             store, assistant, investigation, core
         self._last_fingerprint = ""
         self._last_heartbeat = datetime.min
-        self.state = {"heartbeat": None, "task": None, "goal": None}
+        self.state = {"heartbeat": None, "task": None, "goal": None, "hh": None}
 
     # --- heartbeat ---
 
@@ -607,6 +612,40 @@ class Autonomy:
         self.store.set_cursor("reflected_on", day.isoformat())
         log.info("Рефлексия за %s: уроки обновлены, навыков %d", day, len(data.get("skills") or []))
 
+    def _hh_due(self, now: datetime) -> bool:
+        from .system import windows
+
+        return now.hour in HH_HOURS and self.store.cursor("hh_day") != now.date().isoformat() \
+            and career_bot.available() is None and windows.idle_seconds() >= HH_IDLE
+
+    async def hh_session(self, now: datetime | None = None) -> dict:
+        """Отклики за день: статусы → отклики (или письма без отправки) → воронка → ему итог."""
+        now = now or datetime.now()
+        self.store.set_cursor("hh_day", now.date().isoformat())  # одна попытка в день, даже при сбое
+        live = career_bot.live()
+        self.state["hh"] = "live" if live else "dry"
+        try:
+            await career_bot.command("responses", timeout=1800)
+            before = career_bot.sync(self.store)
+            code, output = await career_bot.command(
+                "run", "--live" if live else "--dry-run", "--limit", str(career_bot.daily_limit()))
+            after = career_bot.sync(self.store)
+        finally:
+            self.state["hh"] = None
+        invited = before["invitations"] + after["invitations"]
+        summary = re.search(r"Итог: .*", output)
+        text = (f"{'Откликнулась на hh' if live else 'Подготовила письма на hh (без отправки)'}: "
+                f"{summary.group(0) if summary else 'итога в выводе нет, код ' + str(code)}")
+        if invited:
+            text += "\n🎉 Приглашения: " + "; ".join(f"{i['vacancy']} — {i['company']} {i['url']}"
+                                                   for i in invited)
+        if code != 0:
+            text += "\n⚠️ Бот завершился с ошибкой — подробности в его data/hhbot.log"
+        self.core.notify("💼 " + text)
+        journal(f"[hh · {'live' if live else 'dry'}] {text[:300]}")
+        log.info("hh: %s", text.splitlines()[0])
+        return {"live": live, "code": code, "invitations": invited, "added": after["added"]}
+
     def resume_interrupted(self) -> list[str]:
         """Прерванные перезапуском поручения: без вызовов с неизвестным итогом — обратно в очередь
         (не чаще RESUME_LIMIT раз); иначе — один раз сказать ему, что нужно сверить."""
@@ -731,6 +770,8 @@ class Autonomy:
                 elif pending := [t for t in tasks("pending")]:
                     await self.run_task(pending[0])
                     await asyncio.sleep(REST_AFTER_TASK if not 1 <= now.hour < 8 else 120)
+                elif self._hh_due(now):
+                    await self.hh_session(now)
                 elif now.hour in GOAL_HOURS and now - last_goal_try >= GOAL_EVERY \
                         and self.store.due_goal(now) is not None:
                     last_goal_try = now  # до вызова: при сбое модели не перебирать цели подряд
