@@ -124,11 +124,14 @@ def _seven_zip(args, password: str, *, cwd=None):
     result = subprocess.run([executable, *args], input=(password + '\n' + password + '\n').encode(),
                             capture_output=True, cwd=cwd, timeout=600)
     if result.returncode:
-        raise RuntimeError(f'7-Zip вернул код {result.returncode}')
+        # хвост вывода 7-Zip: «No space left», «Wrong password»… — без него причину не найти
+        tail = (result.stderr or result.stdout).decode('utf-8', 'replace').strip().splitlines()[-3:]
+        raise RuntimeError(f'7-Zip вернул код {result.returncode}: ' + ' | '.join(tail)[:300])
 
 
 def unpack_verified(archive: Path, destination: Path, password: str) -> dict:
-    with tempfile.TemporaryDirectory() as work:
+    # рабочая папка — рядом с назначением: /tmp у нас в оперативной памяти, а снимок — гигабайты
+    with tempfile.TemporaryDirectory(dir=destination.parent, prefix='.unpack-') as work:
         temporary = Path(work)
         _seven_zip(['x', '-y', str(archive.resolve()), 'snapshot.tar', '-o' + work], password)
         payload = temporary / 'snapshot.tar'
@@ -151,7 +154,8 @@ def create_archive(db_path: Path, archive: Path, password: str) -> dict:
     if partial.exists():
         raise FileExistsError(partial)
     try:
-        with tempfile.TemporaryDirectory() as work:
+        # не в /tmp: он в оперативной памяти, а снимок, tar и проверка вместе — больше 7 ГБ
+        with tempfile.TemporaryDirectory(dir=archive.parent, prefix='.staging-') as work:
             temporary = Path(work)
             snapshot = temporary / 'snapshot'
             stage_snapshot(db_path, snapshot)
@@ -192,7 +196,7 @@ def main():
             parser.error('restore требует --to NEW_DIRECTORY')
         manifest = restore_archive(args.archive, args.to, password)
     else:
-        with tempfile.TemporaryDirectory() as work:
+        with tempfile.TemporaryDirectory(dir=args.archive.resolve().parent, prefix='.verify-') as work:
             manifest = unpack_verified(args.archive, Path(work) / 'snapshot', password)
     print(f"Проверено файлов: {len(manifest['files'])}. SQLite: OK.")
 

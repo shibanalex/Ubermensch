@@ -24,11 +24,13 @@ from .backups import create_archive
 log = logging.getLogger(__name__)
 
 SEVEN_ZIP = shutil.which("7z") or shutil.which("7za")
-LOCAL_DIR = config.DATA_DIR / "backups"
+# BACKUP_DIR — куда класть локальные архивы (по умолчанию папка данных; архив — гигабайты)
+LOCAL_DIR = Path(os.getenv("BACKUP_DIR", "") or config.DATA_DIR / "backups").expanduser()
 MARKER = "AnyaBackup"  # папка в корне внешнего носителя: сюда копировать архивы
 MARKERS = (MARKER, "OswaldBackup")  # старое имя тоже понимаем
 KEEP_LOCAL, KEEP_EXTERNAL = 7, 14
 CHECK_EVERY = 10 * 60
+RETRY_AFTER_FAILURE = timedelta(hours=6)  # сбой бэкапа не повторять каждые 10 минут
 NIGHT = range(2, 6)  # бэкап ночью, когда компьютер свободен…
 OVERDUE = timedelta(hours=36)  # …но если ночью был выключен — днём
 EXTERNAL_STALE = timedelta(days=7)
@@ -71,6 +73,7 @@ class Maintenance:
     def __init__(self, db_path: Path, health: Health):
         self.db_path = db_path
         self.health = health
+        self._failed_at: datetime | None = None
 
     async def run(self) -> None:
         while True:
@@ -89,6 +92,8 @@ class Maintenance:
             self.health.clear("disk", "Место на диске снова есть.")
 
     def _backup_due(self) -> bool:
+        if self._failed_at and datetime.now() - self._failed_at < RETRY_AFTER_FAILURE:
+            return False
         archives = _archives(LOCAL_DIR)
         if not archives:
             return True
@@ -110,10 +115,12 @@ class Maintenance:
         try:
             manifest = create_archive(self.db_path, archive, password)
         except Exception as error:
+            self._failed_at = datetime.now()
             self.health.report("backup", "Резервная копия не прошла создание или восстановление: "
-                               + type(error).__name__)
-            log.warning("Backup failed: %s", type(error).__name__)
+                               f"{type(error).__name__}: {str(error)[:200]}. Повторю через 6 часов.")
+            log.warning("Backup failed: %s: %s", type(error).__name__, error)
             return None
+        self._failed_at = None
         log.info("Восстановление проверено: %d файлов", len(manifest['files']))
         for old in _archives(LOCAL_DIR)[:-KEEP_LOCAL]:
             old.unlink(missing_ok=True)
