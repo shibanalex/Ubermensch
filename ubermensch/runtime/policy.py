@@ -6,7 +6,7 @@ from .. import config
 from .context import current
 
 BACKGROUND_TOOLS = {
-    'read_file', 'read_document', 'read_excel', 'find_files', 'write_file', 'append_file', 'write_word',
+    'memory_search', 'read_file', 'read_document', 'read_excel', 'find_files', 'write_file', 'append_file', 'write_word',
     'edit_file', 'file_versions', 'restore_file_version', 'project_run',
     'write_excel', 'calendar_upcoming', 'telegram_find_chats', 'telegram_read',
     'email_inbox', 'email_read',

@@ -384,6 +384,7 @@ Host-shell работает с правами пользователя. Упра
 | `experiment_decide(experiment_id, accept, consent)` | Его согласие или отказ, только в разговоре: в фоне недоступен |
 | `experiment_observe(experiment_id, value, evidence, observed_on)` | Замер идущего эксперимента; не из будущего |
 | `experiment_stop` / `experiment_conclude(…, verdict, result, next_step)` | Остановка и вывод; keep/adjust/drop — только после минимума замеров, раньше — inconclusive. Эксперимент над ним фон не закрывает |
+| `memory_search(query, where, area, limit)` | Поиск по всей памяти: факты (FTS по основам слов, не только ~150 из контекста), люди и разговоры с ним; кириллица без учёта регистра. Доступен фону и помощнику `scanner` |
 | `option_upsert(goal_id, title, description, availability, fit, payoff, effort, risk, reversible, evidence)` | Путь к цели в карте вариантов: доступность, соответствие, отдача и усилие `high/medium/low`, риски, обратимость, основание. То же название — уточнение оценки, статус не меняется |
 | `option_status(option_id, status, outcome, evidence)` | Итог пути: `trying/worked/failed/rejected/untried` с основанием. Его отказ (`rejected`) в фоне не отменяется |
 

@@ -41,7 +41,7 @@ TASKS = {
     "agent": (STRONG, None),  # прочая самостоятельная работа
 }
 
-SCANNER_TOOLS = ("read_file", "read_document", "find_files", "read_excel", "email_inbox",
+SCANNER_TOOLS = ("memory_search", "read_file", "read_document", "find_files", "read_excel", "email_inbox",
                  "email_read", "telegram_find_chats", "telegram_read", "calendar_upcoming",
                  "lk_find", "university_search", "university_read", "career_get",
                  "planning_overview")
