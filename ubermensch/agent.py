@@ -10,6 +10,8 @@
   что-то своими инструментами (те же подтверждения, что в чате).
 - Поручения — «разберись и доложи»: фоновая работа в несколько шагов с инструментами и
   поиском; не уложилась — продолжает в следующий заход; отчёт — в «Reports/Поручения».
+  Каждый заход видит журнал уже выполненных вызовов поручения (не повторяет их); прерванное
+  перезапуском без вызовов с неизвестным итогом Аня продолжает сама (до RESUME_LIMIT раз).
 - Расписание — регулярные поручения: каждый день / по дню недели / каждые N часов.
 - Рефлексия — раз в сутки вечером: что было за день, что он поправлял, на что отвечал и
   что пропускал → обновлённые «Уроки Ани» (как ему помогать) и запись в её дневнике.
@@ -51,6 +53,7 @@ REFLECT_FROM = 23  # рефлексия — после этого часа (ил
 REVIEW_WEEKDAY, REVIEW_FROM = 6, 19  # обзор недели — в воскресенье с 19:00
 TASK_SESSIONS = 3  # поручение: столько заходов, потом — «не вышло»
 REST_AFTER_TASK = 15 * 60
+RESUME_LIMIT = 2  # столько раз Аня сама продолжает поручение, прерванное перезапуском
 GOAL_HOURS = range(10, 23)  # работа над целями — днём
 GOAL_EVERY = timedelta(hours=2)
 GOAL_MESSAGES = 3  # своих сообщений о целях в день (отдельно от heartbeat)
@@ -157,6 +160,34 @@ def _update_task(task_id: str, **changes) -> None:
             if item["id"] == task_id:
                 item.update(changes)
         _write_json("tasks.json", items)
+
+
+def task_calls(store, task_id: str) -> list[dict]:
+    """Все вызовы инструментов поручения за все его заходы (задания с source task:<id>)."""
+    return [dict(r) for r in store.db.execute(
+        "SELECT c.name, c.status, c.arguments FROM tool_calls c JOIN runs r ON r.id=c.run_id "
+        "WHERE json_extract(r.payload, '$.source')=? ORDER BY c.rowid", (f"task:{task_id}",))]
+
+
+def checkpoint(calls: list[dict]) -> str:
+    """Подтверждённые журналом действия — для следующего захода, чтобы не повторять."""
+    done = [c for c in calls if c["status"] == "completed"]
+    if not done:
+        return ""
+    lines = []
+    for call in done[-30:]:
+        arguments = json.loads(call["arguments"] or "{}")
+        brief = ", ".join(f"{k}={str(v)[:60]}" for k, v in list(arguments.items())[:4])
+        lines.append(f"- {call['name']}({brief})")
+    return "Уже сделано и подтверждено журналом вызовов — не повторяй:\n" + "\n".join(lines)
+
+
+def resume_task(task_id: str) -> bool:
+    """Продолжить прерванное поручение по его слову (после сверки)."""
+    found = any(t["id"] == task_id and t["status"] == "interrupted" for t in tasks())
+    if found:
+        _update_task(task_id, status="pending", interrupted_by=None, notified_check=False)
+    return found
 
 
 def cancel_task(task_id: str) -> bool:
@@ -410,10 +441,12 @@ class Autonomy:
     async def run_task(self, item: dict) -> str:
         self.state["task"] = item["title"]
         _update_task(item["id"], status="running", sessions=item["sessions"] + 1)
+        done = checkpoint(task_calls(self.store, item["id"]))
         task = (
             f"[Системная задача: поручение «{item['title']}».] {item['instructions']}\n\n"
             + (f"Срок: {item['due']}.\n" if item.get("due") else "")
             + (f"Прошлые заходы: {item['notes']}\n" if item.get("notes") else "")
+            + (f"{done}\n" if done else "")
             + f"Это заход {item['sessions'] + 1} из {TASK_SESSIONS}. Работай сама, в несколько шагов: "
             "ищи в сети, читай его файлы и заметки, пользуйся инструментами. Готово — status done, "
             "report — полный отчёт Markdown с источниками, reply — 2–4 предложения ему в Telegram. "
@@ -422,11 +455,15 @@ class Autonomy:
         try:
             data, outcome = await self.assistant.agent_ask(task, TASK_EXTRA, focus=item["instructions"],
                                                            source=f"task:{item['id']}")
-        except (ToolExecutionUncertain, InterruptedToolRun, JobCancelled) as e:
-            _update_task(item['id'], status='interrupted', notes=str(e))
+        except (ToolExecutionUncertain, InterruptedToolRun) as e:
+            _update_task(item['id'], status='interrupted', interrupted_by='uncertain', notes=str(e))
             raise
-        except asyncio.CancelledError:
-            _update_task(item['id'], status='interrupted', notes='Остановлено; проверь выполненные действия.')
+        except JobCancelled as e:  # остановил он сам — само не продолжается
+            _update_task(item['id'], status='interrupted', interrupted_by='user', notes=str(e))
+            raise
+        except asyncio.CancelledError:  # ядро выключается — продолжит после запуска
+            _update_task(item['id'], status='interrupted', interrupted_by='restart',
+                         notes=(item.get('notes', '') + '\nОстановлено выключением ядра.').strip())
             raise
         except BrainError as e:
             _update_task(item["id"], status="pending" if item["sessions"] + 1 < TASK_SESSIONS
@@ -570,6 +607,29 @@ class Autonomy:
         self.store.set_cursor("reflected_on", day.isoformat())
         log.info("Рефлексия за %s: уроки обновлены, навыков %d", day, len(data.get("skills") or []))
 
+    def resume_interrupted(self) -> list[str]:
+        """Прерванные перезапуском поручения: без вызовов с неизвестным итогом — обратно в очередь
+        (не чаще RESUME_LIMIT раз); иначе — один раз сказать ему, что нужно сверить."""
+        resumed = []
+        for item in tasks("interrupted"):
+            if item.get("interrupted_by") != "restart":
+                continue
+            unsure = [c["name"] for c in task_calls(self.store, item["id"])
+                      if c["status"] in ("running", "uncertain")]
+            if unsure or item.get("resumes", 0) >= RESUME_LIMIT:
+                _update_task(item["id"], interrupted_by="uncertain" if unsure else "limit",
+                             notified_check=True)
+                self.core.notify(f"⚠️ Поручение «{item['title']}» прервалось " + (
+                    f"на действии с неизвестным итогом ({', '.join(dict.fromkeys(unsure))}). "
+                    "Проверь, что успело выполниться, и скажи продолжить." if unsure else
+                    "уже несколько раз подряд. Скажи, продолжать ли."))
+                continue
+            _update_task(item["id"], status="pending", interrupted_by=None,
+                         resumes=item.get("resumes", 0) + 1, sessions=max(0, item["sessions"] - 1))
+            resumed.append(item["id"])
+            log.info("Поручение «%s» продолжу после перезапуска", item["title"])
+        return resumed
+
     def _results(self, day: date) -> dict:
         """Что за день реально получилось из работы Ани — основа рефлексии."""
         cycles = [{k: c[k] for k in ("goal_id", "kind", "status", "action", "result", "blocker",
@@ -658,6 +718,7 @@ class Autonomy:
         while True:
             now = datetime.now()
             try:
+                self.resume_interrupted()
                 for schedule in due_schedules(now):
                     add_task(schedule["title"], schedule["instructions"], source="schedule",
                              schedule_id=schedule["id"])
@@ -697,7 +758,9 @@ def _read_feedback() -> list[dict]:
 
 
 def recover() -> None:
-    """Do not replay a whole task after a crash: some tools may have taken effect."""
+    """Поручение, шедшее при падении, — interrupted/restart. Продолжит его resume_interrupted,
+    только если в журнале нет вызовов с неизвестным итогом (их execution.recover помечает
+    uncertain); иначе — спросит его. Сам заход целиком не переигрывается."""
     for item in tasks("running"):
-        _update_task(item["id"], status="interrupted", notes=item.get('notes', '') +
-                     '\nПрервано перезапуском. Проверь результат и дай новое поручение для оставшейся работы.')
+        _update_task(item["id"], status="interrupted", interrupted_by="restart",
+                     notes=(item.get('notes', '') + '\nПрервано перезапуском.').strip())

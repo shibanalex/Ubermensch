@@ -43,6 +43,13 @@ async def agent_tasks() -> str:
 
 
 @registry.tool()
+async def resume_agent_task(task_id: str) -> str:
+    """Продолжить прерванное поручение — только когда он сказал продолжать (после того как
+    проверил, что успело выполниться). Уже сделанное следующий заход не повторит."""
+    return "Продолжу." if agent.resume_task(task_id) else "Нет прерванного поручения с таким id."
+
+
+@registry.tool()
 async def cancel_agent_task(task_id: str) -> str:
     """Отменить поручение или регулярное расписание по id (из agent_tasks)."""
     if agent.cancel_task(task_id) or agent.cancel_schedule(task_id):
