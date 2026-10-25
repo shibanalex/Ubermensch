@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 from pydantic import ValidationError
 
-from . import actions, agent, config, experiments, goal_loop, ingest, world
+from . import actions, agent, config, experiments, goal_loop, ingest, recall, world
 from .collectors import obsidian
 from .brain import MCP_SERVER, Answer, Brain, BrainError
 from .config import Settings
@@ -585,6 +585,12 @@ class Assistant:
             parts.append(proposals)
         if running := experiments.experiments_context(self.store):
             parts.append(running)
+        if query and (tried := recall.related_experience(self.store, query)):
+            parts.append("<related_experience>\nЧто уже пробовали по этой теме: шаги по целям, "
+                         "советы и эксперименты с итогом. Не предлагай повторить неудачное без "
+                         "нового основания; опирайся на сработавшее.\n"
+                         + "\n".join(json.dumps(item, ensure_ascii=False) for item in tried)
+                         + "\n</related_experience>")
         parts.append("<goals>\n" + ("\n".join(
             f"#{g['id']} [{AREAS.get(g['area'], g['area'])}] {g['title']}"
             + (f" — срок {g['deadline']}" if g["deadline"] else "")

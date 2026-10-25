@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
+from . import recall
 from .runtime.storage import RUNTIME_MIGRATION, RuntimeStorage
 from .planning import PLANNING_MIGRATION, PlanningStorage
 from .goal_loop import GOAL_LOOP_MIGRATION, GOAL_STRATEGY_MIGRATION, GoalLoopStorage
@@ -242,14 +242,9 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage)
         ).fetchall()
 
     def relevant_facts(self, query: str, limit: int) -> list[sqlite3.Row]:
-        """Lexical matches first; fill remaining slots with important context."""
-        stop = {'что', 'как', 'это', 'мне', 'меня', 'тебя', 'про', 'для', 'или', 'при',
-                'the', 'and', 'you', 'with', 'расскажи', 'пожалуйста'}
-        words = list(dict.fromkeys(w for w in re.findall(r'\w+', query.casefold())
-                                  if len(w) > 2 and w not in stop))[:24]
+        """Совпадения по основам слов (recall.fts_query) первыми; остальное — важные факты."""
         matched = []
-        if words and limit > 0:
-            expression = ' OR '.join('"' + w + '"*' for w in words)
+        if (expression := recall.fts_query(query)) and limit > 0:
             matched = self.db.execute(
                 'SELECT f.* FROM facts_fts JOIN facts f ON f.id=facts_fts.rowid '
                 'WHERE facts_fts MATCH ? AND f.active=1 '
