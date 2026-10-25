@@ -158,6 +158,12 @@ def read(url: str) -> dict:
     """Одна страница или документ кабинета (для инструмента Ани)."""
     if urllib.parse.urlparse(url).hostname != HOST:
         raise ValueError("Это не личный кабинет")
+    from .lk_api import PAGE_PREFIX
+    if url.startswith(PAGE_PREFIX):  # запись из API кабинета — из последнего снимка
+        page = load_snapshot().get(url)
+        if page is None:
+            raise ValueError("Такой записи в последнем снимке кабинета нет — найди её через lk_find")
+        return {"url": url, "title": page["title"], "text": page["text"], "links": []}
     page = _get(url, _session_opener())
     return {"url": page["url"], "title": page["title"], "text": page["text"][:site.MAX_TEXT],
             "links": [{"url": u, "text": t} for u, t in page["links"]
@@ -186,8 +192,20 @@ def _start(opener) -> str:
 
 
 def crawl() -> dict[str, dict]:
-    """Обход кабинета: {адрес: {"title", "text", "hash"}}. Только ссылки внутри кабинета,
-    без выхода, удаления, отправки форм и картинок."""
+    """Кабинет: {адрес: {"title", "text", "hash"}}. С октября 2026 кабинет — React-приложение
+    с JSON API (lk_api.py): уведомления, заявления, диалоги, договоры. Старый HTML-обход
+    (crawl_html) остался на случай, если вуз вернёт прежний сайт."""
+    from . import lk_api
+
+    try:
+        return lk_api.pages()
+    except lk_api.LkApiError as error:
+        raise LkUnavailable(str(error)) from None
+
+
+def crawl_html() -> dict[str, dict]:
+    """Обход старого HTML-кабинета: только ссылки внутри кабинета, без выхода, удаления,
+    отправки форм и картинок."""
     opener = _session_opener()
     start = _start(opener)
     pages: dict[str, dict] = {}

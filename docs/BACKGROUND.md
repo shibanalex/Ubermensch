@@ -93,7 +93,7 @@ flowchart LR
 | `document` (xlsx) | Таблицы Excel читаются как текст по листам (`office.excel_text`) | До 2000 строк на лист |
 | `activity` / `collectors/activity.py` | Сессии активного окна | Только с момента работы трекера |
 | `youtube`, `google_search`, `google_activity` / `collectors/takeout.py` | Экспорты активности Google | Архивы и распакованные выгрузки; отдельный учёт imports |
-| `lk` / `university/lk.py` | Снимки страниц личного кабинета | Сохранённая браузерная сессия, периодический снимок |
+| `lk` / `university/lk_api.py` | Уведомления, заявления со статусами, диалоги, договоры, профиль из ЛК | JSON API кабинета по логину и паролю, периодический снимок |
 
 `SOURCES` содержит 12 ключей. Дополнительно очередь создаёт jobs `stats` и `person`.
 Наблюдатель сохраняет события `screen`, но screen сейчас не входит в `SOURCES`
@@ -393,7 +393,16 @@ ext-idle-notify, шаг 5 секунд) — см. `system/session.py`. Прос�
 - **Календарь:** OAuth client и token в secrets, обновление токена по необходимости,
   primary calendar. Удаление чужого события требует подтверждения; ownership
   определяется текстовым маркером в description.
-- **Вуз:** публичный сайт `mospolytech.ru`; старый кабинет `e.mospolytech.ru`. Вход —
+- **Вуз, кабинет с октября 2026:** `e.mospolytech.ru` стал React-приложением; его данные —
+  JSON API `old-e.mospolytech.ru/lk_api.php` ([`lk_api.py`](../ubermensch/university/lk_api.py)):
+  вход POST `ulogin/upassword` → токен (secrets/lk_token, 600), чтение `getUser`,
+  `getNotifications`, `getAppRequests` (заявления: статус, дата изменения, ответственное
+  подразделение, ответные файлы), `getMsgDialogues`, `getPayments`. Другие запросы кода
+  не вызываются (подписи, сообщения, очистка, смена пароля). Каждая запись — «страница»
+  снимка `PAGE_PREFIX/<раздел>/<id>`: смена статуса заявления — изменение страницы и событие
+  `lk`; `lk_read` читает такие записи из снимка. Первое чтение через API (в снимке нет
+  API-адресов) — как первый раз: запомнить без сводки. Старый HTML-обход — `crawl_html`.
+- **Вуз, прежний HTML-кабинет:** публичный сайт `mospolytech.ru`; старый кабинет `e.mospolytech.ru`. Вход —
   Playwright/Chrome по LK_LOGIN/LK_PASSWORD в видимую форму (на странице есть и скрытая
   форма «ФИО и 4 цифры»), дальше HTTP с cookies. Кабинет сейчас живёт в корне с разделами
   `/?p=marks` и т. п.; раньше и, вероятно, после починки нового — в `/old/`: обход стартует

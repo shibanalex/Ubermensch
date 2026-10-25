@@ -600,6 +600,9 @@ class Investigation:
     async def _university_lk(self) -> int:
         old = lk.load_snapshot()
         new = await asyncio.to_thread(lk.crawl)
+        from .university.lk_api import PAGE_PREFIX
+        if not any(url.startswith(PAGE_PREFIX) for url in old):
+            old = {}  # первое чтение через API кабинета — как первый раз: всё «новое» — не новость
         diff = lk.changes(old, new)
         now = datetime.now().isoformat(timespec="seconds")
         added = self.store.add_events([{
@@ -614,8 +617,9 @@ class Investigation:
             if message:
                 self.notify(f"🎓 {message}")
         elif not old:
-            self.notify(f"🎓 Прочитала твой личный кабинет вуза: {len(new)} страниц. Дальше буду "
-                        "смотреть его раз в день и писать, если что-то важное изменится.")
+            self.notify(f"🎓 Прочитала твой личный кабинет вуза: {len(new)} записей (уведомления, "
+                        "заявления со статусами, диалоги, договоры). Дальше буду смотреть его раз "
+                        "в день и писать, если что-то важное изменится.")
         lk.save_snapshot(new)
         log.info("Личный кабинет: страниц %d, новых и изменившихся %d", len(new), len(diff))
         return added
