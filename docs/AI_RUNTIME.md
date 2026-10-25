@@ -348,6 +348,7 @@ Host-shell работает с правами пользователя. Упра
 | `email_inbox(days, query, limit, account)` | Свежие входящие прямо из Gmail, всех ящиков или одного; IMAP только для чтения, без отметок «прочитано»; доступен и в фоне |
 | `email_read(message_id, account)` | Письмо целиком по id и ящику из `email_inbox` |
 | `email_send(to, subject, body, account)` | Обязательное подтверждение письма; account — ящик отправителя, по умолчанию основной |
+| `career_search(query, source, limit, page, area, visa_only)` | Вакансии: `hh`, `remotive` (зарубежная удалёнка), `arbeitnow` (Германия и ЕС, снимок 5 страниц ≈ 1500 вакансий раз в 6 ч). `visa_or_relocation` — «найдено в тексте» / «не сказано» по формулировкам (visa sponsorship, relocation package, Blue Card, Visumsunterstützung); `visa_only` оставляет первые |
 | `experiment_propose(goal_id, subject, sensitive, …)` | Эксперимент по цели: гипотеза, основание, что меняем, замер, критерии успеха и остановки, время, риски, минимум замеров, дата пересмотра. `subject=anya` начинается сразу, `owner` ждёт его согласия; `sensitive` (сон, питание, тренировки, здоровье) — только `owner` |
 | `experiment_decide(experiment_id, accept, consent)` | Его согласие или отказ, только в разговоре: в фоне недоступен |
 | `experiment_observe(experiment_id, value, evidence, observed_on)` | Замер идущего эксперимента; не из будущего |
