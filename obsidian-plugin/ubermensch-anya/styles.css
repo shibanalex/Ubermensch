@@ -34,3 +34,8 @@
 .anya-input { width: 100%; resize: vertical; }
 .anya-thinking { font-style: italic; }
 .anya-embed .anya-box { background: var(--background-primary-alt); }
+.anya-options { margin-top: 4px; }
+.anya-options summary { cursor: pointer; color: var(--text-muted); font-size: 0.9em; }
+.anya-option { padding: 2px 0 2px 8px; font-size: 0.9em; }
+.anya-option-rejected, .anya-option-failed { opacity: 0.6; }
+.anya-option-worked { color: var(--text-success); }

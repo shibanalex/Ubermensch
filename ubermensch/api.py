@@ -75,6 +75,17 @@ def create_app(core: Core, token: str) -> web.Application:
         core.bus.publish({'type': 'changed'})
         return web.json_response({'status': item['status']})
 
+    async def post_option_status(request: web.Request) -> web.Response:
+        """Его решение о пути к цели (кнопка в Obsidian): «не моё», «сработало» и т. п."""
+        data = contracts.OptionDecision.model_validate(await body(request))
+        try:
+            core.store.set_option_status(int(request.match_info['id']), data.status, data.outcome,
+                                         'решение владельца в Obsidian', owner=True)
+        except ValueError as error:
+            return web.json_response({'error': str(error)}, status=400)
+        core.bus.publish({'type': 'changed'})
+        return web.json_response({'ok': True})
+
     async def post_goal_plan(request: web.Request) -> web.Response:
         """Утвердить план цели (предложение Ани с его правками)."""
         data = contracts.GoalPlanApproval.model_validate(await body(request))
@@ -363,6 +374,7 @@ def create_app(core: Core, token: str) -> web.Application:
         web.get('/api/dashboard', get_dashboard),
         web.post(r'/api/experiments/{id:\d+}/decide', post_experiment_decision),
         web.post(r'/api/goals/{id:\d+}/plan', post_goal_plan),
+        web.post(r'/api/options/{id:\d+}/status', post_option_status),
         web.get("/api/profile", get_profile),
         web.get("/api/agent", get_agent),
         web.post("/api/agent/heartbeat", post_heartbeat),

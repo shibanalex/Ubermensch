@@ -34,6 +34,7 @@ Ctrl+P → «Reload app without saving».
 | GET | `/api/dashboard` | Снимок панели ([`dashboard.py`](../ubermensch/dashboard.py)), без вызова модели |
 | POST | `/api/goals/{id}/plan` | `{metric, unit, baseline, target, weekly_minutes, next_step, evidence}` — утвердить план |
 | POST | `/api/experiments/{id}/decide` | `{accept, consent}` — его согласие или отказ |
+| POST | `/api/options/{id}/status` | `{status, outcome}` — его решение о пути к цели (кнопка «Не моё») |
 | POST | `/api/runs/chat` | `channel: "obsidian"`, необязательный `note` — текст открытой заметки |
 
 Проверки: `tests/test_dashboard.py` (снимок панели, `node --check` плагина). Живая

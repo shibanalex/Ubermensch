@@ -13,6 +13,7 @@ from .runtime.storage import RUNTIME_MIGRATION, RuntimeStorage
 from .planning import PLANNING_MIGRATION, PlanningStorage
 from .goal_loop import GOAL_LOOP_MIGRATION, GOAL_STRATEGY_MIGRATION, GoalLoopStorage
 from .experiments import EXPERIMENT_MIGRATION, ExperimentStorage
+from .options import OPTIONS_MIGRATION, OptionStorage
 
 AREAS = {
     "profile": "Обо мне",
@@ -173,6 +174,7 @@ MIGRATIONS = [
     GOAL_LOOP_MIGRATION,
     GOAL_STRATEGY_MIGRATION,
     EXPERIMENT_MIGRATION,
+    OPTIONS_MIGRATION,
 ]
 
 
@@ -180,7 +182,7 @@ def now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage):
+class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage, OptionStorage):
     def __init__(self, path: Path):
         self.db = sqlite3.connect(path, isolation_level=None)
         self.db.row_factory = sqlite3.Row

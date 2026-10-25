@@ -194,3 +194,27 @@ async def hh_session_now() -> dict:
     if autonomy is None:
         raise ToolArgumentsError("Самостоятельная работа не запущена")
     return await autonomy.hh_session()
+
+
+@registry.tool()
+async def option_upsert(goal_id: int, title: str, description: str, availability: str, fit: str,
+                        payoff: Literal['high', 'medium', 'low'], effort: Literal['high', 'medium', 'low'],
+                        risk: str, reversible: bool, evidence: str) -> dict:
+    """Путь к цели на его карте вариантов (добавить или уточнить оценку по тому же title).
+    availability — доступно ли ему сейчас (деньги, время, место, навыки, документы); fit —
+    подходит ли по его истории и предпочтениям; payoff/effort — качественно, с основанием в
+    evidence (его данные, источники). Без придуманных вероятностей."""
+    identifier = checked(store().save_option, goal_id, title, description, availability, fit,
+                         payoff, effort, risk, reversible, evidence)
+    return {"id": identifier}
+
+
+@registry.tool()
+async def option_status(option_id: int, status: Literal['untried', 'trying', 'worked', 'failed', 'rejected'],
+                        outcome: str, evidence: str) -> dict:
+    """Итог пути: trying — начали, worked/failed — что показали факты, rejected — он отказался.
+    Отказ владельца возвращает в работу только он сам (в разговоре)."""
+    from ..runtime import policy
+
+    checked(store().set_option_status, option_id, status, outcome, evidence, owner=not policy.background())
+    return {"id": option_id, "status": status}

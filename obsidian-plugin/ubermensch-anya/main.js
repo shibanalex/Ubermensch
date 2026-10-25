@@ -17,6 +17,8 @@ const DEFAULTS = {
   refreshSeconds: 60,
   attachNote: false,
 };
+const OPTION_MARK = { untried: "○", trying: "⏳", worked: "✅", failed: "✗", rejected: "🚫" };
+const LEVEL = { high: "высокая", medium: "средняя", low: "низкая" };
 const STATUS = { done: "сделано", unverified: "не подтверждено", blocked: "застряла",
                  needs_user: "ждёт тебя", failed: "не вышло" };
 
@@ -142,6 +144,21 @@ class Sections {
         if (c.blocker) el(row, "div", { cls: "anya-muted", text: "Мешало: " + c.blocker });
       }
       if (goal.hypothesis) el(row, "div", { cls: "anya-muted", text: "Гипотеза: " + goal.hypothesis });
+      if (goal.options && goal.options.length) {
+        const map = el(row, "details", { cls: "anya-options" });
+        const tried = goal.options.filter((o) => ["worked", "failed"].includes(o.status)).length;
+        el(map, "summary", { text: `Пути к цели: ${goal.options.length}, проверено ${tried}` });
+        for (const o of goal.options) {
+          const line = el(map, "div", { cls: "anya-option anya-option-" + o.status });
+          el(line, "span", { text: `${OPTION_MARK[o.status] || "·"} ${o.title}` });
+          el(line, "span", { cls: "anya-muted", text: ` · отдача ${LEVEL[o.payoff]}, усилие ${LEVEL[o.effort]}` });
+          if (o.outcome) el(line, "div", { cls: "anya-muted", text: o.outcome.slice(0, 200) });
+          if (["untried", "trying"].includes(o.status)) {
+            this.button(line, "Не моё", () => this.plugin.api.call(`/api/options/${o.id}/status`, {
+              method: "POST", body: { status: "rejected", outcome: "Отказался (кнопка в Obsidian)" } }));
+          }
+        }
+      }
       const actions = el(row, "div", { cls: "anya-actions" });
       this.button(actions, "Обсудить", async () => this.plugin.openChat(`Давай про цель «${goal.title}»: `));
     }

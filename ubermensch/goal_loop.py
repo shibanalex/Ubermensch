@@ -15,6 +15,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from .experiments import compact
+from .options import map_text
 from .planning import encoded, required, stamp
 
 GOAL_LOOP_MIGRATION = """
@@ -187,7 +188,8 @@ def verify(outcome: str, evidence: list[dict]) -> str:
 
 
 def step_task(goal: dict, plan: dict, history: list[dict], recommendations: list[dict],
-              strategy: dict | None = None, experiments: list[dict] | None = None) -> str:
+              strategy: dict | None = None, experiments: list[dict] | None = None,
+              options: list[dict] | None = None) -> str:
     return (
         f"[Системная задача: работа над целью #{goal['id']} «{goal['title']}».] Это его "
         "утверждённая цель с измеримым планом. Сделай следующий шаг сама — сейчас, "
@@ -201,7 +203,14 @@ def step_task(goal: dict, plan: dict, history: list[dict], recommendations: list
         "только твой способ работы — experiment_propose subject=anya, если его действия или "
         "привычки — subject=owner (начнётся после его «да»). По идущим из <experiments> запиши "
         "замер из данных (experiment_observe); наступил review_on и замеров хватает — вывод "
-        "(experiment_conclude для anya, для owner — предложи вывод ему в reply). outcome: done — сделано и проверено; blocked — "
+        "(experiment_conclude для anya, для owner — предложи вывод ему в reply). <options> — "
+        "карта путей к цели. Пуста — этим шагом составь её: 4–8 реальных путей по его данным "
+        "и внешним источникам (option_upsert: доступно ли ему по деньгам, времени, месту и "
+        "навыкам; подходит ли по его истории; отдача и усилие high/medium/low с основанием, "
+        "без придуманных вероятностей; риски, обратимость). Иначе выбирай шаг из самого "
+        "перспективного пути: идущий (trying) или непробованный с большой отдачей и малым "
+        "усилием; итоги путей отмечай option_status с основанием; от rejected не возвращайся. "
+        "outcome: done — сделано и проверено; blocked — "
         "не вышло (blocker — почему, next_step — обход); needs_user — нужно его решение "
         "(ask_user). next_step — следующий конкретный шаг. reply — 1–3 предложения ему "
         "по сути, пусто, если писать незачем.\n\n"
@@ -215,7 +224,8 @@ def step_task(goal: dict, plan: dict, history: list[dict], recommendations: list
             for r in recommendations) + "\n</recommendations>\n<strategy>"
         + (encoded({k: strategy[k] for k in ('works', 'fails', 'hypothesis', 'evidence')})
            if strategy else "") + "</strategy>\n<experiments>\n"
-        + "\n".join(encoded(compact(e)) for e in experiments or []) + "\n</experiments>")
+        + "\n".join(encoded(compact(e)) for e in experiments or []) + "\n</experiments>\n<options>\n"
+        + map_text(options or []) + "\n</options>")
 
 
 def plan_task(goal: dict, history: list[dict]) -> str:

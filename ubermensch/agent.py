@@ -526,7 +526,8 @@ class Autonomy:
                 data, outcome = await self.assistant.agent_ask(
                     goal_loop.step_task(goal, plan, history, recommendations,
                                         self.store.goal_strategy(goal["id"]),
-                                        self.store.experiments(goal["id"])), goal_loop.STEP_EXTRA,
+                                        self.store.experiments(goal["id"]),
+                                        self.store.goal_options(goal["id"])), goal_loop.STEP_EXTRA,
                     focus=f"{goal['title']} {plan['next_step']}", source=f"goal:{goal['id']}",
                     timeout=900)
                 evidence = self.store.run_evidence(outcome.run_id)

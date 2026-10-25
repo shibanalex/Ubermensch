@@ -39,6 +39,11 @@ class ExperimentDecision(StrictModel):
     consent: Annotated[str, Field(min_length=1, max_length=1000)]
 
 
+class OptionDecision(StrictModel):
+    status: Literal['untried', 'trying', 'worked', 'failed', 'rejected']
+    outcome: Annotated[str, Field(min_length=1, max_length=3000)]
+
+
 class GoalPlanApproval(StrictModel):
     metric: Annotated[str, Field(min_length=1, max_length=200)]
     unit: Annotated[str, Field(min_length=1, max_length=80)]

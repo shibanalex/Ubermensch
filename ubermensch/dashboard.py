@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from . import agent, career_bot, experiments
+from . import agent, career_bot, experiments, options
 
 
 def _goal(store, goal: dict, plans: dict) -> dict:
@@ -19,6 +19,7 @@ def _goal(store, goal: dict, plans: dict) -> dict:
                                                "ask_user", "created_at")} if last else None,
         "hypothesis": strategy["hypothesis"] if strategy else "",
         "experiments": [experiments.compact(e) for e in store.experiments(goal["id"])],
+        "options": [options.compact(o) for o in store.goal_options(goal["id"])],
     }
 
 
