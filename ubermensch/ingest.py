@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -74,6 +75,11 @@ def aistudio_full(path: Path) -> list[str]:
 def _shingles(text: str) -> set[str]:
     words = re.findall(r"\w+", text.lower())
     return {" ".join(words[i:i + SHINGLE]) for i in range(max(1, len(words) - SHINGLE + 1))}
+
+
+def paragraph_key(paragraph: str) -> str:
+    """Отпечаток абзаца (без учёта пробелов и регистра): что уже разобрано в прошлых версиях чата."""
+    return hashlib.sha1(" ".join(paragraph.casefold().split()).encode()).hexdigest()[:16]
 
 
 def dedup(paragraphs: list[str]) -> tuple[list[str], int]:

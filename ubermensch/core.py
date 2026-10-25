@@ -360,7 +360,7 @@ class Core:
             if status == "done":
                 continue
             if ingest.is_aistudio(path):  # чаты с ИИ — глубоко: сведения живут и в ответах ИИ
-                results.append(await self.deep_import(path, digest))
+                results.append(await self.deep_import(path, digest, only_new=True))
                 continue
             text = ingest.read_document(path)
             if text is None:
@@ -398,11 +398,24 @@ class Core:
         return {"learning": learning, "quality": self.store.quality_metrics(),
                 "activity": metrics.activity(self.store)}
 
-    async def deep_import(self, path: Path, digest: str | None = None) -> str:
+    async def deep_import(self, path: Path, digest: str | None = None, *,
+                          only_new: bool = False) -> str:
         """Чат с ИИ целиком: без повторов, только новое относительно памяти; сжатый конспект
-        новых сведений — в Obsidian (Конспекты). Можно запускать повторно на уже импортированном."""
+        новых сведений — в Obsidian (Конспекты). Можно запускать повторно на уже импортированном.
+        only_new — новая версия живого чата (он продолжает писать в Gemini): разбираются только
+        абзацы, которых не было в прошлых разборах, а не весь чат заново. До 26.10 чат
+        «мастер-контекст» разбирался целиком при каждом изменении — по 11 больших запросов
+        подписки, 4 раза за день."""
         digest = digest or hashlib.sha256(path.read_bytes()).hexdigest()
         paragraphs, dropped = ingest.dedup(ingest.aistudio_full(path))
+        seen_key = f"distill_seen:{path.name}"
+        seen = set(json.loads(self.store.cursor(seen_key) or "[]"))
+        hashes = [ingest.paragraph_key(p) for p in paragraphs]
+        if only_new and seen:
+            paragraphs = [p for p, h in zip(paragraphs, hashes) if h not in seen]
+            if not paragraphs:
+                self.store.record_import(path.name, digest, "done", "нового в чате нет")
+                return f"📥 {path.name}: нового в чате нет"
         text = "\n\n".join(paragraphs)
         log.info("Глубокий импорт %s: %d символов, повторов выброшено %d", path.name, len(text),
                  dropped)
@@ -428,6 +441,7 @@ class Core:
                 log.warning("Не удалось положить конспект в %s", config.OUTPUT_DIR)
         self.store.record_import(path.name, digest, "done", outcome.reply)
         self.store.delete_cursor(f"distill:{digest}")
+        self.store.set_cursor(seen_key, json.dumps(sorted(seen | set(hashes))))
         self.notify(f"📥 {outcome.reply}\nНового в памяти: {len(outcome.changes)}.{note}")
         return f"📥 {path.name}: изменений в памяти — {len(outcome.changes)}"
 
