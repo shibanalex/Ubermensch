@@ -113,8 +113,10 @@ class Maintenance:
                 if self._stop.is_set():
                     raise InterruptedError("ядро останавливается")
                 dst.write(chunk)
-            dst.flush()
-            os.fsync(dst.fileno())
+                # сразу на носитель: иначе гигабайты копятся в кеше и единый fsync в конце
+                # ждёт флешку минутами, не замечая остановки
+                dst.flush()
+                os.fdatasync(dst.fileno())
         shutil.copystat(source, target)
 
     @staticmethod
