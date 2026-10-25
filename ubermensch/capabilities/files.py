@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import shutil
 from pathlib import Path
 
 from .. import config
-from ..system import files, office, shell
+from ..system import files, office, shell, versions
 from .core_client import _ask
 from .registry import registry
 from ..runtime import policy
@@ -110,9 +111,10 @@ async def write_file(path: str, content: str) -> str:
     target = Path(path).expanduser().resolve()
     if not await _may_write(target, content):
         return "Пользователь не разрешил запись."
+    version = await asyncio.to_thread(versions.save, target, "write_file")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
-    return f"Записано: {target}"
+    return f"Записано: {target}" + (f" (прежняя версия {version})" if version else "")
 
 
 
@@ -122,6 +124,7 @@ async def append_file(path: str, text: str) -> str:
     target = Path(path).expanduser().resolve()
     if not await _may_write(target, text):
         return "Пользователь не разрешил запись."
+    await asyncio.to_thread(versions.save, target, "append_file")
     target.parent.mkdir(parents=True, exist_ok=True)
     separator = "\n" if target.exists() and target.stat().st_size else ""
     with target.open("a", encoding="utf-8") as f:
@@ -131,12 +134,61 @@ async def append_file(path: str, text: str) -> str:
 
 
 @registry.tool()
+async def edit_file(path: str, old_text: str, new_text: str, replace_all: bool = False) -> dict:
+    """Точечная правка текстового файла (код, конфиг, заметка): заменить old_text на new_text.
+    old_text должен встречаться ровно один раз (или replace_all=true) — бери фрагмент с
+    запасом строк вокруг. Прежняя версия сохраняется (restore_file_version откатит).
+    Зоны — как у write_file. Возвращает diff — проверь, что изменилось именно то."""
+    target = Path(path).expanduser().resolve()
+    if not old_text:
+        raise ValueError("old_text пустой: для нового файла — write_file")
+    if not target.is_file() or target.stat().st_size > 2_000_000:
+        raise ValueError("Нужен существующий текстовый файл до 2 МБ")
+    if not await _may_read(target):
+        return {"error": "Пользователь не разрешил чтение"}
+    text = target.read_text(encoding="utf-8")
+    count = text.count(old_text)
+    if count == 0:
+        raise ValueError("old_text не найден: перечитай файл (read_file) и возьми фрагмент дословно")
+    if count > 1 and not replace_all:
+        raise ValueError(f"old_text встречается {count} раз: возьми фрагмент длиннее или replace_all=true")
+    changed = text.replace(old_text, new_text) if replace_all else text.replace(old_text, new_text, 1)
+    diff = "".join(difflib.unified_diff(text.splitlines(True), changed.splitlines(True),
+                                        str(target), str(target), n=2))
+    if not await _may_write(target, diff):
+        return {"error": "Пользователь не разрешил запись"}
+    version = await asyncio.to_thread(versions.save, target, "edit_file")
+    target.write_text(changed, encoding="utf-8")
+    return {"path": str(target), "replacements": count if replace_all else 1, "version": version,
+            "diff": diff[:6000] + (" …(обрезано)" if len(diff) > 6000 else "")}
+
+
+@registry.tool()
+async def file_versions(path: str = "", limit: int = 20) -> list[dict]:
+    """Сохранённые прежние версии файлов (до правок инструментами), новые первыми;
+    path — только этого файла. Для отката — restore_file_version(id)."""
+    return await asyncio.to_thread(versions.history, path or None, limit)
+
+
+@registry.tool()
+async def restore_file_version(version_id: str) -> dict:
+    """Вернуть файл к сохранённой версии. Текущее содержимое тоже сохраняется версией."""
+    entry = next((e for e in versions.history(None, versions.MAX_VERSIONS) if e["id"] == version_id), None)
+    if entry is None:
+        raise ValueError("Версия не найдена")
+    if not await _may_write(Path(entry["path"]), f"Откат к версии {version_id} от {entry['saved_at']}"):
+        return {"error": "Пользователь не разрешил откат"}
+    return await asyncio.to_thread(versions.restore, version_id)
+
+
+@registry.tool()
 async def write_word(path: str, title: str, markdown: str) -> str:
     """Создать документ Word (.docx) из простого Markdown (# заголовки, - списки, **жирный**).
     Сразу; свои документы — в «Документы\\Аня»."""
     target = Path(path).expanduser().with_suffix(".docx").resolve()
     if not await _may_write(target, markdown):
         return "Пользователь не разрешил запись."
+    await asyncio.to_thread(versions.save, target, "write_word")
     await asyncio.to_thread(office.write_word, target, title, markdown)
     return f"Документ: {target}"
 
@@ -149,6 +201,7 @@ async def write_excel(path: str, sheet: str, rows: list[list], append: bool = Fa
     target = Path(path).expanduser().with_suffix(".xlsx").resolve()
     if not await _may_write(target, "\n".join(map(str, rows[:20]))):
         return "Пользователь не разрешил запись."
+    await asyncio.to_thread(versions.save, target, "write_excel")
     await asyncio.to_thread(office.write_excel, target, sheet, rows, append)
     return f"Таблица: {target}, лист «{sheet}»"
 

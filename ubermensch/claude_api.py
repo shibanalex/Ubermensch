@@ -22,6 +22,7 @@ import anthropic
 
 from .brain import Answer, BrainError
 from .health import Health
+from .runtime import images
 from .runtime.http_tools import ToolExecutionUncertain
 from .runtime.tools import ToolGateway
 from .store import Store
@@ -196,6 +197,10 @@ class ClaudeApiBrain:
                     content = json.dumps(result, ensure_ascii=False)
                     if len(content) > MAX_TOOL_RESULT:
                         content = content[:MAX_TOOL_RESULT] + " …(обрезано)"
+                    if image := images.attached(result):  # снимок экрана — модели самой картинкой
+                        content = [{"type": "text", "text": content},
+                                   {"type": "image", "source": {"type": "base64", "media_type": image[0],
+                                                                "data": image[1]}}]
                     results.append({"type": "tool_result", "tool_use_id": call.id, "content": content})
                 except ToolExecutionUncertain:
                     raise

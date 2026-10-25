@@ -90,7 +90,35 @@ def runs_on_host_freely(command: str) -> bool:
     return True
 
 
-def _command(command: str, sandbox: bool):
+SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".mypy_cache", ".tox"}
+SECRET_DIRS = {"secrets", ".ssh", ".gnupg"}
+
+
+def _secret_masks(project: Path, depth: int = 4) -> list[str]:
+    """bwrap-аргументы, закрывающие секреты внутри проекта: .env*, сессии, ключи — пустышками,
+    папки secrets/.ssh/.gnupg — пустыми tmpfs. .env.example остаётся видимым."""
+    masks = []
+    base = len(project.parts)
+    for folder, dirs, names in os.walk(project):
+        here = Path(folder)
+        if len(here.parts) - base >= depth:
+            dirs[:] = []
+        for name in list(dirs):
+            if name in SECRET_DIRS:
+                masks += ["--tmpfs", str(here / name)]
+                dirs.remove(name)
+            elif name in SKIP_DIRS:
+                dirs.remove(name)
+        for name in names:
+            secret = (name == ".env" or (name.startswith(".env.") and name != ".env.example")
+                      or name.endswith((".session", ".session-journal", ".pem", ".key"))
+                      or name in {"id_rsa", "id_ed25519", "id_ecdsa", "credentials.json", "token.json"})
+            if secret:
+                masks += ["--ro-bind", "/dev/null", str(here / name)]
+    return masks
+
+
+def _command(command: str, sandbox: bool, project: Path | None = None):
     from .. import config
     folder = config.DATA_DIR / 'workspace' / 'shell'
     folder.mkdir(parents=True, exist_ok=True)
@@ -108,9 +136,18 @@ def _command(command: str, sandbox: bool):
             elif path.exists():
                 prefix += ['--ro-bind', directory, directory]
         args = prefix + ['--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp',
-                         '--bind', str(folder), '/work', '--chdir', '/work',
+                         '--bind', str(folder), '/work',
                          '--clearenv', '--setenv', 'PATH', '/usr/bin:/bin',
-                         '--setenv', 'HOME', '/work', '--', *args]
+                         '--setenv', 'HOME', '/work']
+        if project is not None:
+            # проект только для чтения, секреты закрыты; кеши и байткод не пишем в проект
+            args += ['--ro-bind', str(project), str(project), *_secret_masks(project),
+                     '--chdir', str(project), '--setenv', 'PYTHONDONTWRITEBYTECODE', '1',
+                     '--setenv', 'PYTEST_ADDOPTS', '-p no:cacheprovider',
+                     '--setenv', 'GIT_OPTIONAL_LOCKS', '0', '--setenv', 'GIT_PAGER', 'cat']
+        else:
+            args += ['--chdir', '/work']
+        args += ['--', 'bash', '--noprofile', '--norc', '-c', command]
     # Do not pass tokens, proxy credentials or Python/bash startup hooks to children.
     environment = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': str(Path.home()),
                    'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8'}
@@ -129,8 +166,12 @@ def run(command: str, timeout: int = 120, *, sandbox: bool = False) -> str:
     return (out or f"(нет вывода, код {done.returncode})")[:OUTPUT_CHARS]
 
 
-async def run_async(command: str, timeout: int = 120, *, sandbox: bool = False) -> str:
-    args, folder, environment = _command(command, sandbox)
+async def run_async(command: str, timeout: int = 120, *, sandbox: bool = False,
+                    project: Path | None = None) -> str:
+    """project — папка проекта: подключается в песочницу только для чтения (sandbox обязателен)."""
+    if project is not None and not sandbox:
+        raise ValueError("Проект подключается только в песочнице")
+    args, folder, environment = _command(command, sandbox, project)
     process = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         cwd=folder, env=environment, start_new_session=True)

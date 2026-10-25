@@ -218,9 +218,12 @@ heartbeat используют у OpenAI модель `chat` с gateway, отф�
 даже если провайдер всё же вернул их несколько.
 
 Встроенных Claude `Read`, `Glob`, `Grep`, `WebSearch`, `WebFetch` у OpenAI нет.
-`read_file` даёт чтение UTF-8 текста; `screenshot` возвращает путь, а не передаёт
-изображение модели. Поэтому общий каталог даёт функциональные системные инструменты,
-но не полную эквивалентность встроенным средствам Claude и не автоматическое зрение.
+`read_file` даёт чтение UTF-8 текста. `screenshot` возвращает `image_path`, и снимок
+доходит до модели картинкой ([`runtime/images.py`](../ubermensch/runtime/images.py)): у Claude API —
+в `tool_result`, у OpenAI — отдельным сообщением после результатов инструментов (в
+сообщении инструмента там только текст), Claude Code открывает файл сам. Прикладываются
+только файлы из `workspace/screens`. Общий каталог — функциональные системные инструменты,
+но не полная эквивалентность встроенным средствам Claude.
 
 ### Учёт расхода
 
@@ -299,7 +302,9 @@ JSON Schema всегда доступна через `/api/tools`. `account` п�
 |---|---|
 | `read_file(path, offset=0, limit=12000)` | `{path,text,next_offset}`; UTF-8-sig, offset в символах, limit 1..30000; в разрешённых папках, иначе подтверждение |
 | `find_files(name_part, folder=None, limit=30)` | Список путей по части имени; в разрешённых папках, иначе подтверждение |
-| `write_file(path, content)` | Создание/перезапись UTF-8; проверка защищённой зоны |
+| `write_file(path, content)` | Создание/перезапись UTF-8; проверка защищённой зоны; прежняя версия сохраняется |
+| `edit_file(path, old_text, new_text, replace_all)` | Точечная замена фрагмента (ровно одно вхождение или replace_all); прежняя версия и unified diff в ответе |
+| `file_versions(path, limit)` / `restore_file_version(version_id)` | Версии до правок инструментами ([`system/versions.py`](../ubermensch/system/versions.py): `workspace/versions`, 500 последних, до 30 дней, файлы до 20 МБ); откат сохраняет текущее содержимое новой версией |
 | `append_file(path, text)` | Дописывание, перед новым текстом перевод строки при непустом файле |
 | `write_word(path, title, markdown)` | DOCX из ограниченного Markdown, расширение принудительно `.docx` |
 | `write_excel(path, sheet, rows, append=False)` | XLSX, список строк; append управляет дописыванием |
@@ -318,7 +323,8 @@ JSON Schema всегда доступна через `/api/tools`. `account` п�
 | `open_item(target)` | Открыть сразу: файл/папку/URL через `xdg-open`, программу — по ярлыку `.desktop` (имя файла или `Name=`) через `gio launch` |
 | `run_shell(command, reason, mode="sandbox")` | sandbox через bubblewrap; host — безопасные системные команды сразу, остальные после подтверждения; в фоне недоступен |
 | `media_key(action, times=1)` | play_pause, next, previous — плееру MPRIS (играющему или на паузе); volume_up/down, mute — PipeWire `wpctl` |
-| `screenshot()` | Проверить активное окно, снять Spectacle, сохранить `screens/request.jpg`, вернуть путь |
+| `screenshot()` | Проверить активное окно, снять Spectacle, сохранить `screens/request.jpg`; `{text, image_path}`, картинка — модели |
+| `project_run(path, command, timeout)` | Сразу и в фоне: bubblewrap, папка проекта (с `.git`/`pyproject.toml`/`package.json`/…) только для чтения, без сети, `.env*`/`secrets`/ключи/сессии закрыты, `/tmp` пустой; тесты, `git status/diff/log`, линтеры. Домашняя папка целиком не принимается |
 | `lock_screen()` | `loginctl lock-session` сразу |
 | `system_status()` | Батарея (UPower), громкость, яркость, что играет (MPRIS), активное окно, простой, «не беспокоить» |
 | `desktop_notify(title, text, urgent=False)` | Уведомление Plasma от имени «Аня» сразу |

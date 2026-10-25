@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 from typing import Literal
 
 from .. import config
@@ -21,6 +22,30 @@ async def open_item(target: str) -> str:
         return str(error)
     return f"Открыто: {target}"
 
+
+
+PROJECT_MARKERS = (".git", "pyproject.toml", "setup.py", "requirements.txt", "package.json",
+                   "Cargo.toml", "go.mod", "Makefile", "CMakeLists.txt")
+
+
+@registry.tool()
+async def project_run(path: str, command: str, timeout: int = 300) -> str:
+    """Команда в папке проекта в песочнице — сразу, без подтверждения и в фоне: проект
+    подключён только для чтения, сети нет, .env/secrets/ключи закрыты, /tmp пустой.
+    Для диагностики кода: тесты (.venv/bin/python -m pytest / -m unittest), git status/diff/log,
+    линтеры, сборка без записи. Исправление — edit_file, затем снова project_run с тестами."""
+    from ..runtime import policy
+
+    folder = Path(path).expanduser().resolve()
+    if not folder.is_dir() or not any((folder / m).exists() for m in PROJECT_MARKERS):
+        raise ValueError("Нужна папка проекта (.git, pyproject.toml, package.json, Makefile…)")
+    if folder == Path.home().resolve() or folder in Path.home().resolve().parents:
+        raise ValueError("Домашняя папка целиком — не проект: укажи папку репозитория")
+    if not policy.readable(folder):
+        raise PermissionError("Папка вне разрешённых для чтения")
+    if not 1 <= timeout <= 1800:
+        raise ValueError("timeout — от 1 до 1800 секунд")
+    return await shell.run_async(command, timeout, sandbox=True, project=folder)
 
 
 @registry.tool()
@@ -54,15 +79,16 @@ async def media_key(action: Literal["play_pause", "next", "previous", "volume_up
 
 
 @registry.tool()
-async def screenshot() -> str:
-    """Снимок экрана пользователя — посмотреть, чем он занят (затем открой файл инструментом Read).
+async def screenshot() -> dict:
+    """Снимок экрана пользователя — посмотреть, чем он занят или что на экране сломалось.
+    Картинка приходит вместе с результатом; если её не видно — открой image_path (Read).
     Не сработает, если на экране может быть личное (банк, пароли, инкогнито)."""
     window = windows.foreground()
     if reason := screen.skip_reason(window):
-        return f"Снимок не сделан: {reason}."
+        return {"text": f"Снимок не сделан: {reason}."}
     path = WORKSPACE / "screens" / "request.jpg"
     await asyncio.to_thread(screen.capture, path)
-    return f"Снимок: {path}. Активное окно: «{window.title}» ({window.app})."
+    return {"text": f"Активное окно: «{window.title}» ({window.app}).", "image_path": str(path)}
 
 
 

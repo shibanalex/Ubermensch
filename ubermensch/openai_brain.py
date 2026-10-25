@@ -23,6 +23,7 @@ import aiohttp
 from .brain import Answer, BrainError
 from .health import Health
 from .store import Store
+from .runtime import images
 from .runtime.tools import ToolGateway
 from .runtime.http_tools import ToolExecutionUncertain
 
@@ -208,6 +209,7 @@ class OpenAIBrain:
             body["messages"].append({"role": "assistant", "content": message.get("content"),
                                      "tool_calls": calls})
             allowed = {tool["function"]["name"] for tool in body["tools"]}
+            pictures = []  # в сообщении инструмента у OpenAI только текст — картинки следом
             for call in calls:
                 if not self.usable:
                     raise OpenAIError("OpenAI: бюджет исчерпан, следующие действия остановлены")
@@ -219,6 +221,8 @@ class OpenAIBrain:
                     if not isinstance(arguments, dict):
                         raise ValueError("Аргументы должны быть JSON-объектом")
                     result = await gateway.call(name, arguments)
+                    if image := images.attached(result):
+                        pictures.append((name, image))
                     content = json.dumps(result, ensure_ascii=False)
                     if len(content) > MAX_TOOL_RESULT:
                         content = json.dumps({"truncated": True, "text": content[:MAX_TOOL_RESULT]},
@@ -230,6 +234,10 @@ class OpenAIBrain:
                     content = json.dumps({"error": str(error)[:1500]}, ensure_ascii=False)
                 body["messages"].append({"role": "tool", "tool_call_id": call["id"],
                                          "content": content})
+            for name, (media_type, data) in pictures:
+                body["messages"].append({"role": "user", "content": [
+                    {"type": "text", "text": f"Изображение из результата инструмента {name}."},
+                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{data}"}}]})
         raise OpenAIError("OpenAI: превышен лимит шагов")
 
     def _charge(self, model: str, usage: dict) -> None:
