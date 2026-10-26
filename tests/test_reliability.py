@@ -403,6 +403,15 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(policy.readable(self.root / 'db' / 'ubermensch.db'))
             self.assertFalse(policy.readable(self.root / 'secrets' / 'api_token'))
 
+    async def test_whole_home_readable_without_asking_except_keys_and_sessions(self):
+        home = self.root / 'home'
+        with patch.object(Path, 'home', return_value=home), patch.object(config, 'DATA_DIR', home / 'data'):
+            self.assertTrue(policy.readable(home / 'Projects' / 'Ubermensch' / 'Дневник тренировок.xlsx'))
+            for secret in ('.ssh/id_ed25519', '.config/google-chrome/Default/Cookies', '.claude/.credentials.json',
+                           '.local/share/TelegramDesktop/tdata/key_datas', 'data/db/ubermensch.db', 'p/.env'):
+                self.assertFalse(policy.readable(home / secret), secret)
+            self.assertFalse(policy.readable(Path('/etc/passwd')))
+
     async def test_feedback_endpoint_records_real_target_only(self):
         response = await self.post('/api/feedback', {'message_id': 99, 'rating': 'helpful'})
         self.assertEqual(response.status, 404)

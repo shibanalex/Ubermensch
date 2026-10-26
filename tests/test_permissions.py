@@ -43,7 +43,9 @@ class ShellPermissionTests(unittest.IsolatedAsyncioTestCase):
                    'cat ~/Projects/HHruBot/.env', 'ls ~/Projects/Ubermensch/secrets',
                    'systemctl --user stop ubermensch', 'loginctl terminate-session 3',
                    'qdbus6 org.kde.ksmserver /KSMServer logout 0 0 0', 'journalctl --vacuum-size=1M',
-                   'sudo ls', 'ls; rm -rf ~', 'grep -r token ~/.config', 'cat ~/.config/google-chrome/Default/Cookies']
+                   'sudo ls', 'ls; rm -rf ~', 'grep -r token ~/.config', 'cat ~/.config/google-chrome/Default/Cookies',
+                   'cat a 2>/tmp/log', 'find ~ -name a 2>/dev/null -delete']
+        free.append('find /home/allegro -iname "*тренир*" 2>/dev/null | head')  # 26.10: спрашивала зря
         for command in free:
             self.assertTrue(shell.runs_on_host_freely(command), command)
         for command in guarded:

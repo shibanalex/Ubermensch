@@ -76,6 +76,8 @@ RISKY_SUBCOMMANDS = re.compile(
 def runs_on_host_freely(command: str) -> bool:
     """Безопасная системная команда: каждая часть цепочки — из SAFE_HOST_COMMANDS, без записи
     в файлы, подстановок, sudo и упоминаний секретов, системных папок и кода Ани."""
+    # глушить ошибки можно: «2>/dev/null» ничего не пишет; любой другой «>» — запись в файл
+    command = re.sub(r"\s2>\s*/dev/null\b", " ", command)
     if re.search(r"[`<>]|\$\(|\$\{|\|\||(?<!&)&(?!&)|&&\s*$", command) or "\n" in command:
         return False
     if is_dangerous(command) or PROTECTED_WORDS.search(command) or SECRETS.search(command) \
