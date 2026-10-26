@@ -39,3 +39,9 @@
 .anya-option { padding: 2px 0 2px 8px; font-size: 0.9em; }
 .anya-option-rejected, .anya-option-failed { opacity: 0.6; }
 .anya-option-worked { color: var(--text-success); }
+.anya-next { margin-top: 2px; }
+.anya-fold > summary { cursor: pointer; color: var(--text-muted); font-size: 0.85em; margin-top: 2px; }
+.anya-fold[open] > summary { margin-bottom: 4px; }
+details.anya-box > summary.anya-box-title { cursor: pointer; margin-bottom: 0; }
+details.anya-box[open] > summary.anya-box-title { margin-bottom: 6px; }
+.anya-goal { padding: 8px 0; }

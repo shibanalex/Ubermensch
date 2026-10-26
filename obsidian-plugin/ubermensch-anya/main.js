@@ -10,7 +10,8 @@ const {
 
 const CHAT_VIEW = "anya-chat";
 const DASHBOARD_VIEW = "anya-dashboard";
-const SECTIONS = ["goals", "proposals", "consent", "tasks", "hh", "effectiveness"];
+const SECTIONS = ["now", "goals", "proposals", "consent", "hh", "effectiveness"];
+const CHAT_CHANNELS = ["tg", "desktop", "obsidian"];  // служебные (импорт, бэкап) — не в чат
 const DEFAULTS = {
   apiUrl: "http://127.0.0.1:8765",
   tokenFile: "~/Projects/Ubermensch/secrets/api_token",
@@ -18,6 +19,7 @@ const DEFAULTS = {
   attachNote: false,
 };
 const OPTION_MARK = { untried: "○", trying: "⏳", worked: "✅", failed: "✗", rejected: "🚫" };
+const TASK_STATUS = { pending: "в очереди", running: "в работе", interrupted: "прервано — скажи «продолжи»" };
 const LEVEL = { high: "высокая", medium: "средняя", low: "низкая" };
 const STATUS = { done: "сделано", unverified: "не подтверждено", blocked: "застряла",
                  needs_user: "ждёт тебя", failed: "не вышло" };
@@ -80,7 +82,18 @@ function noteText(app) {
 /* ---------- панель: секции, общие для вида и блоков ```anya``` ---------- */
 
 class Sections {
-  constructor(plugin, root, refresh) { this.plugin = plugin; this.root = root; this.refresh = refresh; }
+  constructor(plugin, root, refresh) {
+    this.plugin = plugin; this.root = root; this.refresh = refresh;
+    this.open = new Set();  // раскрытые блоки переживают перерисовку после кнопки
+  }
+
+  fold(parent, key, summary, cls = "anya-fold") {
+    const d = el(parent, "details", { cls });
+    if (this.open.has(key)) d.open = true;
+    d.addEventListener("toggle", () => { if (d.open) this.open.add(key); else this.open.delete(key); });
+    el(d, "summary", { text: summary });
+    return d;
+  }
 
   async render(names = SECTIONS, force = false) {
     let data;
@@ -102,12 +115,52 @@ class Sections {
     }
   }
 
-  box(title, icon) {
-    const box = el(this.root, "div", { cls: "anya-box" });
-    const head = el(box, "div", { cls: "anya-box-title" });
+  box(title, icon, folded = false) {
+    // folded — второстепенный блок: заголовок виден, содержимое по клику
+    const box = el(this.root, folded ? "details" : "div", { cls: "anya-box" });
+    if (folded && this.open.has("box:" + title)) box.open = true;
+    if (folded) box.addEventListener("toggle", () => {
+      if (box.open) this.open.add("box:" + title); else this.open.delete("box:" + title);
+    });
+    const head = el(box, folded ? "summary" : "div", { cls: "anya-box-title" });
     setIcon(el(head, "span", { cls: "anya-icon" }), icon);
     el(head, "span", { text: title });
     return box;
+  }
+
+  section_now(data) {
+    // Что ждёт его сейчас: подтверждения, вопросы Ани, задачи и следующий шаг по целям
+    const box = this.box("Сейчас", "zap");
+    for (const a of data.approvals) {
+      const row = el(box, "div", { cls: "anya-approval" });
+      el(row, "div", { cls: "anya-goal-title", text: "Подтверди: " + a.summary });
+      if (a.details) el(this.fold(row, "approval:" + a.id, "подробности"), "pre", { cls: "anya-details", text: a.details.slice(0, 1500) });
+      const actions = el(row, "div", { cls: "anya-actions" });
+      const decide = (approve) => this.plugin.api.call(`/api/actions/${a.id}`, { method: "POST", body: { approve } });
+      this.button(actions, "Да", () => decide(true), "mod-cta");
+      this.button(actions, "Нет", () => decide(false));
+    }
+    const waiting = data.plan_proposals.length + data.consent_needed.length;
+    if (waiting) el(box, "div", { cls: "anya-ask", text: `Аня ждёт твоего решения: ${waiting} — ниже, «Ждут решения»` });
+    const open = data.tasks.filter((t) => t.status === "open");
+    for (const task of open) {
+      const row = el(box, "label", { cls: "anya-task" });
+      const check = el(row, "input", { type: "checkbox" });
+      check.onchange = async () => {
+        try {
+          await this.plugin.api.call(`/api/tasks/${task.id}`, { method: "POST", body: { status: "done" } });
+          this.signature = null;
+          await this.refresh();
+        } catch (e) { new Notice("Аня: " + e.message); check.checked = false; }
+      };
+      el(row, "span", { text: task.title + (task.due ? " · " + task.due : "") });
+    }
+    for (const item of data.agent_tasks) {
+      el(box, "div", { cls: "anya-muted", text: `Аня: ${item.title} (${TASK_STATUS[item.status] || item.status})` });
+    }
+    if (!data.approvals.length && !waiting && !open.length && !data.agent_tasks.length) {
+      el(box, "div", { cls: "anya-muted", text: "Пусто — можно выдохнуть" });
+    }
   }
 
   button(parent, text, action, cls = "") {
@@ -122,55 +175,63 @@ class Sections {
 
   section_goals(data) {
     const box = this.box("Цели", "target");
-    for (const goal of data.goals) {
+    const planned = data.goals.filter((g) => g.plan);
+    for (const goal of planned) {
       const row = el(box, "div", { cls: "anya-goal" });
       const top = el(row, "div", { cls: "anya-goal-top" });
       el(top, "span", { cls: "anya-goal-title", text: goal.title });
       if (goal.deadline) el(top, "span", { cls: "anya-muted", text: " · до " + goal.deadline });
-      if (goal.plan) {
-        const percent = Math.max(0, Math.min(100, goal.plan.progress_percent || 0));
-        const bar = el(row, "div", { cls: "anya-bar" });
-        el(bar, "div", { cls: "anya-bar-fill" }).style.width = percent + "%";
-        el(row, "div", { cls: "anya-muted",
-          text: `${goal.plan.metric}: ${goal.plan.current} → ${goal.plan.target} ${goal.plan.unit} · ${goal.plan.weekly_minutes} мин/нед` });
-        el(row, "div", { text: "Следующий шаг: " + goal.plan.next_step });
-      } else {
-        el(row, "div", { cls: "anya-muted", text: "Нет измеримого плана — Аня над целью не работает" });
-      }
+      const percent = Math.max(0, Math.min(100, goal.plan.progress_percent || 0));
+      const bar = el(row, "div", { cls: "anya-bar" });
+      el(bar, "div", { cls: "anya-bar-fill" }).style.width = percent + "%";
+      el(row, "div", { cls: "anya-next", text: "→ " + goal.plan.next_step });
+      const more = this.fold(row, "goal:" + goal.id, "подробнее");
+      el(more, "div", { cls: "anya-muted",
+        text: `${goal.plan.metric}: ${goal.plan.current} → ${goal.plan.target} ${goal.plan.unit} · ${goal.plan.weekly_minutes} мин/нед` });
       if (goal.last_cycle) {
         const c = goal.last_cycle;
-        el(row, "div", { cls: "anya-cycle anya-" + c.status,
+        el(more, "div", { cls: "anya-cycle anya-" + c.status,
           text: `${c.created_at.slice(0, 10)} · ${STATUS[c.status] || c.status}: ${c.action || c.ask_user || ""}`.slice(0, 300) });
-        if (c.blocker) el(row, "div", { cls: "anya-muted", text: "Мешало: " + c.blocker });
+        if (c.blocker) el(more, "div", { cls: "anya-muted", text: "Мешало: " + c.blocker });
       }
-      if (goal.hypothesis) el(row, "div", { cls: "anya-muted", text: "Гипотеза: " + goal.hypothesis });
-      if (goal.options && goal.options.length) {
-        const map = el(row, "details", { cls: "anya-options" });
-        const tried = goal.options.filter((o) => ["worked", "failed"].includes(o.status)).length;
-        el(map, "summary", { text: `Пути к цели: ${goal.options.length}, проверено ${tried}` });
-        for (const o of goal.options) {
-          const line = el(map, "div", { cls: "anya-option anya-option-" + o.status });
-          el(line, "span", { text: `${OPTION_MARK[o.status] || "·"} ${o.title}` });
-          el(line, "span", { cls: "anya-muted", text: ` · отдача ${LEVEL[o.payoff]}, усилие ${LEVEL[o.effort]}` });
-          if (o.outcome) el(line, "div", { cls: "anya-muted", text: o.outcome.slice(0, 200) });
-          if (["untried", "trying"].includes(o.status)) {
-            this.button(line, "Не моё", () => this.plugin.api.call(`/api/options/${o.id}/status`, {
-              method: "POST", body: { status: "rejected", outcome: "Отказался (кнопка в Obsidian)" } }));
-          }
-        }
-      }
-      const actions = el(row, "div", { cls: "anya-actions" });
+      if (goal.hypothesis) el(more, "div", { cls: "anya-muted", text: "Гипотеза: " + goal.hypothesis });
+      this.options(more, goal);
+      const actions = el(more, "div", { cls: "anya-actions" });
       this.button(actions, "Обсудить", async () => this.plugin.openChat(`Давай про цель «${goal.title}»: `));
+    }
+    const rest = data.goals.filter((g) => !g.plan);
+    if (rest.length) {
+      const list = this.fold(box, "goals:unplanned", `Без плана: ${rest.length}`);
+      for (const goal of rest) {
+        const row = el(list, "div", { cls: "anya-goal" });
+        el(row, "div", { text: goal.title + (goal.deadline ? " · до " + goal.deadline : "") });
+        this.options(row, goal);
+      }
+    }
+  }
+
+  options(parent, goal) {
+    if (!goal.options || !goal.options.length) return;
+    const tried = goal.options.filter((o) => ["worked", "failed"].includes(o.status)).length;
+    const map = this.fold(parent, "options:" + goal.id, `Пути к цели: ${goal.options.length}, проверено ${tried}`, "anya-options");
+    for (const o of goal.options) {
+      const line = el(map, "div", { cls: "anya-option anya-option-" + o.status });
+      el(line, "span", { text: `${OPTION_MARK[o.status] || "·"} ${o.title}` });
+      el(line, "span", { cls: "anya-muted", text: ` · отдача ${LEVEL[o.payoff]}, усилие ${LEVEL[o.effort]}` });
+      if (o.outcome) el(line, "div", { cls: "anya-muted", text: o.outcome.slice(0, 200) });
+      if (["untried", "trying"].includes(o.status)) {
+        this.button(line, "Не моё", () => this.plugin.api.call(`/api/options/${o.id}/status`, {
+          method: "POST", body: { status: "rejected", outcome: "Отказался (кнопка в Obsidian)" } }));
+      }
     }
   }
 
   section_proposals(data) {
     if (!data.plan_proposals.length) return;
-    const box = this.box("Аня предлагает планы", "clipboard-check");
+    const box = this.box(`Ждут решения: планы (${data.plan_proposals.length})`, "clipboard-check");
     for (const item of data.plan_proposals) {
       const p = item.proposal;
-      const row = el(box, "div", { cls: "anya-goal" });
-      el(row, "div", { cls: "anya-goal-title", text: item.title });
+      const row = this.fold(box, "proposal:" + item.goal_id, item.title, "anya-goal anya-fold");
       el(row, "div", { text: `${p.metric}: ${p.baseline ?? "?"} → ${p.target} ${p.unit} · ${p.weekly_minutes} мин/нед` });
       el(row, "div", { cls: "anya-muted", text: "Первый шаг: " + p.next_step });
       if (item.ask_user) el(row, "div", { cls: "anya-ask", text: "Аня спрашивает: " + item.ask_user });
@@ -181,7 +242,7 @@ class Sections {
 
   section_consent(data) {
     if (!data.consent_needed.length) return;
-    const box = this.box("Эксперименты ждут твоего согласия", "flask-conical");
+    const box = this.box("Ждут решения: эксперименты", "flask-conical");
     for (const e of data.consent_needed) {
       const row = el(box, "div", { cls: "anya-goal" });
       el(row, "div", { cls: "anya-goal-title", text: e.hypothesis });
@@ -196,41 +257,12 @@ class Sections {
     }
   }
 
-  section_tasks(data) {
-    const box = this.box("Задачи", "check-square");
-    if (data.approvals.length) {
-      for (const a of data.approvals) {
-        const row = el(box, "div", { cls: "anya-approval" });
-        el(row, "div", { cls: "anya-goal-title", text: "Подтверди: " + a.summary });
-        if (a.details) el(row, "pre", { cls: "anya-details", text: a.details.slice(0, 1500) });
-        const actions = el(row, "div", { cls: "anya-actions" });
-        const decide = (approve) => this.plugin.api.call(`/api/actions/${a.id}`, { method: "POST", body: { approve } });
-        this.button(actions, "Да", () => decide(true), "mod-cta");
-        this.button(actions, "Нет", () => decide(false));
-      }
-    }
-    for (const task of data.tasks) {
-      const row = el(box, "label", { cls: "anya-task" });
-      const check = el(row, "input", { type: "checkbox" });
-      check.onchange = async () => {
-        try {
-          await this.plugin.api.call(`/api/tasks/${task.id}`, { method: "POST", body: { status: "done" } });
-          this.signature = null;
-          await this.refresh();
-        } catch (e) { new Notice("Аня: " + e.message); check.checked = false; }
-      };
-      el(row, "span", { text: task.title + (task.due ? " · " + task.due : "") });
-    }
-    for (const item of data.agent_tasks) {
-      el(box, "div", { cls: "anya-muted", text: `Поручение Ани: ${item.title} (${item.status})` });
-    }
-    if (!data.tasks.length && !data.agent_tasks.length && !data.approvals.length) {
-      el(box, "div", { cls: "anya-muted", text: "Пусто — можно выдохнуть" });
-    }
+  section_tasks(data) {  // старое имя для блоков ```anya tasks``` в заметках
+    return this.section_now(data);
   }
 
   section_hh(data) {
-    const box = this.box("Отклики hh", "briefcase");
+    const box = this.box("Отклики hh", "briefcase", true);
     const hh = data.hh;
     el(box, "div", { text: hh.available
       ? `${hh.live ? "Откликается сама" : "Только письма, без отправки"} · до ${hh.daily_limit} в день · последняя сессия: ${hh.last_session_day || "ещё не было"}`
@@ -252,7 +284,7 @@ class Sections {
 
   section_effectiveness(data) {
     const e = data.effectiveness;
-    const box = this.box("Как работает Аня (7 дней)", "activity");
+    const box = this.box("Как работает Аня (7 дней)", "activity", true);
     const steps = Object.entries(e.goal_steps).map(([k, v]) => `${STATUS[k] || k}: ${v}`).join(", ") || "шагов не было";
     el(box, "div", { text: "Шаги по целям — " + steps });
     if (e.verified_step_share !== null) {
@@ -358,7 +390,7 @@ class ChatView extends ItemView {
       return;
     }
     // перерисовывать, только если что-то пришло: иначе сбивается прокрутка, пока он читает
-    const messages = state.messages.slice(-30);
+    const messages = state.messages.filter((m) => CHAT_CHANNELS.includes(m.channel)).slice(-30);
     const signature = JSON.stringify([messages.map((m) => m.id), state.approvals.map((a) => a.id)]);
     if (signature === this.signature) return;
     this.signature = signature;
@@ -444,7 +476,8 @@ module.exports = class AnyaPlugin extends Plugin {
 
     // ```anya goals tasks``` — живая панель прямо в заметке
     this.registerMarkdownCodeBlockProcessor("anya", async (source, root) => {
-      const names = source.split(/\s+/).map((s) => s.trim()).filter((s) => SECTIONS.includes(s));
+      const known = [...SECTIONS, "tasks"];
+      const names = source.split(/\s+/).map((s) => s.trim()).filter((s) => known.includes(s));
       const sections = new Sections(this, root.createDiv({ cls: "anya-embed" }), () => sections.render(names.length ? names : SECTIONS));
       await sections.render(names.length ? names : SECTIONS);
     });
