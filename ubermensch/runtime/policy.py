@@ -63,8 +63,9 @@ def readable(target: Path) -> bool:
 
 def writable(target: Path) -> bool:
     target = target.expanduser().resolve()
-    defaults = (config.DOCUMENTS_DIR, config.OUTPUT_DIR, config.DATA_DIR / 'workspace' / 'artifacts') \
-        if background() else (*config.FREE_ZONES, *config.PERSONAL_DIRS)
+    vault = (config.VAULT_DIR,) if config.VAULT_DIR else ()  # всё его хранилище — без вопросов
+    defaults = (config.DOCUMENTS_DIR, config.OUTPUT_DIR, config.DATA_DIR / 'workspace' / 'artifacts', *vault) \
+        if background() else (*config.FREE_ZONES, *config.PERSONAL_DIRS, *vault)
     setting = 'UBERMENSCH_BACKGROUND_WRITE_ROOTS' if background() else 'UBERMENSCH_WRITE_ROOTS'
     return within(target, roots(setting, defaults)) and not config.is_protected(target)
 

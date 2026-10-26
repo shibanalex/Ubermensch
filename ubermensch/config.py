@@ -59,7 +59,9 @@ FREE_ZONES = (DATA_DIR / "workspace", DOCUMENTS_DIR, *((REPORTS_DIR,) if REPORTS
 PROTECTED = (*(Path(p) for p in ("/etc", "/boot", "/usr", "/bin", "/sbin", "/lib", "/lib64",
                                  "/opt", "/var", "/root", "/snap", "/sys", "/proc", "/dev")),
              Path.home() / ".ssh", Path.home() / ".gnupg", Path.home() / ".local" / "bin",
-             DATA_DIR, PROJECT_DIR, *((VAULT_DIR,) if VAULT_DIR else ()))
+             DATA_DIR, PROJECT_DIR,
+             # хранилище открыто целиком (его решение 26.10.2026), кроме настроек и плагинов Obsidian
+             *((VAULT_DIR / ".obsidian",) if VAULT_DIR else ()))
 
 
 def is_protected(path: Path) -> bool:

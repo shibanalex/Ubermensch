@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,8 @@ from ubermensch.api import create_app
 from ubermensch.collectors import obsidian
 from ubermensch.core import Bus, Core
 from ubermensch.store import Store
+from ubermensch.runtime import policy
+from ubermensch.runtime.context import current
 
 
 def _note(root: Path, relative: str, text: str) -> None:
@@ -81,11 +84,18 @@ class ObsidianTests(unittest.TestCase):
         self.assertNotIn("type: daily", text)
         self.assertLessEqual(len(obsidian.context_notes(limit=40)), 40)
 
-    def test_vault_is_protected_except_reports(self):
-        with patch.object(config, "FREE_ZONES", (self.vault / "08 AI" / "Reports",)), \
-                patch.object(config, "PROTECTED", (self.vault,)):
-            self.assertTrue(config.is_protected(self.vault / "06 Life" / "x.md"))
-            self.assertFalse(config.is_protected(self.vault / "08 AI" / "Reports" / "x.md"))
+    def test_whole_vault_writable_except_obsidian_settings(self):
+        # 26.10.2026: «у неё должен быть свободный доступ» — и в чате, и в фоне
+        with patch.object(config, "VAULT_DIR", self.vault), \
+                patch.object(config, "PROTECTED", (self.vault / ".obsidian",)):
+            for mode in ("interactive", "background"):
+                token = current.set(SimpleNamespace(mode=mode))
+                try:
+                    self.assertTrue(policy.writable(self.vault / "06 Life" / "x.md"), mode)
+                    self.assertTrue(policy.writable(self.vault / "02 Journal" / "Daily" / "d.md"), mode)
+                    self.assertFalse(policy.writable(self.vault / ".obsidian" / "app.json"), mode)
+                finally:
+                    current.reset(token)
 
 
 class TaskWidgetAPITests(unittest.IsolatedAsyncioTestCase):
