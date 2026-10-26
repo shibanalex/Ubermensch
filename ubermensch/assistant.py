@@ -7,7 +7,7 @@ import logging
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 from pydantic import ValidationError
@@ -59,6 +59,7 @@ PRIVATE_AREAS = {"health", "personal"}  # эти факты во второй И
 PRIVATE_WORDS = re.compile(r"(?i)псих|лечен|диагноз|препарат|таблет|депресс|тревож|паник|"
                            r"суицид|самоповр|антидепр|пнд|врач|болезн|долг|кредит")
 # Сторож чата: Claude молчит столько и не ждёт «да/нет» пользователя — отвечает второй ИИ.
+DEEP_FOLLOWUP = timedelta(hours=1)  # столько важная тема держит глубокий разбор
 CHAT_WATCHDOG = {"tg": 240, "pc": 240}
 FALLBACK_NOTE = ("\n\n[Ты работаешь через API и продолжаешь работу как Аня с общими "
                  "инструментами помощника. Выполняй просьбы выданными функциями; подтверждения "
@@ -694,7 +695,12 @@ class Assistant:
             if from_user:
                 self.store.add_message("user", text, channel)
             telegram = channel == "tg"
-            deep = from_user and models.deep(text)
+            # разговор о важном продолжается и следующими репликами («представляешь, они…»)
+            recent = [r['text'] for r in self.store.db.execute(
+                "SELECT text FROM messages WHERE role='user' AND channel=? AND ts>=? "
+                "ORDER BY id DESC LIMIT 3", (channel, (datetime.now() - DEEP_FOLLOWUP).isoformat(
+                    timespec='seconds')))]
+            deep = from_user and any(models.deep(m) for m in [text, *recent])
             if deep:
                 prompt += "\n\n" + models.DEEP_NOTE
             answer, engine = await self._chat_ask(prompt, telegram, deep=deep)
