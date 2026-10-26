@@ -22,6 +22,17 @@ class ExternalCopyTests(unittest.TestCase):
                                                    type("H", (), {"report": lambda s, k, m: self.health.append(m),
                                                                   "clear": lambda s, k, m: None})())
 
+    def test_backup_failure_survives_core_restart(self):
+        local = self.root / "backups"
+        with patch.object(maintenance, "LOCAL_DIR", local), \
+                patch.dict("os.environ", {"BACKUP_PASSWORD": "p"}), \
+                patch.object(maintenance, "SEVEN_ZIP", "7z"), \
+                patch.object(maintenance, "create_archive", side_effect=RuntimeError("7z code 2")):
+            self.assertIsNone(self.maintenance.backup())
+            restarted = maintenance.Maintenance(self.root / "db.sqlite", self.maintenance.health)
+            self.assertFalse(restarted._backup_due())  # не пробовать снова сразу после перезапуска
+        self.assertEqual(len(self.health), 1)
+
     def test_copy_stops_when_core_stops_and_leaves_no_partial(self):
         source = self.root / "anya-2026-10-25_14-00-00.7z"
         source.write_bytes(b"x" * (maintenance.CHUNK * 3))

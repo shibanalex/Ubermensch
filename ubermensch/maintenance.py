@@ -34,7 +34,8 @@ EXTERNAL_SHARE = 0.5  # на внешнем носителе архивы Ани
 FAT_LIMIT = 4 * 1024 ** 3 - 1  # vfat/exFAT-старые: файл больше 4 ГБ не запишется
 CHUNK = 8 * 1024 * 1024
 CHECK_EVERY = 10 * 60
-RETRY_AFTER_FAILURE = timedelta(hours=6)  # сбой бэкапа не повторять каждые 10 минут
+RETRY_AFTER_FAILURE = timedelta(hours=6)
+  # сбой бэкапа не повторять каждые 10 минут
 NIGHT = range(2, 6)  # бэкап ночью, когда компьютер свободен…
 OVERDUE = timedelta(hours=36)  # …но если ночью был выключен — днём
 EXTERNAL_STALE = timedelta(days=7)
@@ -87,11 +88,14 @@ def _external_folders() -> list[Path]:
     return folders
 
 
+def FAILURE_MARK() -> Path:  # функция: LOCAL_DIR подменяют в тестах
+    return LOCAL_DIR / ".last-failure"
+
+
 class Maintenance:
     def __init__(self, db_path: Path, health: Health):
         self.db_path = db_path
         self.health = health
-        self._failed_at: datetime | None = None
         self._stop = threading.Event()  # копирование на флешку прерывается при остановке ядра
 
     async def run(self) -> None:
@@ -140,6 +144,24 @@ class Maintenance:
                                "Освободи место, иначе сбор данных и бэкапы остановятся.")
         else:
             self.health.clear("disk", "Место на диске снова есть.")
+
+    # Время сбоя — в файле, а не в памяти: 25.10 после каждого перезапуска ядра бэкап
+    # пробовался заново, и за 20 минут пришло пять одинаковых предупреждений.
+    @property
+    def _failed_at(self) -> datetime | None:
+        try:
+            return datetime.fromisoformat(FAILURE_MARK().read_text().strip())
+        except (OSError, ValueError):
+            return None
+
+    @_failed_at.setter
+    def _failed_at(self, when: datetime | None) -> None:
+        mark = FAILURE_MARK()
+        if when is None:
+            mark.unlink(missing_ok=True)
+        else:
+            mark.parent.mkdir(parents=True, exist_ok=True)
+            mark.write_text(when.isoformat(timespec="seconds"))
 
     def _backup_due(self) -> bool:
         if self._failed_at and datetime.now() - self._failed_at < RETRY_AFTER_FAILURE:
