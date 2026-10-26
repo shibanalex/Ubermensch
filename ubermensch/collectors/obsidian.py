@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .. import config
 
-SKIP_DIRS = {".obsidian", ".claudian", ".trash", ".git", "99 Assets", "90 Templates"}
+SKIP_DIRS = {".obsidian", ".claudian", ".trash", ".git"}  # остальное хранилище — целиком (его решение 26.10.2026)
 NOT_OWN_WORDS = {"Clippings", "References"}  # вырезки и референсы — сведения, не его слова
 MAX_CHARS = 30_000
 DATE_IN_NAME = re.compile(r"(\d{4}-\d{2}-\d{2})")

@@ -50,11 +50,11 @@ class ObsidianTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def test_collect_skips_service_folders_and_marks_clippings(self):
+    def test_collect_reads_whole_vault_and_marks_clippings(self):
         events = {e["external_id"]: e for e in obsidian.collect()}
         self.assertNotIn("08 AI/Reports/Профиль.md", events)
-        self.assertNotIn("90 Templates/Daily.md", events)
-        self.assertNotIn("99 Assets/x.md", events)
+        self.assertIn("90 Templates/Daily.md", events)  # 26.10.2026: читает всё хранилище
+        self.assertIn("99 Assets/x.md", events)
         self.assertEqual(events["Clippings/статья.md"]["outgoing"], 0)
         self.assertEqual(events["03 Music/Grieg.md"]["outgoing"], 0)  # Web Clipper: source http
         daily = events["02 Journal/Daily/2026-10-17.md"]
@@ -66,7 +66,7 @@ class ObsidianTests(unittest.TestCase):
     def test_edited_note_updates_in_place(self):
         store = Store(":memory:")
         self.addCleanup(store.db.close)
-        self.assertEqual(store.sync_events(obsidian.collect()), 7)
+        self.assertEqual(store.sync_events(obsidian.collect()), 9)
         row = store.db.execute("SELECT id FROM events WHERE external_id='06 Life/Личные ориентиры.md'").fetchone()
         self.assertEqual(store.sync_events(obsidian.collect()), 0)  # без правок — без изменений
         _note(self.vault, "06 Life/Личные ориентиры.md", "Музыка и здоровье.")
