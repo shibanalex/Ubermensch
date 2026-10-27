@@ -50,7 +50,8 @@ HEARTBEAT_EVERY = 30 * 60
 # Рассылки и реклама — не повод будить его (отправитель или тема письма)
 NOISE = re.compile(r"(?i)работа\.ру|quora|careerhub|dropbox|авито|chatgpt|render|search console|"
                    r"билайн офд|чек на|hirehi|подходящие вакансии|ваше резюме привлекло|"
-                   r"новые вакансии на|скидк|распродаж|digest|newsletter|подписк|опрос")
+                   r"новые вакансии на|скидк|распродаж|digest|newsletter|подписк|опрос|"
+                   r"dormitory\.1\.id")  # ЛК «Оплата»: каждый день новые одноразовые ссылки на счёт
 HEARTBEAT_HOURS = range(9, 24)  # ночью не будить
 FORCE_HEARTBEAT = timedelta(hours=3)  # даже без перемен — заглянуть раз в столько
 MAX_MESSAGES = 4  # своих сообщений в день
