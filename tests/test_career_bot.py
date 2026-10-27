@@ -104,6 +104,31 @@ class CareerBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Вход в hh истёк", notes[0])
         self.assertIn(".venv/bin/hhbot login", notes[0])
 
+    async def test_captcha_is_announced_while_bot_waits(self):
+        notes = []
+        core = SimpleNamespace(notify=notes.append, thinking=False, bus=SimpleNamespace(publish=lambda e: None))
+        autonomy = agent.Autonomy(self.store, SimpleNamespace(brain=None), SimpleNamespace(_last_chat=datetime.min), core)
+
+        async def run(*args, on_line=None, **kwargs):
+            for line in ("WARNING hh.ru показал капчу — решите её в окне браузера\n",) * 2:
+                on_line(line)  # бот ещё ждёт, итога нет
+            return 0, "Итог: просмотрено 81, отправлено 12. Остановка: Капча не решена"
+        with patch.object(career_bot, "command", run):
+            await autonomy.hh_session(datetime.now().replace(hour=12))
+        self.assertEqual(sum("капчу" in n for n in notes), 1)  # одно предупреждение, сразу
+        self.assertTrue(notes[0].startswith("🧩"))
+
+    async def test_command_streams_lines(self):
+        folder = Path(self.temp.name) / "streaming-bot"
+        (folder / ".venv" / "bin").mkdir(parents=True)
+        script = folder / ".venv" / "bin" / "hhbot"
+        script.write_text("#!/bin/sh\necho one\necho two\n")
+        script.chmod(0o755)
+        seen = []
+        with patch.dict(os.environ, {"HHBOT_DIR": str(folder)}):
+            code, output = await career_bot.command("x", on_line=seen.append)
+        self.assertEqual((code, seen, output), (0, ["one\n", "two\n"], "one\ntwo\n"))
+
     def test_not_due_when_he_is_at_the_computer_or_bot_missing(self):
         autonomy = agent.Autonomy(self.store, SimpleNamespace(brain=None), SimpleNamespace(_last_chat=datetime.min),
                                   SimpleNamespace(notify=lambda t: None))

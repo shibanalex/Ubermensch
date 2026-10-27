@@ -700,11 +700,20 @@ class Autonomy:
         self.store.set_cursor("hh_day", now.date().isoformat())  # одна попытка в день, даже при сбое
         live = career_bot.live()
         self.state["hh"] = "live" if live else "dry"
+        warned = set()
+
+        def watch(line: str) -> None:  # 27.10: капча ждала 10 минут, а он не знал — сессия встала
+            if "капч" in line.lower() and "captcha" not in warned:
+                warned.add("captcha")
+                self.core.notify("🧩 hh показал капчу — реши её в окне браузера бота в ближайшие "
+                                 "10 минут, иначе отклики на сегодня остановятся.")
+
         try:
-            await career_bot.command("responses", timeout=1800)
+            await career_bot.command("responses", timeout=1800, on_line=watch)
             before = career_bot.sync(self.store)
             code, output = await career_bot.command(
-                "run", "--live" if live else "--dry-run", "--limit", str(career_bot.daily_limit()))
+                "run", "--live" if live else "--dry-run", "--limit", str(career_bot.daily_limit()),
+                on_line=watch)
             after = career_bot.sync(self.store)
         finally:
             self.state["hh"] = None

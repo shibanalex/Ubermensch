@@ -48,19 +48,31 @@ def available() -> str | None:
     return None
 
 
-async def command(*args: str, timeout: int = TIMEOUT) -> tuple[int, str]:
-    """Запустить CLI бота; вывод — последние строки (подробности у бота в data/hhbot.log)."""
+async def command(*args: str, timeout: int = TIMEOUT, on_line=None) -> tuple[int, str]:
+    """Запустить CLI бота; вывод — последние строки (подробности у бота в data/hhbot.log).
+    on_line(строка) — сразу по каждой строке: капча ждёт его в окне браузера только 10 минут."""
     base = folder()
     process = await asyncio.create_subprocess_exec(
         str(base / ".venv" / "bin" / "hhbot"), *args, cwd=base, stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
+    lines: list[str] = []
+
+    async def read():
+        while raw := await process.stdout.readline():
+            line = raw.decode("utf-8", errors="replace")
+            lines.append(line)
+            del lines[:-300]
+            if on_line:
+                on_line(line)
+        await process.wait()
+
     try:
-        output, _ = await asyncio.wait_for(process.communicate(), timeout)
+        await asyncio.wait_for(read(), timeout)
     except (asyncio.CancelledError, TimeoutError):
         process.kill()
         await process.wait()
         raise
-    return process.returncode, output.decode("utf-8", errors="replace")[-4000:]
+    return process.returncode, "".join(lines)[-4000:]
 
 
 def _database() -> sqlite3.Connection:
