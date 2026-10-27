@@ -79,6 +79,7 @@ async def _serve(settings: config.Settings) -> None:
     services.add("импорт документов", core.import_loop)
     services.add("трекер активности", ActivityTracker(store).run)
     services.add("сбор данных", core.investigation.collect_loop)
+    services.add("почта", core.investigation.mail_loop)
     services.add("разбор данных", core.investigation.worker)
     services.add("взгляд на экран", ScreenObserver(core).run)
     services.add("обслуживание", Maintenance(settings.db_path, core.health).run)

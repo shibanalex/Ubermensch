@@ -33,6 +33,17 @@ async def schedule_task(title: str, instructions: str, every: Literal["day", "we
 
 
 @registry.tool()
+async def situation_note(text: str) -> str:
+    """Записать изменение в «Положение дел» — нить его событий между днями: новость, решение,
+    перенос, отказ, новая дата («поездка к бабушке — 5–9.11, билеты не куплены»). Одна строка,
+    с фактом и датой. Вечером ты вплетаешь изменения в полный текст."""
+    if not text.strip():
+        return "Пустая запись — нечего добавить"
+    await asyncio.to_thread(agent.note_situation, text[:500])
+    return "Записала в «Положение дел»"
+
+
+@registry.tool()
 async def agent_tasks() -> str:
     """Мои поручения (ждут и выполняются) и расписание."""
     items = agent.tasks("pending") + agent.tasks("running")

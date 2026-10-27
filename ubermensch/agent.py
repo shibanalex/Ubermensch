@@ -47,6 +47,10 @@ from .collectors import obsidian
 log = logging.getLogger(__name__)
 
 HEARTBEAT_EVERY = 30 * 60
+# Рассылки и реклама — не повод будить его (отправитель или тема письма)
+NOISE = re.compile(r"(?i)работа\.ру|quora|careerhub|dropbox|авито|chatgpt|render|search console|"
+                   r"билайн офд|чек на|hirehi|подходящие вакансии|ваше резюме привлекло|"
+                   r"новые вакансии на|скидк|распродаж|digest|newsletter|подписк|опрос")
 HEARTBEAT_HOURS = range(9, 24)  # ночью не будить
 FORCE_HEARTBEAT = timedelta(hours=3)  # даже без перемен — заглянуть раз в столько
 MAX_MESSAGES = 4  # своих сообщений в день
@@ -64,6 +68,7 @@ GOAL_EVERY = timedelta(hours=2)
 GOAL_DEFER = timedelta(hours=6)  # лимит подписки короче — заход ждёт его сброса, длиннее — идёт на запасном ИИ
 GOAL_MESSAGES = 3  # своих сообщений о целях в день (отдельно от heartbeat)
 LESSONS_CHARS, JOURNAL_CHARS, SKILLS_CHARS = 6000, 3000, 4000
+SITUATION_CHARS = 7000  # положение дел: линии жизни и ближайшие даты
 WEEKDAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
 
 DEFAULT_CHECKLIST = """# Heartbeat — за чем Аня следит сама
@@ -113,6 +118,20 @@ def checklist_path() -> Path:
 
 def lessons_path() -> Path:
     return config.OUTPUT_DIR / "Уроки Ани.md"
+
+
+def situation_path() -> Path:
+    """Положение дел по линиям его жизни — нить событий между днями (заметка в его Obsidian)."""
+    return config.OUTPUT_DIR / "Положение дел.md"
+
+
+def note_situation(text: str) -> None:
+    """Изменение за день: строка под «Изменения», вечером рефлексия вплетает её в текст."""
+    path = situation_path()
+    current = _read(path, SITUATION_CHARS * 2)
+    if "## Изменения" not in current:
+        current += "\n\n## Изменения (вплести вечером)"
+    _write_text(path, f"{current}\n- {datetime.now():%d.%m %H:%M} {text.strip()}\n")
 
 
 def journal_path(day: date) -> Path:
@@ -304,8 +323,13 @@ def relevant_skills(query: str, limit: int = SKILLS_CHARS) -> str:
 # --- контекст для каждого разговора ---
 
 def context_block(query: str = "") -> str:
-    """Уроки, дневник Ани за два дня, подходящие навыки, открытые поручения и расписание."""
+    """Положение дел, уроки, дневник Ани за два дня, навыки, поручения и расписание."""
     parts = []
+    if situation := _read(situation_path(), SITUATION_CHARS):
+        # 27.10: без этого Аня теряла нить — факты разбросаны, свежее тонуло в старом
+        parts.append("<situation note=\"положение дел по каждой линии его жизни: что сейчас, "
+                     "что ждём, ближайшие даты. Это главная нить — сверяйся с ней; изменилось — "
+                     "situation_note\">\n" + situation + "\n</situation>")
     if lessons := _read(lessons_path(), LESSONS_CHARS):
         parts.append(f"<anya_lessons note=\"твои уроки о том, как ему помогать — ты пишешь их "
                      f"сама по опыту\">\n{lessons}\n</anya_lessons>")
@@ -351,6 +375,7 @@ REFLECT_EXTRA = {
                                       "description": "что проверить следующим шагом и как понять результат"},
                        "evidence": {"type": "string", "description": "на какие заходы и данные опираешься"}}}},
     "journal": {"type": "string", "description": "итог дня в твой дневник, 3–8 предложений"},
+    "situation": {"type": "string", "description": "полный новый текст «Положения дел», Markdown"},
     "skills": {"type": "array", "items": {
         "type": "object", "additionalProperties": False, "required": ["name", "when", "steps"],
         "properties": {"name": {"type": "string"}, "when": {"type": "string"},
@@ -379,13 +404,37 @@ class Autonomy:
 
         idle = windows.idle_seconds()
         presence = "нет" if idle > 1800 else "отошёл" if idle > 300 else "за ПК"
-        events = self.store.db.execute("SELECT COUNT(*), MAX(id) FROM events WHERE source IN "
-                                       "('lk', 'gmail', 'obsidian', 'notification')").fetchone()
+        # все ящики (gmail, gmail_2…), ЛК, заметки, уведомления и заказы бирж
+        events = self.store.db.execute(
+            "SELECT COUNT(*), MAX(id) FROM events WHERE source LIKE 'gmail%' OR source IN "
+            "('lk', 'obsidian', 'notification', 'freelance')").fetchone()
         parts = [now.strftime("%Y-%m-%d"), str(now.hour // 3), presence, str(tuple(events)),
                  json.dumps([dict(t) for t in self.store.tasks()], default=str),
                  json.dumps([dict(r) for r in self.store.pending_reminders()], default=str),
                  obsidian.context_notes(limit=4000), _read(checklist_path(), 4000)]
         return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+    def _new_events(self) -> tuple[str, int]:
+        """Письма, ЛК и уведомления с прошлого heartbeat — отправитель и тема. Рассылки и реклама
+        отсеяны, отказы hh — одной строкой. Возвращает (текст, id последнего события)."""
+        last = int(self.store.cursor("heartbeat_events") or 0)
+        rows = self.store.db.execute(
+            "SELECT id, source, author, ts, text FROM events WHERE id>? AND outgoing=0 AND "
+            "(source LIKE 'gmail%' OR source IN ('lk', 'notification', 'freelance')) ORDER BY id LIMIT 200",
+            (last,)).fetchall()
+        if not rows:
+            return "", last
+        lines, refusals = [], 0
+        for row in rows:
+            subject = " ".join(str(row["text"]).replace("Тема:", "", 1).split())[:140]
+            if "не готов пригласить" in subject:
+                refusals += 1
+            elif not NOISE.search(f"{row['author']} {subject}"):
+                lines.append(f"- {row['ts'][5:16].replace('T', ' ')} [{row['source']}] "
+                             f"{row['author'] or ''}: {subject}")
+        if refusals:
+            lines.append(f"- hh: отказов «не готов пригласить» — {refusals}")
+        return "\n".join(lines[-30:]), rows[-1]["id"]
 
     def _busy(self, now: datetime) -> bool:
         return now - self.investigation._last_chat < QUIET_AFTER_CHAT or self.core.thinking
@@ -407,6 +456,7 @@ class Autonomy:
         situation = (f"Он сейчас: {'за компьютером' if windows.idle_seconds() < 300 else 'не трогает компьютер'}"
                      f" {int(windows.idle_seconds() // 60)} мин"
                      + (f", активное окно «{window.title}» ({window.app})" if window else "") + ".")
+        fresh, fresh_id = self._new_events()
         task = (
             "[Системная задача: heartbeat — ты сама проснулась и проверяешь, нужна ли ему сейчас "
             "помощь.] Сверься со списком из <heartbeat> и со всем контекстом. "
@@ -421,11 +471,19 @@ class Autonomy:
             "потерявшие смысл — drop, и коротко скажи, что закрыла. Сделанное "
             "отмечай done в поле tasks. Поручения и навыки — "
             "инструментами delegate_task и save_skill, если это уместно. Ничего не отправляй людям "
-            "от его имени без его просьбы.\n\n<heartbeat>\n" + _read(checklist_path(), 4000)
-            + "\n</heartbeat>")
+            "от его имени без его просьбы. В <new_events> — новые письма, ЛК и уведомления с "
+            "прошлой проверки: приглашение, ответ работодателя, сообщение заказчика, требование "
+            "вуза или банка — повод написать ему сразу (что пришло, что ответить, срок), "
+            "прочитать целиком через email_read и записать situation_note. Рассылки не пересказывай. "
+            "[freelance] — свежий заказ FL.ru под его навык: если подходит, предложи ему коротко "
+            "(что нужно, бюджет, ссылка) и готовый отклик по «08 AI/Reports/Карьера/Фриланс — "
+            "услуги парсинга.md» с ценой и сроком; отправляет он сам. Не подходит — молчи."
+            "\n\n<heartbeat>\n" + _read(checklist_path(), 4000) + "\n</heartbeat>"
+            + (f"\n<new_events>\n{fresh}\n</new_events>" if fresh else ""))
         data, outcome = await self.assistant.agent_ask(
-            task, HEARTBEAT_EXTRA, focus="heartbeat", timeout=600, source="heartbeat", api=True,
-            kind="heartbeat")
+            task, HEARTBEAT_EXTRA, focus="heartbeat " + fresh[:500], timeout=600,
+            source="heartbeat", api=True, kind="heartbeat")
+        self.store.set_cursor("heartbeat_events", str(fresh_id))
         decision = data.get("decision", "silent")
         if decision != "silent" and outcome.reply and (can_write or decision == "act"):
             self.core.notify(outcome.reply)
@@ -590,6 +648,12 @@ class Autonomy:
             "реально получилось из твоей работы: заходы по целям (статус по журналу вызовов), "
             "поручения, советы и его оценки. Учись прежде всего на них: в «Мои ошибки» — "
             "неподтверждённые «сделано», повторяющиеся препятствия, отклонённые советы. "
+            "situation — полный новый текст «Положения дел» (до 6500 символов): возьми прежний текст "
+            "из <situation>, вплети раздел «Изменения» и всё новое за день (разговоры, дневник, "
+            "почта, ЛК, итоги шагов), убери прошедшее. Разделы: «Ближайшие даты» (дата — что), "
+            "«Работа и деньги», «Учёба, армия, документы», «Жильё», «Здоровье» (без диагнозов и "
+            "доз, только что важно помнить), «Музыка», «Люди», «Открытые вопросы к нему». У каждого "
+            "пункта — с какой даты так; неподтверждённое помечай. "
             "answer_ratings — его 👍/👎 под твоими ответами: 👎 с пояснением (why) — самый точный "
             "урок, запиши, чего не хватило и как отвечать на такое в следующий раз; 👍 — что "
             "сработало, сохрани это. "
@@ -606,6 +670,8 @@ class Autonomy:
                                                        kind="reflection")
         if lessons := str(data.get("lessons") or "").strip():
             _write_text(lessons_path(), lessons[:LESSONS_CHARS] + "\n")
+        if situation := str(data.get("situation") or "").strip():
+            _write_text(situation_path(), situation[:SITUATION_CHARS] + "\n")
         for skill in data.get("skills") or []:
             if skill.get("name") and skill.get("steps"):
                 save_skill(skill["name"], skill.get("when", ""), skill["steps"])

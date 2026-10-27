@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta
 from . import config, google_calendar, ingest, metrics
 from .assistant import HELPER_SOURCES, Assistant
 from .brain import BrainError
-from .collectors import (ai_chats, chrome, creative, documents, gdrive, gmail, listening,
+from .collectors import (ai_chats, chrome, creative, documents, freelance, gdrive, gmail, listening,
                          notifications, obsidian, power, takeout)
 from .collectors.telegram import TelegramAccount, TelegramLoginRequired
 from .health import Health
@@ -38,6 +38,7 @@ RECENT_DAYS = 30
 CHUNK_CHARS = 120_000
 LEGACY_CHUNK = 60_000  # порции, поставленные в очередь до 13.10.2026 (ключ без «@размер»)
 COLLECT_EVERY = 2 * 3600
+MAIL_EVERY = 15 * 60  # почта отдельно и часто: приглашения и ответы работодателей
 SLOW_SOURCES_EVERY = 24 * 3600  # документы и архив чатов с ИИ меняются редко
 GEMINI_EVERY = 6 * 3600  # чаты AI Studio с Диска — «иногда»
 # Лимит подписки Claude общий для разбора, бота и Claude Code: днём разбор идёт медленно
@@ -365,6 +366,7 @@ class Investigation:
         self.import_dir = config.DATA_DIR / "raw" / "import"
         self.notify = notify  # сообщение пользователю (маскот + Telegram)
         self.collecting = False
+        self._mail_lock = asyncio.Lock()  # почту собирают и быстрый цикл, и общий сбор
         self._attempts: dict[int, int] = {}
         self._last_chat = datetime.min
 
@@ -395,25 +397,7 @@ class Investigation:
             except Exception:
                 log.exception("Сбор Chrome не удался")
 
-            for mailbox in config.mail_accounts():
-                # основной ящик — прежние ключи «gmail», дополнительные — «gmail_2», «gmail_3»…
-                key = "gmail" if mailbox.key == "1" else f"gmail_{mailbox.key}"
-                try:
-                    last = self.store.cursor(key)
-                    start = datetime.fromisoformat(last) - timedelta(days=2) if last else since
-                    found[key] = self.store.add_events(await asyncio.to_thread(
-                        gmail.collect, mailbox.address, mailbox.password, start, key != "gmail"))
-                    self.store.set_cursor(key, datetime.now().isoformat(timespec="seconds"))
-                    self.health.clear(key, f"Почта {mailbox.address} снова собирается.")
-                except imaplib.IMAP4.error as e:
-                    log.error("Gmail %s не пускает: %s", mailbox.address, e)
-                    suffix = "" if key == "gmail" else f"_{mailbox.key}"
-                    self.health.report(key, f"Gmail {mailbox.address} не пускает: пароль приложения "
-                                       "отозван или неверен. Создай новый на "
-                                       "myaccount.google.com/apppasswords и замени "
-                                       f"GMAIL_PASSWORD{suffix} в .env.")
-                except Exception:
-                    log.exception("Сбор Gmail %s не удался", mailbox.address)  # обычно сеть
+            found.update(await self.collect_mail(since))
 
             for account in self.telegrams.values():
                 profile = account.profile
@@ -678,6 +662,46 @@ class Investigation:
         except BrainError as e:
             log.warning("Стиль и голос не обновлены: %s", e)
             return ""
+
+    async def collect_mail(self, since: datetime | None = None) -> dict[str, int]:
+        """Только почта — быстро и часто (MAIL_EVERY): письма с приглашениями не ждут двухчасового
+        сбора всего остального (27.10 приглашение TechCertify прошло мимо Ани)."""
+        since = since or datetime.now() - timedelta(days=HISTORY_DAYS)
+        found: dict[str, int] = {}
+        async with self._mail_lock:
+            for mailbox in config.mail_accounts():
+                # основной ящик — прежние ключи «gmail», дополнительные — «gmail_2», «gmail_3»…
+                key = "gmail" if mailbox.key == "1" else f"gmail_{mailbox.key}"
+                try:
+                    last = self.store.cursor(key)
+                    start = datetime.fromisoformat(last) - timedelta(days=2) if last else since
+                    found[key] = self.store.add_events(await asyncio.to_thread(
+                        gmail.collect, mailbox.address, mailbox.password, start, key != "gmail"))
+                    self.store.set_cursor(key, datetime.now().isoformat(timespec="seconds"))
+                    self.health.clear(key, f"Почта {mailbox.address} снова собирается.")
+                except imaplib.IMAP4.error as e:
+                    log.error("Gmail %s не пускает: %s", mailbox.address, e)
+                    suffix = "" if key == "gmail" else f"_{mailbox.key}"
+                    self.health.report(key, f"Gmail {mailbox.address} не пускает: пароль приложения "
+                                       "отозван или неверен. Создай новый на "
+                                       "myaccount.google.com/apppasswords и замени "
+                                       f"GMAIL_PASSWORD{suffix} в .env.")
+                except Exception:
+                    log.exception("Сбор Gmail %s не удался", mailbox.address)  # обычно сеть
+        return found
+
+    async def mail_loop(self) -> None:
+        await asyncio.sleep(60)
+        while True:
+            try:
+                await self.collect_mail()
+            except Exception:
+                log.exception("Быстрый сбор почты не удался")
+            try:  # заказы бирж — тем же частым циклом: свежий заказ разбирают в первые часы
+                self.store.add_events(await asyncio.to_thread(freelance.collect))
+            except Exception as e:
+                log.warning("Заказы FL.ru не собраны: %s", e)
+            await asyncio.sleep(MAIL_EVERY)
 
     async def collect_loop(self) -> None:
         await asyncio.sleep(20)

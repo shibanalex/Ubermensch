@@ -228,9 +228,10 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
         self.db.execute("UPDATE messages SET notes = ? WHERE id = ?",
                         (json.dumps(notes, ensure_ascii=False), message_id))
 
-    def recent_messages(self, limit: int) -> list[sqlite3.Row]:
+    def recent_messages(self, limit: int, channels: tuple[str, ...] | None = None) -> list[sqlite3.Row]:
+        where = f"WHERE channel IN ({','.join('?' * len(channels))}) " if channels else ""
         rows = self.db.execute(
-            "SELECT * FROM messages ORDER BY id DESC LIMIT ?", (limit,)
+            f"SELECT * FROM messages {where}ORDER BY id DESC LIMIT ?", (*(channels or ()), limit)
         ).fetchall()
         return rows[::-1]
 

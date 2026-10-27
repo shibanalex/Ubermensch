@@ -51,7 +51,9 @@ ACTION_TIMEOUT = 900  # с запасом на «да/нет» пользова�
 TG_MODEL, TG_EFFORT = models.cli("chat_tg")  # уровни моделей по задачам — runtime/models.py
 SCREEN_MODEL = models.cli("screen")[0]  # комментарий к экрану — быстро и дёшево
 AGENT_TIMEOUT = 1800  # поручение: несколько шагов с инструментами и поиском
-HISTORY_LIMIT = 20
+HISTORY_LIMIT = 30
+# 27.10: служебные сообщения (бэкап, лимит, импорт, hh) вытесняли из истории половину разговора
+CHAT_CHANNELS = ("tg", "desktop", "obsidian")
 FACTS_LIMIT = 150
 PEOPLE_LIMIT = 40
 ANALYSIS_FACTS_LIMIT = 400
@@ -622,7 +624,7 @@ class Assistant:
                 f"#{r['id']} {r['due_at'][:16].replace('T', ' ')} — {r['text']}"
                 for r in reminders) + "\n</reminders>")
 
-        history = self.store.recent_messages(HISTORY_LIMIT)
+        history = self.store.recent_messages(HISTORY_LIMIT, channels=CHAT_CHANNELS)
         if history:
             parts.append("<history>\n" + "\n".join(
                 f"[{m['ts'][5:16].replace('T', ' ')}] "
