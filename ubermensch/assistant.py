@@ -54,8 +54,13 @@ AGENT_TIMEOUT = 1800  # поручение: несколько шагов с и�
 HISTORY_LIMIT = 30
 # 27.10: служебные сообщения (бэкап, лимит, импорт, hh) вытесняли из истории половину разговора
 CHAT_CHANNELS = ("tg", "desktop", "obsidian")
-FACTS_LIMIT = 150
-PEOPLE_LIMIT = 40
+# 27.10: ответ весил ~80 тыс. токенов (факты 58 КБ, люди 21 КБ) — лимит подписки кончался
+# за полдня. Остальное Аня находит сама через memory_search.
+FACTS_LIMIT = 50
+FACT_CHARS = 400  # длинный факт в чате обрезается; целиком — memory_search
+PEOPLE_LIMIT = 40  # кандидаты; в чат — упомянутые в разговоре и ключевые, не больше CHAT_PEOPLE
+CHAT_PEOPLE = 15
+PROFILE_CHARS = 9000  # профиль в чат: самое относящееся к вопросу (было 16 тыс.)
 ANALYSIS_FACTS_LIMIT = 400
 ANALYSIS_PEOPLE_LIMIT = 200
 KEY_PERSON = 4  # люди такой важности попадают в контекст разбора, даже если не упомянуты
@@ -296,6 +301,10 @@ DOSSIER_SCHEMA = {
 
 EMOTIONS = ("neutral", "happy", "excited", "embarrassed", "annoyed", "sad", "confused", "smug",
             "wink", "thinking")  # выражение мордочки маскота, пока Аня отвечает
+
+
+def shorten(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit].rstrip() + " …"
 
 
 def _schema(fields: tuple[str, ...] = ("reply", "emotion", "memory", "goals", "tasks", "people",
@@ -576,7 +585,7 @@ class Assistant:
                  f"(UTC{utc_offset[:3]}:{utc_offset[3:]})"]
         if outside := world.render(self.workspace / "world.json"):  # погода, курсы, новости
             parts.append(outside)
-        if profile := context_for(self.workspace.parent, query):
+        if profile := context_for(self.workspace.parent, query, max_chars=PROFILE_CHARS):
             # Shared by Claude and the fallback. Background/private contexts use
             # _profile_context and deliberately do not receive this artifact.
             parts.append(profile)
@@ -606,7 +615,7 @@ class Assistant:
             + (f". {g['details']}" if g["details"] else "")
             for g in goals) or "(целей пока нет)") + "\n</goals>")
 
-        parts += self._knowledge(FACTS_LIMIT, PEOPLE_LIMIT, query=query)
+        parts += self._knowledge(FACTS_LIMIT, PEOPLE_LIMIT, query=query, chat=True)
 
         tasks = self.store.tasks()
         if tasks:
@@ -634,7 +643,8 @@ class Assistant:
         return "<context>\n" + "\n\n".join(parts) + "\n</context>"
 
     def _knowledge(self, facts_limit: int, people_limit: int,
-                   data: str | None = None, private: bool = False, query: str = '') -> list[str]:
+                   data: str | None = None, private: bool = False, query: str = '',
+                   chat: bool = False) -> list[str]:
         """Факты и люди — общая часть контекста для чата и для разбора данных. С data — из
         людей только упомянутые в данных и ключевые: остальные лишь тратят лимит."""
         facts = self.store.relevant_facts(query, facts_limit) if query else self.store.facts(facts_limit)
@@ -643,17 +653,24 @@ class Assistant:
             facts = [f for f in facts if f["area"] not in PRIVATE_AREAS
                      and not PRIVATE_WORDS.search(f["content"])]
             people = []
+        if chat:  # в разговор — упомянутые в нём и в последних репликах, плюс ключевые
+            data = query + " " + " ".join(m["text"] for m in self.store.recent_messages(
+                8, channels=CHAT_CHANNELS))
         if data is not None:
             text = data.lower()
             people = [p for p in people if p["importance"] >= KEY_PERSON or any(
                 len(word) >= 3 and word in text for word in p["name"].lower().split())]
+        if chat:
+            people = people[:CHAT_PEOPLE]
         blocks = ["<facts>\n" + ("\n".join(
-            f"#{f['id']} [{AREAS.get(f['area'], f['area'])}] ({f['importance']}) {f['content']}"
+            f"#{f['id']} [{AREAS.get(f['area'], f['area'])}] ({f['importance']}) "
+            + (shorten(f['content'], FACT_CHARS) if chat else f['content'])
             for f in facts) or "(пока ничего не известно)") + "\n</facts>"]
         if people:
             blocks.append("<people>\n" + "\n".join(
                 f"#{p['id']} {p['name']}" + (f" — {p['relation']}" if p["relation"] else "")
-                + (f". {p['notes']}" if p["notes"] else "") for p in people) + "\n</people>")
+                + (f". {shorten(p['notes'], 300) if chat else p['notes']}" if p["notes"] else "")
+                for p in people) + "\n</people>")
         return blocks
 
     def _profile_context(self, data: str | None = None, private: bool = False) -> str:

@@ -86,8 +86,10 @@ def map_text(options: list[dict]) -> str:
 def options_context(store) -> str:
     """Карты путей активных целей для разговора: он спрашивает о вариантах — ответ по карте,
     его «не моё» или «сработало» — сразу в option_status."""
-    lines = [f"#{goal['id']} " + encoded(compact(o)) for goal in store.goals()
-             for o in store.goal_options(goal["id"])]
+    # коротко: номер, путь, статус, оценка, итог — подробности по пути через planning_overview
+    lines = [f"#{goal['id']} путь {o['id']} [{o['status']}] {o['title']} · отдача {o['payoff']}, "
+             f"усилие {o['effort']}" + (f" · итог: {o['outcome'][:120]}" if o["outcome"] else "")
+             for goal in store.goals() for o in store.goal_options(goal["id"])]
     if not lines:
         return ""
     return ("<options>\nКарта путей к его целям (#цель путь). Отвечай о вариантах по ней; его "
