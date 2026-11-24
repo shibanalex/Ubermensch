@@ -21,7 +21,8 @@ MCP_SERVER = "ubermensch"  # имя нашего сервера инструме
 
 LIMIT_WORDS = ("limit", "лимит", "rate", "overloaded", "529")
 AUTH_WORDS = ("login", "log in", "authenticat", "unauthorized", "401", "oauth", "invalid api key",
-              "credential", "not logged", "expired")
+              "credential", "not logged", "expired", "disabled", "subscription access",
+              "can't receive replies", "verification portal")
 MISSING = "Claude Code не найден"
 TIMEOUT = "нет ответа за"
 RESET_AT = re.compile(r"(?i)resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?")
@@ -30,7 +31,7 @@ RESET_DATE = re.compile(r"(?i)resets?\s+(?:on\s+)?([a-z]{3})[a-z]*\.?\s+(\d{1,2}
                         r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?")
 RESET_EPOCH = re.compile(r"limit reached\|(\d{10})")
 MONTHS = {m: i for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split(), 1)}
-AUTH_PAUSE = timedelta(minutes=5)  # после ошибки входа не дёргаем Claude каждую секунду
+AUTH_PAUSE = timedelta(hours=12)  # после ошибки входа не дёргаем Claude каждую секунду
 LIMIT_FALLBACK = timedelta(minutes=30)  # если время сброса лимита неизвестно
 
 
@@ -145,11 +146,11 @@ class Brain:
                 self._blocked_until, self._blocked_by = datetime.now() + pause, e
                 self._auth_failures = self._auth_failures + 1 if e.kind == "auth" else 0
                 if e.kind != "auth" or self._auth_failures > 1:
-                    self.health.report("brain", e.friendly())
+                    self.health.report("brain", e.friendly(), quiet=True)
             raise
         self._blocked_until = self._blocked_by = None
         self._auth_failures = 0
-        self.health.clear("brain", "Claude снова на связи.")
+        self.health.clear("brain")
         return answer
 
     @property

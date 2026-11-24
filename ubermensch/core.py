@@ -78,6 +78,7 @@ class Core:
         self.profiler = None  # profiling.Profiler, подключается при запуске
         self.interviewer = None  # interview.Interviewer, подключается при запуске
         self.autonomy = None  # agent.Autonomy, подключается при запуске
+        self.tg_career = None  # tg_career_bot.TelegramCareerBot, подключается при запуске
         self.health = Health(self.notify)  # известные проблемы и что с ними делать
         self.supervisor = Supervisor(self.health)  # фоновые сервисы с перезапуском
         # один клиент на сессию: и для сбора, и для действий; личный и рабочий аккаунты

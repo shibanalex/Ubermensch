@@ -1,71 +1,34 @@
-# Übermensch
+# Übermensch — Local-First Autonomous Personal AI Agent
 
-Личная AI-система, которая помогает своему владельцу добиваться целей. Её лицо — **Аня (anya.exe)**:
+**Übermensch** is a persistent, local-first personal AI system built in Python for Linux (KDE Plasma / Wayland). It runs as a background `systemd` daemon, connects personal communication channels and developer tools via the **Model Context Protocol (MCP)**, maintains searchable long-term memory in SQLite (FTS5), and provides a desktop HUD mascot (`PySide6`), an **Obsidian** plugin, and a **KDE Plasma** QML widget.
 
-- маскот-консоль с мордочкой `:3` на рабочем столе — клик, вопрос, ответ пузырём;
-- виджет задач Plasma на рабочем столе: карточка в цветах темы, где задачу можно отметить, вернуть, поправить;
-- мордочка с аниме-эмоциями: Аня отвечает с тем выражением, с каким говорит;
-- бот в Telegram, который пишет «как человек» и в стиле владельца;
-- агент, который действует на компьютере и от имени владельца: сообщения и письма отправляет после подтверждения; для файлов, компьютера и календаря действуют отдельные [политики](docs/SECURITY.md);
-- расследователь: собирает переписки, почту, браузер, документы, активность — и составляет досье;
-- и всё это помнит: факты, людей, цели, задачи;
-- и действует сама: раз в полчаса проверяет, нужна ли помощь, берёт поручения и регулярные дела, каждый вечер разбирает день и обновляет свои уроки о том, как тебе помогать;
-- и понимает, кто ты: профиль по ценностям, целям, психике, телу, людям, среде и возможностям — каждый вывод со ссылкой на источники.
+Also included in `string_stops_gui/`: a standalone **Python + QML** double-stop / chord fingering solver for bowed string instruments (violin, viola, cello).
 
-Работает на Linux с KDE Plasma (Wayland). Мозг — Claude через Claude Code на подписке.
-Данные — локально: база, импорты и служебные данные — в `~/Projects/Ubermensch` (папка
-рядом с проектом). Хранилище Obsidian пользователя (`OBSIDIAN_VAULT`) Аня читает целиком,
-кроме вложений и шаблонов; свои выводы пишет в его `08 AI/Reports`, документы Word/Excel — в
-`~/Документы/Аня`. Пути переопределяются в настройках.
-Если Claude Code недоступен, чат и фоновые поручения переключаются на Claude API,
-затем OpenAI — при подключённых ключах и доступном бюджете. Общие инструменты для
-компьютера, файлов, Telegram, почты, календаря и вуза сохраняются; фон получает только
-разрешённый ему набор. Подтверждения выполняются ядром независимо от выбранного ИИ.
-После запуска инструмента автоматическое повторение запроса другой моделью запрещено.
-Встроенный веб-поиск Claude и просмотр изображений пока не перенесены в общий API.
+## Architecture Highlights
 
-## Быстрый старт
+- **Multi-Brain Routing & Cost Control (`ubermensch/brain.py`, `claude_api.py`, `openai_brain.py`):** Tiered task routing (`light` / `standard` / `strong`), structured schema outputs (`Pydantic v2`), automatic fallback on quota/network failures, and compact context assembly (~50% token reduction via targeted `memory_search`).
+- **Event Collectors & Background Analysis (`observer.py`, `analysis.py`):** Incremental ingestion from Telegram (`Telethon` / `aiogram`), IMAP/SMTP email, Google Calendar, Google Drive, Obsidian vaults, and university portals, processed asynchronously in batched background jobs.
+- **Long-Term Memory (`store.py`, `capabilities/memory.py`):** Transactional SQLite storage with Cyrillic-aware stemming and FTS5 search across facts, people, goals, reminders, and conversation history.
+- **Autonomous Loop (`agent.py`, `goal_execution.py`):** Scheduled briefings, evening reflection, reminder dispatch, task delegation, and career pipeline automation (`Playwright` + email/Telegram outreach).
+- **Policy & Safety Boundary (`runtime/policy.py`):** Explicit capability registry, shell sandboxing, PII filtering before external model calls, and human-in-the-loop confirmation for sensitive actions.
+- **Desktop & Ecosystem Surfaces:**
+  - `ubermensch/desktop/` — `PySide6` desktop overlay & metrics console
+  - `obsidian-plugin/` — live Obsidian sidebar panel
+  - `plasmoid/org.ubermensch.hud/` — native KDE Plasma 6 widget (QML)
+  - `string_stops_gui/` — Python + QML bowed-string fingering & chord playability checker
 
-Для нового checkout, в bash из корня проекта. Настройки и зависимости:
-[CONFIGURATION.md](docs/CONFIGURATION.md). Полный запуск включает сбор данных;
-для знакомства разработчика сначала доступны [изолированные тесты](docs/TESTING.md).
+## Tech Stack
+
+`Python 3.12+` · `asyncio` · `SQLite (FTS5)` · `MCP` · `Pydantic v2` · `aiogram` · `Telethon` · `Playwright` · `PySide6` · `QML`
+
+## Running Tests
 
 ```bash
-python3 -m venv .venv
+python -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp -n .env.example .env && chmod 600 .env   # заполнить; существующий .env не перезаписывается
-mkdir -p ../Ubermensch/db                    # если UBERMENSCH_DATA изменён — db внутри него
-./telegram_login.sh
-./start.sh                                   # автозапуск: ./scripts/install_autostart.sh
-./scripts/install_widget.sh                  # виджет задач на рабочий стол
+.venv/bin/python -m unittest discover -s tests
 ```
 
-## Документация
+## Configuration
 
-**Начать разработку: [навигатор документации](docs/README.md) →
-[руководство разработчика](docs/DEVELOPMENT.md).** В руководстве есть карта
-исходников, сквозные сценарии и рецепты добавления инструментов, API и источников.
-
-| Документ | О чём |
-|---|---|
-| [RELIABILITY](docs/RELIABILITY.md) | Транзакции, восстановление, задания, доставка, права, бэкапы и качество |
-| [CONFIGURATION](docs/CONFIGURATION.md) | Окружение, все настройки, процессы, отдельный стенд |
-| [API](docs/API.md) | HTTP-маршруты, JSON, SSE, ошибки и таймауты |
-| [DATA_MODEL](docs/DATA_MODEL.md) | Таблицы и 8 миграций, курсоры, файловая карта папки данных |
-| [AI_RUNTIME](docs/AI_RUNTIME.md) | Claude/OpenAI, промпты, схема ответа, Общие инструменты, переключение |
-| [BACKGROUND](docs/BACKGROUND.md) | Сборщики, очередь анализа, импорт, досье и обслуживание |
-| [CLIENTS](docs/CLIENTS.md) | Qt, Telegram, локальная связь окон, метрики |
-| [TESTING](docs/TESTING.md) | 92 изолированных теста, проверки изменений и диагностика |
-| [LIMITATIONS](docs/LIMITATIONS.md) | Технический долг, границы гарантий и критерии следующих этапов |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Как устроено: процессы, модули, потоки данных, как расширять и масштабировать |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Запуск, автозапуск, где что лежит, диагностика, **что делать при сбоях**, бэкапы и восстановление |
-| [docs/SECURITY.md](docs/SECURITY.md) | Какие данные где, что уходит наружу, политика подтверждений, защита от подмены команд |
-| [docs/EVOLUTION.md](docs/EVOLUTION.md) | Направление архитектуры для нескольких устройств, выполненный этап и порядок дальнейшего разделения |
-
-## Команды Telegram
-
-`/tasks` · `/goals` · `/memory` · `/forget N` · `/reminders` · `/cancel N` · `/status` · `/profile` · `/question` · `/agent`
-
-## Правило проекта
-
-Документация обновляется вместе с кодом: любая новая возможность, сервис, источник или изменение поведения — сразу в соответствующий документ.
+Copy `.env.example` to your data directory `.env` and fill in the required credentials. Secrets, databases, and personal logs live outside the code repository (`DATA_DIR`).

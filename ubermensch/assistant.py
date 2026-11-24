@@ -553,11 +553,14 @@ class Assistant:
             return (f"{self._profile_context('', private)}\n\n<data source=\"{what}\">\n{data}"
                     f"\n</data>\n\n<message>\n{UNIVERSITY_TASK.format(what=what)}\n</message>")
 
-        if "личном кабинете" in what:  # кабинет — личное: только Claude
-            async with self._analysis_lock:
-                answer = await self.brain.ask(build(False), schema=UNIVERSITY_SCHEMA,
-                                              system_prompt_file=self.analysis_prompt_file,
-                                              model=ANALYSIS_MODEL)
+        if "личном кабинете" in what:  # кабинет — личное: сначала Claude, при сбое — второй ИИ
+            try:
+                async with self._analysis_lock:
+                    answer = await self.brain.ask(build(False), schema=UNIVERSITY_SCHEMA,
+                                                  system_prompt_file=self.analysis_prompt_file,
+                                                  model=ANALYSIS_MODEL)
+            except BrainError:
+                answer, _ = await self._helper_first(build, schema=UNIVERSITY_SCHEMA)
         else:
             answer, _ = await self._helper_first(build, schema=UNIVERSITY_SCHEMA)
         return str(answer.data.get("message", "")).strip()
@@ -694,10 +697,19 @@ class Assistant:
         if source in HELPER_SOURCES:
             answer, engine = await self._helper_first(build, schema=self.analysis_schema)
         else:
-            async with self._analysis_lock:
-                answer, engine = await self.brain.ask(
-                    build(False), system_prompt_file=self.analysis_prompt_file,
-                    schema=self.analysis_schema, model=ANALYSIS_MODEL), "claude"
+            try:
+                async with self._analysis_lock:
+                    answer, engine = await self.brain.ask(
+                        build(False), system_prompt_file=self.analysis_prompt_file,
+                        schema=self.analysis_schema, model=ANALYSIS_MODEL), "claude"
+            except BrainError as e:
+                if self.helper is not None and self.helper.usable:
+                    log.warning("Claude недоступен для разбора (%s) — делаю вторым ИИ", e)
+                    answer, engine = await self.helper.ask(
+                        build(True), system_prompt_file=self.analysis_prompt_file,
+                        schema=self.analysis_schema), "openai"
+                else:
+                    raise
         data = answer.data
         outcome = Outcome(reply=str(data.get("reply", "")).strip(), engine=engine)
         self._apply_answer(data, outcome, f'analysis:{title}')

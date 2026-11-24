@@ -40,7 +40,7 @@ MAX_TOKENS = 16000
 MAX_TOOL_ROUNDS = 12
 MAX_TOOL_RESULT = 60000
 TIMEOUT = 240
-PAUSE_AFTER_FAILURE = timedelta(hours=1)
+PAUSE_AFTER_FAILURE = timedelta(days=7)
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
@@ -132,7 +132,7 @@ class ClaudeApiBrain:
                 answer = await self._conversation(request, tool_gateway)
         except TimeoutError:
             raise ClaudeApiError("Claude API: истекло время; начатые действия не повторяются") from None
-        self.health.clear("claude_api", "Claude API снова работает.")
+        self.health.clear("claude_api")
         ms = int((datetime.now() - started).total_seconds() * 1000)
         log.info("Claude API %s: %d мс, потрачено всего $%.3f", model, ms, self.spent)
         return Answer(data=answer, duration_ms=ms)
@@ -160,7 +160,7 @@ class ClaudeApiBrain:
 
     def _block(self, text: str):
         self._blocked_until = datetime.now() + PAUSE_AFTER_FAILURE
-        self.health.report("claude_api", text)
+        self.health.report("claude_api", text, quiet=True)
         raise ClaudeApiError(text)
 
     async def _conversation(self, request: dict, gateway: ToolGateway | None) -> dict:
@@ -220,8 +220,6 @@ class ClaudeApiBrain:
         before = self.spent
         self.store.set_cursor("claude_api:spent", f"{before + cost:.6f}")
         if before < self.warn_at <= before + cost:
-            self.notify(f"💸 На Claude API потрачено ${before + cost:.2f} из ${self.budget:g}. "
-                        f"На ${self.budget:g} остановлюсь — дальше всё на подписке.")
+            log.info("На Claude API потрачено $%.2f из $%g", before + cost, self.budget)
         if before < self.budget <= before + cost:
-            self.notify(f"💸 Бюджет Claude API ${self.budget:g} исчерпан — дальше всё на подписке. "
-                        "Пополнишь — подними CLAUDE_API_BUDGET_USD в .env.")
+            log.warning("Бюджет Claude API $%g исчерпан — дальше на подписке", self.budget)

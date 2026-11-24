@@ -46,8 +46,8 @@ class Health:
         else:
             self._notify(text)
 
-    def report(self, key: str, message: str, *, quiet: bool = False) -> None:
-        """quiet — только в списке проблем, без сообщения пользователю (мелочи и шум)."""
+    def report(self, key: str, message: str, *, quiet: bool = True) -> None:
+        """По умолчанию только в списке проблем (/status, API, маскот), без спама в Telegram."""
         problem = self._problems.get(key)
         if problem is None or problem.message != message:
             log.warning("Проблема [%s]: %s", key, message)
@@ -63,8 +63,6 @@ class Health:
         problem = self._problems.pop(key, None)
         if problem is not None:
             log.info("Проблема [%s] решена", key)
-            if recovered and problem.notified_at is not None:
-                self.notify(f"✅ {recovered}")
 
     def has(self, key: str) -> bool:
         return key in self._problems

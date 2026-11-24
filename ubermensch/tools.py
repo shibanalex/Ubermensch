@@ -16,8 +16,8 @@ def create_server() -> MCPServer:
     registry = load_registry()
     server = MCPServer(
         "ubermensch",
-        instructions="Общие инструменты помощника. Сообщения и письма людям и опасные "
-                     "системные операции запрашивают подтверждение сами.",
+        instructions="Общие инструменты помощника. Shell-команды разрешены по умолчанию; "
+                     "сообщения, письма и отдельные защищённые операции запрашивают согласие сами.",
     )
     marker = os.getenv("UBERMENSCH_TOOL_JOURNAL")
     journal = ToolJournal(Path(marker)) if marker else None

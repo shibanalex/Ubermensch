@@ -435,7 +435,16 @@ async def run(settings: Settings, core: Core) -> None:
     helpers = [asyncio.create_task(_set_commands(bot)),
                asyncio.create_task(forward_events(bot, core, settings.tg_chat_id))]
     try:
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        delay = COMMANDS_RETRY
+        while True:
+            try:
+                await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+                break
+            except Exception as e:
+                log.warning("Опрос Telegram прерван на старте (%s) — повторю через %d с",
+                            type(e).__name__, delay)
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 120)
     finally:
         for task in helpers:
             task.cancel()

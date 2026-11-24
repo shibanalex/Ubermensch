@@ -34,11 +34,15 @@ API = "https://api.openai.com/v1"
 PREFERRED = {
     "background": ("gpt-6-luna", "gpt-6.1-luna", "gpt-5.6-luna", "gpt-5-mini", "gpt-4.1-mini",
                    "gpt-4o-mini"),
-    "chat": ("gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-terra", "gpt-5", "gpt-4.1", "gpt-5-mini",
+    "chat": ("gpt-6-sol", "gpt-5.6-terra", "gpt-5", "gpt-4.1", "gpt-5-mini",
              "gpt-4o-mini"),
 }
 MODEL_ENV = {"background": "OPENAI_MODEL", "chat": "OPENAI_CHAT_MODEL"}
 EFFORT = {"background": "low", "chat": "medium"}
+# gpt-6.1-sol is advertised for Chat Completions, but its current API rejects function tools
+# with every supported reasoning_effort value.  gpt-6-sol accepts tools with effort="none".
+TOOL_INCOMPATIBLE = ("gpt-6.1-sol",)
+TOOL_EFFORT_NONE = ("gpt-6-sol",)
 # $ за миллион токенов (вход, выход); по самому длинному совпадению начала имени.
 # Неизвестная модель считается по цене флагмана — бюджет не уйдёт в минус незаметно.
 PRICES = {"gpt-6-astra": (10.0, 50.0), "gpt-6.1-sol": (2.0, 10.0), "gpt-6-sol": (2.0, 10.0),
@@ -62,8 +66,8 @@ class OpenAIBrain:
     def __init__(self, store: Store, health: Health, notify):
         self.store, self.health, self.notify = store, health, notify
         self.key = os.getenv("OPENAI_API_KEY", "").strip()
-        self.budget = float(os.getenv("OPENAI_BUDGET_USD", "9"))
-        self.warn_at = float(os.getenv("OPENAI_WARN_USD", "7"))
+        self.budget = float(os.getenv("OPENAI_BUDGET_USD", "50"))
+        self.warn_at = float(os.getenv("OPENAI_WARN_USD", "45"))
         self._models = {role: os.getenv(env, "").strip() or self.store.cursor(f"openai:model:{role}")
                         for role, env in MODEL_ENV.items()}
         self._blocked_until: datetime | None = None
@@ -113,7 +117,7 @@ class OpenAIBrain:
         else:
             raise OpenAIError(f"OpenAI: ошибка {status} {code} {message[:200]}")
         self._blocked_until = datetime.now() + PAUSE_AFTER_FAILURE
-        self.health.report("openai", text)
+        self.health.report("openai", text, quiet=True)
         raise OpenAIError(text)
 
     async def _pick_model(self, session: aiohttp.ClientSession, role: str) -> str:
@@ -128,6 +132,20 @@ class OpenAIBrain:
         self.store.set_cursor(f"openai:model:{role}", model)
         log.info("OpenAI: для «%s» — модель %s", role, model)
         return model
+
+    async def _pick_tool_model(self, session: aiohttp.ClientSession, model: str) -> str:
+        """Replace a cached/explicit chat model that cannot use tools on this endpoint."""
+        if not model.startswith(TOOL_INCOMPATIBLE):
+            return model
+        available = {m["id"] for m in (await self._request(session, "GET", "/models"))["data"]}
+        fallback = next((m for m in PREFERRED["chat"] if m in available), None)
+        if not fallback:
+            raise OpenAIError("OpenAI: нет совместимой с инструментами резервной модели")
+        self._models["chat"] = fallback
+        self.store.set_cursor("openai:model:chat", fallback)
+        log.warning("OpenAI: %s не поддерживает инструменты в Chat Completions; "
+                    "переключаю чат на %s", model, fallback)
+        return fallback
 
     async def ask(self, prompt: str, *, system_prompt_file: Path, schema: dict,
                   role: str = "background", tool_gateway: ToolGateway | None = None,
@@ -148,6 +166,9 @@ class OpenAIBrain:
         request_timeout = aiohttp.ClientTimeout(total=TIMEOUT)
         async with aiohttp.ClientSession(timeout=request_timeout, trust_env=True) as session:
             model = await self._pick_model(session, role)
+            definitions = tool_gateway.definitions() if tool_gateway is not None else []
+            if definitions:
+                model = await self._pick_tool_model(session, model)
             body = {
                 "model": model,
                 "store": False,
@@ -159,20 +180,20 @@ class OpenAIBrain:
             }
             if model.startswith(("gpt-5", "gpt-6", "o")):  # модели с рассуждением
                 body["reasoning_effort"] = EFFORT[role]  # фон — «low»: дешевле и быстрее
-            if tool_gateway is not None:
-                definitions = tool_gateway.definitions()
-                if definitions:
-                    body["tools"] = [{"type": "function", "function": {
-                        "name": tool.name, "description": tool.description,
-                        "parameters": tool.parameters, "strict": False,
-                    }} for tool in definitions]
-                    body["parallel_tool_calls"] = False
+            if definitions:
+                body["tools"] = [{"type": "function", "function": {
+                    "name": tool.name, "description": tool.description,
+                    "parameters": tool.parameters, "strict": False,
+                }} for tool in definitions]
+                body["parallel_tool_calls"] = False
+                if model.startswith(TOOL_EFFORT_NONE):
+                    body["reasoning_effort"] = "none"
             try:
                 async with asyncio.timeout(timeout or (900 if tool_gateway else TIMEOUT)):
                     answer = await self._conversation(session, model, body, tool_gateway)
             except TimeoutError:
                 raise OpenAIError("OpenAI: истекло время запроса; начатые действия не повторяются") from None
-        self.health.clear("openai", "OpenAI снова работает.")
+        self.health.clear("openai")
         ms = int((datetime.now() - started).total_seconds() * 1000)
         log.info("OpenAI %s: %d мс, потрачено всего $%.3f", model, ms, self.spent)
         return Answer(data=answer, duration_ms=ms)
@@ -248,8 +269,6 @@ class OpenAIBrain:
         before = self.spent
         self.store.set_cursor("openai:spent", f"{before + cost:.6f}")
         if before < self.warn_at <= before + cost:
-            self.notify(f"💸 На OpenAI потрачено ${before + cost:.2f} из ${self.budget:g}. "
-                        f"На ${self.budget:g} остановлюсь и всё верну на Claude.")
+            log.info("На OpenAI потрачено $%.2f из $%g", before + cost, self.budget)
         if before < self.budget <= before + cost:
-            self.notify(f"💸 Бюджет OpenAI ${self.budget:g} исчерпан — дальше всё на Claude. "
-                        "Пополнишь — подними OPENAI_BUDGET_USD в .env.")
+            log.warning("Бюджет OpenAI $%g исчерпан — дальше на Claude", self.budget)

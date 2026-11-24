@@ -158,8 +158,6 @@ class Interviewer:
         return question["text"]
 
     async def run(self) -> None:
-        await asyncio.sleep(CHECK_EVERY)
+        # Автоматические вопросы 🧭 отключены: только по явному вызову /question.
         while True:
-            if self._due(datetime.now()):
-                self.ask()
-            await asyncio.sleep(CHECK_EVERY)
+            await asyncio.sleep(3600)

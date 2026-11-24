@@ -1,0 +1,15 @@
+{
+    "KPlugin": {
+        "Id": "org.ubermensch.hud",
+        "Name": "Пульт Ани (HUD)",
+        "Description": "Тактические часы, телеметрия системы, радар карьеры и быстрые действия",
+        "Icon": "utilities-system-monitor",
+        "Category": "System Information",
+        "Authors": [{ "Name": "Übermensch" }],
+        "License": "MIT",
+        "Version": "1.0"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
+

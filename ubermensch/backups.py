@@ -121,7 +121,14 @@ def _seven_zip(args, password: str, *, cwd=None):
     executable = shutil.which('7z') or shutil.which('7za')
     if not executable:
         raise RuntimeError('Нужен 7-Zip')
-    result = subprocess.run([executable, *args], input=(password + '\n' + password + '\n').encode(),
+    cmd = [executable, *args]
+    nice = shutil.which('nice')
+    ionice = shutil.which('ionice')
+    if nice and ionice:
+        cmd = [nice, '-n', '15', ionice, '-c', '3', executable, *args]
+    elif nice:
+        cmd = [nice, '-n', '15', executable, *args]
+    result = subprocess.run(cmd, input=(password + '\n' + password + '\n').encode(),
                             capture_output=True, cwd=cwd, timeout=600)
     if result.returncode:
         # хвост вывода 7-Zip: «No space left», «Wrong password»… — без него причину не найти
@@ -163,7 +170,7 @@ def create_archive(db_path: Path, archive: Path, password: str) -> dict:
             with tarfile.open(temporary / 'snapshot.tar', 'w') as bundle:
                 for path in sorted(snapshot.iterdir()):
                     bundle.add(path, arcname=path.name)
-            _seven_zip(['a', '-t7z', '-mhe=on', '-mx=5', '-p', str(partial), 'snapshot.tar'], password, cwd=temporary)
+            _seven_zip(['a', '-t7z', '-mhe=on', '-mx=3', '-mmt=2', '-p', str(partial), 'snapshot.tar'], password, cwd=temporary)
             manifest = unpack_verified(partial, temporary / 'verification', password)
         partial.replace(archive)
         return manifest

@@ -227,15 +227,9 @@ class Maintenance:
                 temporary.replace(target)
                 log.info("Копия на внешний носитель: %s", folder)
             self.health.clear("backup_external", "Копия на внешний диск сделана.")
-        # давно не было копии вне ноутбука — напомнить подключить носитель
         newest_external = max((a.stat().st_mtime for f in _external_folders()
                                for a in _archives(f)), default=None)
         stamp = config.DATA_DIR / "backups" / ".last_external"
         if newest_external:
             stamp.parent.mkdir(parents=True, exist_ok=True)
             stamp.write_text(str(newest_external))
-        last = float(stamp.read_text()) if stamp.exists() else None
-        if latest and (last is None or
-                       datetime.now() - datetime.fromtimestamp(last) > EXTERNAL_STALE):
-            self.health.report("backup_external", "Давно не было копии вне ноутбука: подключи "
-                               f"внешний диск или флешку с папкой {MARKER} в корне.")
