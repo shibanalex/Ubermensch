@@ -1,9 +1,9 @@
-"""Google Календарь пользователя: Аня сама ставит события и дедлайны (они сразу на телефоне).
+"""Google Calendar integration: read upcoming events and create/delete tracked deadlines.
 
-Доступ — события календаря (scope calendar.events) и чтение Диска (drive.readonly — чаты
+Доступ: события календаря (scope calendar.events) и чтение Диска (drive.readonly; чаты
 AI Studio / Gemini, collectors/gdrive.py). Ключи OAuth и токен лежат в <данные>/secrets.
-Первый вход: ./google_login.sh (см. docs/OPERATIONS.md); после добавления Диска — войти заново.
-События, созданные Аней, помечаются в описании — их она может удалять сама, чужие только с «да».
+Первый вход: ./google_login.sh (см. docs/OPERATIONS.md); после добавления Диска; войти заново.
+События, созданные ассистентом, помечаются в описании: их она может удалять сама, чужие только с подтверждением.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ SCOPES = ["https://www.googleapis.com/auth/calendar.events",
 CLIENT_FILE = config.DATA_DIR / "secrets" / "google_oauth_client.json"
 TOKEN_FILE = config.DATA_DIR / "secrets" / "google_token.json"
 MARK = "— добавила Аня"
-MARKS = (MARK, "— добавил Освальд")  # события, поставленные ещё Освальдом, — тоже свои
+MARKS = (MARK, "— добавил Освальд")  # события, поставленные ещё Освальдом,: тоже свои
 
 
 def is_own(description: str | None) -> bool:
@@ -58,7 +58,7 @@ def service(api: str, version: str):
 
 
 def _when(value: str) -> dict:
-    """«2026-10-14» — на весь день, «2026-10-14T10:00» — точное время (местное)."""
+    """«2026-10-14»: на весь день, «2026-10-14T10:00»; точное время (местное)."""
     if len(value) == 10:
         return {"date": value}
     return {"dateTime": datetime.fromisoformat(value).astimezone().isoformat()}

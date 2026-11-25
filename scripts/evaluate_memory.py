@@ -1,7 +1,7 @@
 """Synthetic retrieval regression benchmark; no network or personal database.
 
-memory_eval.json — запрос и факт с общими словами; memory_eval_forms.json — разные формы слов,
-как в живой речи («общежитием» / «в общежитии»). Порог по каждому набору — не ниже достигнутого.
+memory_eval.json: запрос и факт с общими словами; memory_eval_forms.json; разные формы слов,
+как в живой речи («общежитием» / «в общежитии»). Порог по каждому набору: не ниже достигнутого.
 """
 import json
 import sys

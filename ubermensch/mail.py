@@ -1,4 +1,4 @@
-"""Отправка писем через Gmail (SMTP, пароль приложения). Вызывается только после «да» пользователя."""
+"""Send email via Gmail SMTP with explicit user confirmation gating."""
 from __future__ import annotations
 
 import mimetypes

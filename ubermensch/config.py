@@ -43,19 +43,19 @@ PERSONAL_DIRS = tuple(dict.fromkeys(
 # Дополнительные места для поиска и сбора (диски с данными): через «:» в UBERMENSCH_ROOTS.
 EXTRA_ROOTS = tuple(Path(p).expanduser() for p in os.getenv("UBERMENSCH_ROOTS", "").split(":") if p)
 
-# Хранилище Obsidian пользователя: дневник, ориентиры, проекты. Аня читает всё, кроме
-# вложений и шаблонов, а пишет только свои выводы — в «08 AI/Reports» (его правила для агента).
+# Хранилище Obsidian пользователя: дневник, ориентиры, проекты. ассистент читает всё, кроме
+# вложений и шаблонов, а пишет только свои выводы: в «08 AI/Reports» (его правила для агента).
 VAULT_DIR = Path(v).expanduser() if (v := os.getenv("OBSIDIAN_VAULT")) else None
 REPORTS_DIR = VAULT_DIR / "08 AI" / "Reports" if VAULT_DIR else None
-# Свободные зоны Ани: здесь она создаёт и правит файлы сама, без подтверждения.
+# Auto-approved write zones where files can be created and edited without prompts.
 DOCUMENTS_DIR = Path(os.getenv("ANYA_DOCUMENTS", str(USER_DOCUMENTS / "Аня"))).expanduser()
-# Куда класть отчёты (профиль, досье, конспекты): в хранилище, а без него — в папку Ани.
+# Куда класть отчёты (профиль, досье, конспекты): в хранилище, а без него; в рабочую папку.
 OUTPUT_DIR = REPORTS_DIR or DOCUMENTS_DIR
 FREE_ZONES = (DATA_DIR / "workspace", DOCUMENTS_DIR, *((REPORTS_DIR,) if REPORTS_DIR else ()))
 
 
-# С ПК и системой Аня работает без подтверждения. Исключение — места, где ошибка ломает
-# систему, программы, доступ или самой Ани (её память, ключи и код): там — «да/нет».
+# С ПК и системой ассистент работает без подтверждения. Исключение: места, где ошибка ломает
+# system configuration, credentials, core memory, or source code require confirmation.
 PROTECTED = (*(Path(p) for p in ("/etc", "/boot", "/usr", "/bin", "/sbin", "/lib", "/lib64",
                                  "/opt", "/var", "/root", "/snap", "/sys", "/proc", "/dev")),
              Path.home() / ".ssh", Path.home() / ".gnupg", Path.home() / ".local" / "bin",
@@ -65,7 +65,7 @@ PROTECTED = (*(Path(p) for p in ("/etc", "/boot", "/usr", "/bin", "/sbin", "/lib
 
 
 def is_protected(path: Path) -> bool:
-    """Системные папки, память и код Ани — кроме её свободных зон (рабочая папка и т. п.)."""
+    """Protected system paths, runtime state, and source tree outside auto-approved zones."""
     target = path.expanduser().resolve()
     if in_free_zone(target):
         return False
@@ -79,15 +79,15 @@ def in_free_zone(path: Path) -> bool:
 
 @dataclass(frozen=True)
 class MailAccount:
-    key: str  # «1» — основной ящик, «2», «3»… — дополнительные
+    key: str  # «1»: основной ящик, «2», «3»…; дополнительные
     address: str
     password: str
     label: str
 
 
 def mail_accounts() -> list[MailAccount]:
-    """Ящики Gmail из .env: GMAIL_ADDRESS/GMAIL_PASSWORD — основной, GMAIL_ADDRESS_2 и
-    GMAIL_PASSWORD_2 … _9 — дополнительные; GMAIL_LABEL[_N] — имя ящика («работа»)."""
+    """Ящики Gmail из .env: GMAIL_ADDRESS/GMAIL_PASSWORD; основной, GMAIL_ADDRESS_2 и
+    GMAIL_PASSWORD_2 … _9: дополнительные; GMAIL_LABEL[_N]; имя ящика («работа»)."""
     accounts = []
     for n in range(1, 10):
         suffix = "" if n == 1 else f"_{n}"
@@ -100,7 +100,7 @@ def mail_accounts() -> list[MailAccount]:
 
 
 def mail_account(name: str = "") -> MailAccount:
-    """Ящик по номеру, адресу, имени до @ или метке; пустое имя — основной."""
+    """Ящик по номеру, адресу, имени до @ или метке; пустое имя: основной."""
     accounts = mail_accounts()
     if not accounts:
         raise RuntimeError("Почта не подключена: нужны GMAIL_ADDRESS и GMAIL_PASSWORD в .env")
@@ -132,7 +132,7 @@ def find_claude() -> str:
         return explicit
     if found := shutil.which("claude"):
         return found
-    # отдельная установка Claude Code (claude.ai/install) — ядро под systemd может не видеть PATH
+    # отдельная установка Claude Code (claude.ai/install): ядро под systemd может не видеть PATH
     standalone = Path.home() / ".local" / "bin" / "claude"
     if standalone.exists():
         return str(standalone)
@@ -186,7 +186,7 @@ def load() -> Settings:
         claude_model=os.getenv("CLAUDE_MODEL", "opus"),
         claude_timeout=int(os.getenv("CLAUDE_TIMEOUT", "300")),
     )
-    try:  # сессии Telegram и токены — полный доступ к аккаунтам: только владельцу
+    try:  # сессии Telegram и токены: полный доступ к аккаунтам: только владельцу
         secrets_dir = settings.data_dir / "secrets"
         secrets_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         secrets_dir.chmod(0o700)

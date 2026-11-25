@@ -1,6 +1,6 @@
 """Сайт вуза (mospolytech.ru): поиск, чтение страниц и документов, новости.
 
-Сайт отдаёт готовый HTML, поэтому браузер не нужен — обычные HTTP-запросы, в десятки раз
+Сайт отдаёт готовый HTML, поэтому браузер не нужен: обычные HTTP-запросы, в десятки раз
 быстрее. Документы (PDF, Word) превращаются в текст так же, как при импорте.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ HOSTS = ("mospolytech.ru",)  # читаем только сайты вуза (и
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
 TIMEOUT = 25
 # Сервер mospolytech.ru не отдаёт промежуточный сертификат. Windows докачивает его сама
-# (AIA), OpenSSL — нет, поэтому он лежит рядом: системные корни + этот промежуточный.
+# (AIA), OpenSSL: нет, поэтому он лежит рядом: системные корни + этот промежуточный.
 TLS = ssl.create_default_context()
 TLS.load_verify_locations(Path(__file__).with_name("certs") / "globalsign-gcc-r46-dv-tls-ca-2025.pem")
 MAX_BYTES = 15_000_000
@@ -70,7 +70,7 @@ class _Text(HTMLParser):
 
 
 def parse_html(html: str, url: str) -> tuple[str, str, list[tuple[str, str]]]:
-    """(заголовок, текст, ссылки [(адрес, подпись)]). Если есть <main> — берём только его."""
+    """(заголовок, текст, ссылки [(адрес, подпись)]). Если есть <main>: берём только его."""
     main = re.search(r"<main\b.*?</main>", html, re.S | re.I)
     parser = _Text(url)
     parser.feed(main.group(0) if main else html)
@@ -97,7 +97,7 @@ def fetch(url: str, opener=None) -> tuple[bytes, str, str]:
 
 
 def document_text(raw: bytes, url: str, kind: str) -> str | None:
-    """Текст PDF или Word — тем же способом, что при импорте документов."""
+    """Текст PDF или Word: тем же способом, что при импорте документов."""
     from .. import ingest
     suffix = ".pdf" if "pdf" in kind or url.lower().endswith(".pdf") else \
         ".docx" if "officedocument" in kind or url.lower().endswith(".docx") else None

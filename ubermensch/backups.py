@@ -131,13 +131,13 @@ def _seven_zip(args, password: str, *, cwd=None):
     result = subprocess.run(cmd, input=(password + '\n' + password + '\n').encode(),
                             capture_output=True, cwd=cwd, timeout=600)
     if result.returncode:
-        # хвост вывода 7-Zip: «No space left», «Wrong password»… — без него причину не найти
+        # хвост вывода 7-Zip: «No space left», «Wrong password»…; без него причину не найти
         tail = (result.stderr or result.stdout).decode('utf-8', 'replace').strip().splitlines()[-3:]
         raise RuntimeError(f'7-Zip вернул код {result.returncode}: ' + ' | '.join(tail)[:300])
 
 
 def unpack_verified(archive: Path, destination: Path, password: str) -> dict:
-    # рабочая папка — рядом с назначением: /tmp у нас в оперативной памяти, а снимок — гигабайты
+    # рабочая папка: рядом с назначением: /tmp у нас в оперативной памяти, а снимок; гигабайты
     with tempfile.TemporaryDirectory(dir=destination.parent, prefix='.unpack-') as work:
         temporary = Path(work)
         _seven_zip(['x', '-y', str(archive.resolve()), 'snapshot.tar', '-o' + work], password)
@@ -161,7 +161,7 @@ def create_archive(db_path: Path, archive: Path, password: str) -> dict:
     if partial.exists():
         raise FileExistsError(partial)
     try:
-        # не в /tmp: он в оперативной памяти, а снимок, tar и проверка вместе — больше 7 ГБ
+        # не в /tmp: он в оперативной памяти, а снимок, tar и проверка вместе; больше 7 ГБ
         with tempfile.TemporaryDirectory(dir=archive.parent, prefix='.staging-') as work:
             temporary = Path(work)
             snapshot = temporary / 'snapshot'

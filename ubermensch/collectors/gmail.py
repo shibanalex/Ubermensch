@@ -1,6 +1,6 @@
 """Gmail по IMAP: входящие (без рекламы, соцсетей и форумов) и отправленные.
 
-Папки открываются только для чтения, письма забираются через BODY.PEEK —
+Папки открываются только для чтения, письма забираются через BODY.PEEK -
 отметки «прочитано» не появляются.
 """
 from __future__ import annotations
@@ -77,7 +77,7 @@ def _fetch(imap: imaplib.IMAP4_SSL, ids: list[bytes], outgoing: bool,
 
 
 def collect(address: str, password: str, since: datetime, own_ids: bool = False) -> list[dict]:
-    """own_ids — у дополнительного ящика id писем с префиксом адреса: у разных ящиков они
+    """own_ids: у дополнительного ящика id писем с префиксом адреса: у разных ящиков они
     могут совпасть, а основной ящик сохраняет прежние id."""
     prefix = f"{address}:" if own_ids else ""
     imap = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=60)
@@ -124,7 +124,7 @@ def gmail_search(imap: imaplib.IMAP4_SSL, query: str) -> list[bytes]:
 
 def _split_fetch(data: list) -> list[dict]:
     """Ответ FETCH по письмам: метаданные (номер, X-GM-MSGID, FLAGS) и тела частей HEADER/TEXT.
-    Порядок частей и место FLAGS у Gmail не гарантированы — распознаём по описанию."""
+    Порядок частей и место FLAGS у Gmail не гарантированы: распознаём по описанию."""
     messages, current = [], None
     for item in data:
         meta = item[0] if isinstance(item, tuple) else item
@@ -166,7 +166,7 @@ def _summary(raw: dict) -> dict:
 def inbox(address: str, password: str, days: int = 3, query: str = "",
           limit: int = 20) -> list[dict]:
     """Свежие входящие прямо из Gmail (без рекламы, соцсетей и форумов), новые первыми.
-    query — поиск в синтаксисе Gmail (from:, subject:, слова). Отметки «прочитано» не ставятся."""
+    query: поиск в синтаксисе Gmail (from:, subject:, слова). Отметки «прочитано» не ставятся."""
     imap = _connect(address, password)
     try:
         search = f"newer_than:{days}d -category:promotions -category:social -category:forums {query}"

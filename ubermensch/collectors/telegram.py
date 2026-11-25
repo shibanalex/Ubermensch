@@ -1,7 +1,7 @@
 """Telegram через официальный API (Telethon) от имени пользователя.
 
-Берём личные чаты и «Избранное» целиком. Из групп — только важное: свои сообщения (вместе с тем,
-на что ответил) и обращения к пользователю; чужая болтовня — шум. Каналы и боты не читаем.
+Берём личные чаты и «Избранное» целиком. Из групп: только важное: свои сообщения (вместе с тем,
+на что ответил) и обращения к пользователю; чужая болтовня: шум. Каналы и боты не читаем.
 Сессия = полный доступ к аккаунту, поэтому лежит в secrets с доступом только владельцу.
 
 Аккаунтов два: личный (TG_API_ID/TG_API_HASH) и рабочий (TG_WORK_API_ID/TG_WORK_HASH), у каждого
@@ -42,7 +42,7 @@ class Profile:
     id_env: str
     hash_env: str
     login_bat: str
-    phone_env: str  # номер для входа; нет в .env — Аня спросит в боте
+    phone_env: str  # номер для входа; нет в .env: ассистент спросит в боте
 
     @property
     def configured(self) -> bool:
@@ -95,7 +95,7 @@ class TelegramLoginRequired(RuntimeError):
 
 
 class LoginStepError(RuntimeError):
-    """Шаг входа не прошёл (неверный номер, код или пароль) — текст для пользователя."""
+    """Шаг входа не прошёл (неверный номер, код или пароль): текст для пользователя."""
 
 
 def _sender_name(sender) -> str:
@@ -115,7 +115,7 @@ class TelegramAccount:
         self.profile = profile
         self._client: TelegramClient | None = None
         self._lock = asyncio.Lock()
-        self._login: tuple[str, str] | None = None  # (номер, phone_code_hash) — идёт вход
+        self._login: tuple[str, str] | None = None  # (номер, phone_code_hash): идёт вход
 
     def _thread(self, name: str, kind: str) -> str:
         """Имя чата в данных; рабочие помечены, чтобы разбор понимал контекст."""
@@ -124,7 +124,7 @@ class TelegramAccount:
         return f"{name} ({', '.join(tags)})" if tags else name
 
     def _id(self, dialog_id: int, message_id: int) -> str:
-        """Номера сообщений у аккаунтов пересекаются — у рабочего свой префикс."""
+        """Номера сообщений у аккаунтов пересекаются: у рабочего свой префикс."""
         prefix = "" if self.profile.personal else f"{self.profile.key}:"
         return f"{prefix}{dialog_id}:{message_id}"
 
@@ -147,7 +147,7 @@ class TelegramAccount:
                                             f"запусти {self.profile.login_bat}")
             return self._client
 
-    # --- вход (Аня входит сама, код пользователь присылает в бота) ---
+    # --- вход (ассистент входит сама, код пользователь присылает в бота) ---
 
     async def _connected(self) -> TelegramClient:
         if self._client is None:
@@ -174,7 +174,7 @@ class TelegramAccount:
             self._login = (phone, sent.phone_code_hash)
 
     async def enter_code(self, code: str) -> bool:
-        """Шаг 2: код. True — вошли, False — нужен облачный пароль."""
+        """Шаг 2: код. True; вошли, False; нужен облачный пароль."""
         if self._login is None:
             raise LoginStepError("Код уже не нужен — вход не начат")
         phone, code_hash = self._login
@@ -243,7 +243,7 @@ class TelegramAccount:
 
     async def _group_highlights(self, tg: TelegramClient, dialog, since: datetime,
                                 last_id: int) -> tuple[list[dict], int]:
-        """Из группы — свои сообщения (с цитатой того, на что ответил) и обращения ко мне.
+        """Из группы: свои сообщения (с цитатой того, на что ответил) и обращения ко мне.
 
         Отбор делает сам Telegram (поиск по отправителю и по упоминаниям), поэтому даже
         в огромных группах не приходится листать чужую переписку.
@@ -287,7 +287,7 @@ class TelegramAccount:
         async for dialog in tg.iter_dialogs():
             entity = dialog.entity
             if dialog.is_channel and not dialog.is_group:
-                continue  # каналы — чужие публикации, не жизнь пользователя
+                continue  # каналы: чужие публикации, не жизнь пользователя
             if isinstance(entity, User) and (entity.bot or entity.id == SERVICE_USER_ID):
                 continue
             kind = "self" if isinstance(entity, User) and entity.is_self else                 "user" if dialog.is_user else "group"

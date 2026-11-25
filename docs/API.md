@@ -1,364 +1,44 @@
-# HTTP API и поток событий
+# Local HTTP API
 
-Новые задания, call_id, доставки и feedback: [RELIABILITY](RELIABILITY.md).
-Все фоновые команды collect/voice/import/heartbeat/profile теперь возвращают 202 и `{started, run}`.
+`ubermensch/api.py` runs an `aiohttp` server bound to loopback (`127.0.0.1`) with constant-time `Authorization: Bearer <token>` middleware (`hmac.compare_digest`). No CORS headers are exposed, preventing arbitrary browser tabs from calling local endpoints.
 
-Источник маршрутов: [`api.py`](../ubermensch/api.py). Предметные операции:
-[`core.py`](../ubermensch/core.py). Это текущий локальный контракт без версии
-в URL, OpenAPI-файла, пагинации истории и регистрации клиентов.
+All payloads are validated via Pydantic v2 models in `ubermensch/contracts.py`; validation failures return HTTP `400` with `code: "validation_error"` and offending field paths.
 
-## Транспорт, доступ и общие соглашения
+## Core Endpoints
 
-- Адрес: `http://127.0.0.1:8765`; порт меняется через `API_PORT`.
-- Каждый запрос, включая SSE, требует `Authorization: Bearer <token>`.
-  Токен читается из `DATA_DIR/secrets/api_token`; сравнение использует
-  `hmac.compare_digest`.
-- JSON-запросы передаются с `Content-Type: application/json`; тело должно быть
-  объектом. Пустое тело разрешено только маршрутам, которые его не читают.
-- В штатных ответах JSON; часть HTTP-ошибок aiohttp возвращается обычным текстом.
-  Клиент обязан учитывать статус и Content-Type.
-- В примерах ID и содержимое вымышлены. Денежные суммы, пароли и токены нельзя
-  помещать в URL, журнал запросов или скриншоты диагностики.
-- API не имеет разграничения прав по клиентам. Этот токен даёт доступ и к состоянию,
-  и к подтверждениям, и к системным инструментам.
-
-Read-only пример bash; исполняется при уже запущенном ядре:
-
-```bash
-data_root="${UBERMENSCH_DATA:-$HOME/Projects/Ubermensch}"
-api_base="http://127.0.0.1:${API_PORT:-8765}"
-curl -s -H "Authorization: Bearer $(cat "$data_root/secrets/api_token")" "$api_base/api/health"
-```
-
-Этот пример не читает `.env`: если пути/порт заданы только там, значения переменных
-окружения нужно привести к фактической конфигурации. Сам токен не выводится.
-
-## Каталог маршрутов
-
-В таблице `{id}` означает неотрицательную последовательность цифр в маршруте
-aiohttp (`{id:\d+}`). Все штатные JSON-ответы ниже имеют HTTP 200, включая создание
-задания и постановку фоновой работы.
-
-| Метод | Путь | Назначение |
-|---|---|---|
-| GET | `/api/state` | Снимок для UI |
-| POST | `/api/chat` | Диалог с ожиданием результата |
-| POST | `/api/onboard` | Первое знакомство, если база ещё не содержит диалога/памяти/целей |
-| GET | `/api/tasks` | Открытые задачи и сделанные сегодня (для виджета) |
-| POST | `/api/tasks` | Добавить задачу |
-| POST | `/api/tasks/{id}` | Изменить статус задачи |
-| POST | `/api/tasks/{id}/edit` | Править открытую задачу |
-| POST | `/api/actions/{id}` | Принять или отклонить подтверждение |
-| GET | `/api/events` | Долгое SSE-соединение |
-| GET | `/api/tools` | Общий каталог инструментов |
-| POST | `/api/tools/call` | Вызвать инструмент |
-| POST | `/api/approval` | Запросить подтверждение и ждать решение |
-| GET | `/api/health` | Неисправности и состояния служб |
-| GET | `/api/investigation` | Счётчики изучения данных |
-| GET | `/api/metrics` | Метрики изучения и активности |
-| GET | `/api/profile` | Состояние построения профиля и последний профиль |
-| GET | `/api/agent` | Последний heartbeat, поручения, расписание, своих сообщений сегодня |
-| POST | `/api/agent/heartbeat` | Проснуться и проверить ситуацию сейчас |
-| POST | `/api/profile/rebuild` | Перестроить профиль сейчас |
-| POST | `/api/collect` | Запустить сбор сейчас |
-| POST | `/api/voice` | Запустить обновление стиля и голоса |
-| POST | `/api/import/deep` | Глубоко разобрать файл AI Studio |
-| POST | `/api/tg/chats` | Найти Telegram-чаты |
-| POST | `/api/tg/history` | Прочитать последние сообщения |
-| POST | `/api/tg/send` | Отправить сообщение с подтверждением |
-| POST | `/api/email/inbox` | Свежие входящие Gmail прямо с сервера (только чтение) |
-| POST | `/api/email/read` | Письмо целиком по id из inbox |
-| POST | `/api/email/send` | Отправить письмо с подтверждением |
-| POST | `/api/lk/find` | Поиск по снимку личного кабинета |
-| POST | `/api/lk/read` | Прочитать страницу кабинета |
-
-## Состояние и диалог
-
-### `GET /api/state`
-
-Возвращает объект:
-
-| Поле | Тип | Содержание |
-|---|---|---|
-| `thinking` | boolean | Есть ли активные операции, учитываемые счётчиком Core |
-| `problems` | array | Текущие проблемы Health: `key`, `message`, `since` |
-| `messages` | array | Последние 60 сообщений, от старых к новым |
-| `tasks` | array | Открытые задачи и выполненные сегодня |
-| `goals` | array | Активные цели |
-| `reminders` | array | Напоминания со статусом `pending` |
-| `approvals` | array | Ожидающие действия: `id`, `summary`, `risk`, `details` |
-
-Строки `messages`, `tasks`, `goals`, `reminders` содержат поля соответствующих таблиц
-из [DATA_MODEL](DATA_MODEL.md). Исключение: `messages.notes` разобрано из JSON-текста
-в массив, при отсутствии — `[]`. Задачи `dropped` и выполненные ранее сегодняшнего
-дня в этом снимке не выдаются. Это интерфейс текущего листа, а не полный экспорт.
-
-### `POST /api/chat`
-
-```json
-{"text": "Добавь задачу: проверить тестовый отчёт"}
-```
-
-Пустой после `strip()` текст → 400. Текущий обработчик преобразует значение через
-`str()`, поэтому он слабее строгой строковой схемы; клиент должен отправлять строку.
-Канал устанавливается сервером в `desktop`.
-
-Ответ — сериализация `Outcome`:
-
-```json
-{
-  "reply": "Добавила задачу.",
-  "changes": ["Добавлена задача: проверить тестовый отчёт"],
-  "done": [],
-  "pending": []
-}
-```
-
-`changes` и `done` — человекочитаемые строки, не стабильные машинные коды.
-`pending` содержит объекты `{id, summary, risk}`. Поле `Outcome.engine` в HTTP-ответ
-сейчас **не включается**. Ошибка типа `BrainError` → 503 с `{"error": "..."}`.
-Прочие неперехваченные исключения могут стать стандартным 500 aiohttp.
-
-Запрос долгий: включает модельные ходы, инструменты и ожидание подтверждения.
-Повтор после таймаута может создать второе пользовательское сообщение или действие.
-Идемпотентного `request_id` для чата нет.
-
-### `POST /api/onboard`
-
-Тело не требуется. Если нет ни активных целей, ни фактов, ни предыдущих сообщений,
-запускается знакомство. Иначе `{"skipped": true}`. Успешный результат и ошибки
-мозга имеют формат `/api/chat`.
-
-## Задачи и подтверждения
-
-### `POST /api/tasks`
-
-```json
-{"title": "Проверить тестовый отчёт", "due": "2026-10-20"}
-```
-
-Ответ `{"id": 42}`. `title` не может быть пустым. При отсутствующем или ложном
-`due` используется сегодняшняя локальная дата. Строгой проверки ISO-даты пока нет.
-Задача создаётся с `source=user`; этот маршрут не принимает `notes` или `goal_id`.
-
-### `POST /api/tasks/{id}`
-
-```json
-{"status": "done"}
-```
-
-Допустимы `open`, `done`, `dropped`. Другой статус → 400.
-Ответ `{"ok": true}` означает, что строка изменилась. Несуществующий ID или уже
-установленный статус возвращает `{"ok": false}`, а не 404. При переходе в `done`
-через Core публикуется `celebrate`; при остальных изменениях — обновление состояния.
-`open` у сделанной задачи возвращает её в список (виджет так исправляет мисклик).
-
-### `GET /api/tasks`
-
-`{"today": "2026-10-18", "tasks": [...]}` — строки `tasks` (открытые и выполненные сегодня),
-как в `/api/state`, но без сообщений, целей и подтверждений.
-
-### `POST /api/tasks/{id}/edit`
-
-```json
-{"title": "Новый текст", "due": "2026-10-20", "notes": "…"}
-```
-
-Любое поле необязательно; переданные заменяют прежние. Пустой `title` или `due` не в
-формате `YYYY-MM-DD` → 400. Править можно только открытую задачу: иначе `{"ok": false}`.
-
-### `POST /api/actions/{id}`
-
-```json
-{"approve": false}
-```
-
-Ответ `{"result": "..."}`; если решение уже принято/не найдено — `"Уже решено"`.
-Принимается только JSON boolean. Строка `"false"`, числа, null и отсутствие поля дают 400.
-
-Запись атомарно переводится из `pending`, поэтому второе нажатие не решает её
-повторно. Сохраняемые подтверждения общих tools описаны в [RELIABILITY](RELIABILITY.md).
-
-### `POST /api/approval`
-
-```json
-{"title": "Отправить тестовое сообщение", "details": "Получатель и полный текст"}
-```
-
-Внутренний маршрут для возможностей. `title` по умолчанию `Действие`, `details` —
-пустая строка. HTTP-запрос остаётся открытым до решения или 600 секунд; ответ
-`{"approved": true}` либо `{"approved": false}`. Истечение времени считается отказом.
-Approval появляется в `/api/state` и SSE. Применение разрешённого действия происходит
-после возврата из этого ожидания в вызывающем инструменте.
-
-## Общий API инструментов
-
-### `GET /api/tools`
-
-```json
-{
-  "tools": [
-    {
-      "name": "read_file",
-      "description": "Описание инструмента из docstring",
-      "parameters": {
-        "type": "object",
-        "properties": {"path": {"type": "string"}},
-        "required": ["path"],
-        "additionalProperties": false
-      }
-    }
-  ]
-}
-```
-
-Схема в примере сокращена: реальный `read_file` также имеет `offset` и `limit`,
-а Pydantic добавляет метаданные. Клиент использует фактический каталог, не
-восстанавливает схему из этой таблицы. Актуальный список возвращает `/api/tools`; сигнатуры
-и политика приведены в [AI_RUNTIME](AI_RUNTIME.md).
-
-### `POST /api/tools/call`
-
-```json
-{
-  "name": "read_file",
-  "arguments": {"path": "/tmp/example.txt", "offset": 0, "limit": 12000},
-  "run_id": "26ab4d1e-7e70-48b0-9fd5-15741e927ed6"
-}
-```
-
-`name` — строка, `arguments` — объект. `run_id` необязателен: UUID-строка или
-`null`. Сервер строит путь журнала из разобранного UUID; произвольный путь журнала
-через этот API передать нельзя. Для повторной доставки передавайте отдельный UUID `call_id`: завершённый вызов вернёт прежний результат. Без call_id запрос считается новым.
-
-Успех: `{"result": ..., "call_id": "UUID"}`. Детали восстановления: [RELIABILITY](RELIABILITY.md).
-
-| Ситуация | Статус | Поведение |
-|---|---|---|
-| Нет/неверен токен | 401 | До обработчика |
-| Невалидное тело / типы envelope | 400 | Текстовая ошибка aiohttp |
-| Неизвестное имя | 404 | JSON `error`, функция не вызывается |
-| Невалидный UUID | 400 | JSON `error` |
-| Неверные аргументы / лишние поля | 400 | JSON `error`, реестр отклоняет до вызова |
-| Исключение внутри функции | 500 | JSON с общим сообщением; подробности в логе |
-| Пользователь отказал | Обычно 200 | `result` содержит отказ, побочного эффекта нет |
-
-Проверка аргументов Pydantic использует `strict=True`. Проверки диапазонов, сделанные уже внутри функции, могут привести
-к 500, хотя причина — входные значения. Нельзя считать любой 200 доказательством
-выполнения: прочитать семантику `result`.
-
-`HttpToolGateway` трактует 5xx и транспортный сбой после POST как неопределённый
-результат и прекращает модельный цикл. Автоматически повторять такой вызов нельзя.
-
-## Служебные интеграционные маршруты
-
-Это сохранённые внутренние адаптеры; новые клиенты инструментов используют общий
-каталог. Здесь `account` по умолчанию `personal`, рабочий — `work`.
-
-| Путь | Поля тела | Результат |
-|---|---|---|
-| `/api/tg/chats` | `query`, `account?` | Список найденных чатов |
-| `/api/tg/history` | `chat_id`, `limit?=30`, `account?` | Последние сообщения |
-| `/api/tg/send` | `chat_id`, `text`, `account?` | Сообщение о результате; обязательное подтверждение |
-| `/api/email/inbox` | `days` 1–60 (3), `query` — поиск Gmail, `limit` 1–50 (20), `account` (`all`) | `[{id, account, date, from, subject, unread, preview}]`, новые первыми; без рекламы, соцсетей и форумов |
-| `/api/email/read` | `message_id` — число из inbox, `account` — его ящик | `{id, date, from, to, subject, text, attachments}` |
-| `/api/email/send` | `to`, `subject`, `body`, `account` (пусто — основной) | Сообщение о результате; обязательное подтверждение |
-| `/api/lk/find` | `query`, `limit?=5` | Совпадения в локальном снимке |
-| `/api/lk/read` | `url` | Прочитанная страница |
-
-Их оболочка `tool_call` возвращает `{"result": ...}` или `{"error": "..."}`
-**с HTTP 200 даже при ошибке**, включая часть ошибок тела запроса. Это отличается
-от `/api/tools/call`. При изменении этого поведения нужно согласованно обновить
-`capabilities/core_client.py` и тесты, а не просто заменить статус в одном месте.
-
-## Фоновые операции и диагностика
-
-`POST /api/collect` и `POST /api/voice` не читают тело. Они создают `asyncio.Task`
-и сразу возвращают `{"started": true}`. Это означает постановку работы в память
-процесса, а не её завершение. Нет job ID, API отмены или восстановления после сбоя.
-Сбор дополнительно защищён внутренним флагом от одновременного повторного обхода.
-
-`POST /api/import/deep` принимает `{"name": "test-export.json"}`. Файл должен
-находиться непосредственно в `DATA_DIR/raw/import` и распознаваться как AI Studio.
-Проверка не пройдена → 400, принята → `{"started": true}`. Метод позволяет
-повторный глубокий разбор; он не равен обычному пропуску `imports.status=done`.
-
-`GET /api/investigation`:
-
-```json
-{"events": {"document": 12}, "jobs": {"pending": 2, "done": 1}, "collecting": false, "dossier_at": null}
-```
-
-Карты содержат фактически имеющиеся источники/статусы; отсутствующий ключ означает
-ноль, а не ошибку. `dossier_at` — курсор времени последнего досье.
-
-`GET /api/health` возвращает `problems` (`key`, `message`, `since`) и `services`
-(`name`, `state`, `restarts`, `last_error`). Это состояние текущего процесса,
-а не сохранённая история инцидентов.
-
-`GET /api/profile`:
-
-```json
-{"stage": "наблюдения", "done": 12, "total": 114, "built_at": null, "profile_id": null,
- "claims": 0, "rules": 0, "report": null}
-```
-
-`stage` — `ждёт`, `снимок данных`, `наблюдения`, `разделы`, `правила поддержки`, `готов`
-или `ошибка: …`; `done`/`total` — прогресс этапа. `POST /api/profile/rebuild` будит службу
-профиля (`{"started": true}`, без службы — 503); наблюдения неизменных окон берутся из кеша.
-
-`GET /api/metrics` возвращает `{learning, activity}`. Полный состав и смысл
-показателей описаны в [CLIENTS](CLIENTS.md); вычисление не вызывает модель.
-
-## SSE: `GET /api/events`
-
-Клиент держит отдельное HTTP-соединение с тем же заголовком Authorization.
-Ответ имеет `Content-Type: text/event-stream` и `Cache-Control: no-cache`.
-
-```text
-: connected
-
-data: {"type": "thinking", "on": true}
-
-data: {"type": "changed"}
-
-: ping
-
-```
-
-`connected` и `ping` — комментарии SSE, а не JSON-события. Ping отправляется при
-15 секундах без сообщений. JSON находится в строках `data:`; разделитель — пустая
-строка. Обработчик должен собирать полный пакет при частичных сетевых чтениях.
-
-| `type` | Дополнительные поля | Реакция клиента |
-|---|---|---|
-| `thinking` | `on: boolean` | Обновить индикатор и при необходимости состояние |
-| `changed` | Нет | Повторно получить `/api/state` |
-| `approval` | `id`, `title`, `details` | Показать решение и полные детали |
-| `reminder` | `text` | Показать напоминание |
-| `notify` | `text` | Показать уведомление; оно также сохраняется как system message |
-| `say` | `text` | Краткая реплика desktop без сохранения в историю |
-| `celebrate` | Нет | Анимация завершённой задачи |
-
-У каждого подписчика очередь на 200 событий; при переполнении новые события для
-него отбрасываются. Нет `id:`, `Last-Event-ID`, replay, хранения в БД или гарантии
-доставки самой шиной. После переподключения перечитывается состояние; уведомления и напоминания восстанавливаются из отдельного durable outbox.
-
-## Таймауты и дальнейшая совместимость
-
-| Участок | Текущее значение |
+| Method & Path | Purpose |
 |---|---|
-| Qt: обычный HTTP-запрос | 15 секунд |
-| Qt: chat/onboard | Сохраняемые задания, HTTP 15 секунд, опрос каждые 2 секунды |
-| Qt: SSE transfer timeout / reconnect | 40 секунд / 3 секунды |
-| Core: ожидание подтверждения | 600 секунд |
-| Внутренний capability HTTP-клиент | 700 секунд |
-| Общий HttpToolGateway / чат с инструментами | 900 секунд в соответствующем контуре |
-| Watchdog перед fallback | Telegram 120 секунд, desktop 180 секунд |
+| `GET /api/state` | Snapshot of active state, metrics, pending approvals, and tasks |
+| `GET /api/dashboard` | Aggregated Obsidian sidebar payload (goals, plans, experiments, career) |
+| `GET /api/planning` | Goal snapshots and weekly review summary |
+| `GET /api/events` | Server-Sent Events (`text/event-stream`) stream from `core.bus` with 15s keepalive |
+| `GET /api/health` | Component health issues and supervised service status |
+| `GET /api/metrics`, `/api/profile`, `/api/agent` | Behavioral metrics, profiler status, and autonomy schedule state |
 
-Watchdog не переключает ИИ при ожидании подтверждения или уже начатых инструментах.
-Разрыв клиентского запроса не служит надёжной командой отмены работы ядра.
-Qt использует `/api/runs/chat` и `/api/runs/onboard`; длительность работы не ограничена временем HTTP-соединения.
+## Async Jobs & Tool Runtime
 
-Перед удалёнными клиентами нужны версия контракта, аутентификация устройств,
-права устройств, распространение идемпотентности на остальные мутации и единый контракт часовых поясов. Простая замена bind-адреса на `0.0.0.0` этих контрактов не создаёт.
+| Method & Path | Purpose |
+|---|---|
+| `POST /api/runs/chat`, `POST /api/runs/onboard` | Submit async job run with client-supplied UUID `run_id` (`202 Accepted`) |
+| `GET /api/runs`, `GET /api/runs/{id}` | Inspect queued/running/terminal job states |
+| `POST /api/runs/{id}/cancel` | Cancel an active job run |
+| `GET /api/tools` | Return JSON schemas of registered capabilities |
+| `POST /api/tools/call` | Execute a tool through `Execution` (`run_id`, `call_id`, approval gating) |
+| `GET /api/tool-calls/{id}` | Inspect call status (arguments and SHA-256 fingerprint stripped) |
+| `POST /api/approval` | Block (up to 10m) waiting for user confirmation |
+
+## Tasks, Approvals, and Actions
+
+| Method & Path | Purpose |
+|---|---|
+| `GET /api/tasks`, `POST /api/tasks` | List open/completed-today tasks or create a task |
+| `POST /api/tasks/{id}`, `POST /api/tasks/{id}/edit` | Update task status (`open`, `done`, `dropped`) or patch fields |
+| `POST /api/actions/{id}` | Approve or reject a pending external action |
+| `POST /api/deliveries/{id}/ack` | Acknowledge outbox message delivery |
+| `POST /api/feedback` | Record rating/feedback tied to an assistant message or `run_id` |
+| `POST /api/experiments/{id}/decide`, `POST /api/goals/{id}/plan`, `POST /api/options/{id}/status` | Commit user decisions on experiments, goal plans, and options |
+
+## Background Triggers & Proxied Tools
+
+- `POST /api/collect`, `POST /api/voice`, `POST /api/import/deep`, `POST /api/profile/rebuild`, `POST /api/agent/heartbeat` enqueue background runs (`202 Accepted`).
+- `POST /api/tg/*`, `POST /api/email/*`, `POST /api/lk/*` expose audited Telegram, email, and university portal adapters to the tool gateway.

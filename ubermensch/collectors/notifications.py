@@ -2,7 +2,7 @@
 
 Система истории уведомлений не хранит, поэтому ядро само слушает их на шине D-Bus
 (system/session.py) и пишет журнал по дням; сборщик забирает свежие дни, база
-отбрасывает уже собранное. Telegram отсюда не берём — его переписки собираются напрямую
+отбрасывает уже собранное. Telegram отсюда не берём: его переписки собираются напрямую
 и полнее.
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ from .. import config
 from . import local_iso
 
 FOLDER = config.DATA_DIR / "raw" / "notifications"
-FRESH_DAYS = 3  # сбор идёт чаще раза в день — этого хватает с запасом
+FRESH_DAYS = 3  # сбор идёт чаще раза в день: этого хватает с запасом
 KEEP_DAYS = 30
 SKIP_APPS = re.compile(r"(?i)telegram|python|ubermensch|anya|plasma_waitforname|kded|"
                        r"org\.kde\.(powerdevil|kdeconnect\.daemon)|spectacle")
@@ -25,7 +25,7 @@ TAGS = re.compile(r"<[^>]+>")
 
 
 def _app_name(app: str, entry: str) -> str:
-    """«Google Chrome» → «Google Chrome», пустое имя — по ярлыку «org.kde.discover» → «discover»."""
+    """«Google Chrome» → «Google Chrome», пустое имя: по ярлыку «org.kde.discover» → «discover»."""
     return app.strip() or entry.rsplit(".", 1)[-1] or "?"
 
 

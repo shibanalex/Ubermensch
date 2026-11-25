@@ -1,4 +1,4 @@
-"""Процесс маскота (anya.exe): мордочка, реплики-пузыри, окно запроса, история, трей.
+"""Процесс оверлея (desktop HUD): мордочка, реплики-пузыри, окно запроса, история, трей.
 
 Запускается присмотром (python -m ubermensch.desktop). «Выход» закрывает приложение целиком:
 код 0 говорит присмотру, что это решение пользователя, а не падение.
@@ -29,7 +29,7 @@ def main() -> int:
     QFontDatabase.addApplicationFont(str(Path(__file__).with_name("fonts") / "Caveat.ttf"))
     app.setFont(QFont(theme.FONT, 10))
     if link.is_running(link.MASCOT):
-        link.send("show")  # второй запуск просто показывает уже живого маскота
+        link.send("show")  # второй запуск просто показывает уже живого оверлея
         return link.ALREADY_RUNNING
 
     api = Api()
@@ -44,7 +44,7 @@ def main() -> int:
         return mascot.frameGeometry()
 
     def ask(text: str) -> None:
-        """Запрос уходит в ядро; ответ маскот скажет пузырём, а история пишется в консоль."""
+        """Запрос уходит в ядро; ответ оверлей скажет пузырём, а история пишется в консоль."""
         mascot.bubble.hide()
         answer.show_request(text)
         answer.begin_request()
@@ -74,7 +74,7 @@ def main() -> int:
     link.serve(link.MASCOT, app, lambda command: commands[command]())
 
     def on_event(event: dict) -> None:
-        if event.get("type") == "approval":  # действие ждёт «да/нет» — показываем сразу
+        if event.get("type") == "approval":  # действие ждёт подтверждение: показываем сразу
             answer.open(anchor())
             mascot.say(f"Нужно твоё «да»: {event.get('title', '')}", seconds=30,
                        title="Подтверждение")

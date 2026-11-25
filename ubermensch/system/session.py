@@ -3,11 +3,11 @@
 Чужие окна на Wayland видит только композитор, поэтому в KWin загружается скрипт
 kwin_tracker.js: при каждой смене активного окна (и его заголовка) он звонит по D-Bus
 сюда. Простой приходит от композитора по протоколу ext-idle-notify. Уведомления
-программ и сайтов слышны на шине D-Bus (вызовы Notify) — они пишутся в журнал по дням,
+программ и сайтов слышны на шине D-Bus (вызовы Notify): они пишутся в журнал по дням,
 откуда их забирает сборщик collectors/notifications.py.
 
-Сенсоры живут в ядре (start() из __main__). Маскот и лист задач — другие процессы:
-они спрашивают ядро по D-Bus (org.ubermensch.Anya, /Session). Ядро не запущено —
+Сенсоры живут в ядре (start() из __main__). Маскот и лист задач: другие процессы:
+они спрашивают ядро по D-Bus (org.ubermensch.Anya, /Session). Ядро не запущено -
 окно неизвестно (None), простой 0.
 """
 from __future__ import annotations
@@ -192,7 +192,7 @@ def _watch_idle() -> None:
         log.warning("Сеанс: композитор не поддерживает ext-idle-notify")
         return
     notifier = found["notifier"]
-    # v2: только ввод, без учёта «не засыпать» от видео — нам важно, трогают ли компьютер
+    # v2: только ввод, без учёта «не засыпать» от видео; нам важно, трогают ли компьютер
     subscribe = notifier.get_input_idle_notification if found["version"] >= 2 \
         else notifier.get_idle_notification
     notification = subscribe(IDLE_STEP_MS, found["seat"])
@@ -213,7 +213,7 @@ def _watch_idle() -> None:
 
 
 def _watch_notifications(folder: Path) -> None:
-    """Каждый вызов Notify на шине — строка в <folder>/ГГГГ-ММ-ДД.jsonl."""
+    """Каждый вызов Notify на шине: строка в <folder>/ГГГГ-ММ-ДД.jsonl."""
     try:
         connection = open_dbus_connection(bus="SESSION")
         rule = MatchRule(type="method_call", interface="org.freedesktop.Notifications",
@@ -239,11 +239,11 @@ def _watch_notifications(folder: Path) -> None:
             log.warning("Сеанс: не удалось записать уведомление", exc_info=True)
 
 
-MUSIC_EVERY = 15  # с, опрос плееров: трек короче этого не попадёт — и ладно
+MUSIC_EVERY = 15  # с, опрос плееров: трек короче этого не попадёт; и ладно
 
 
 def _watch_music(folder: Path) -> None:
-    """Каждый новый трек, который играет (не на паузе), — строка в <folder>/ГГГГ-ММ-ДД.jsonl."""
+    """Каждый новый трек, который играет (не на паузе),: строка в <folder>/ГГГГ-ММ-ДД.jsonl."""
     from . import plasma  # plasma импортирует этот модуль
 
     last: dict[str, str] = {}  # плеер → последний записанный трек

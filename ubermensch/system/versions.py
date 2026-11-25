@@ -1,8 +1,8 @@
-"""Прежние версии файлов перед изменением инструментами — чтобы любую правку можно было откатить.
+"""Прежние версии файлов перед изменением инструментами: чтобы любую правку можно было откатить.
 
-Копия кладётся в workspace/versions/<id>/ до записи; журнал — versions.jsonl. Храним
+Копия кладётся в workspace/versions/<id>/ до записи; журнал: versions.jsonl. Храним
 MAX_VERSIONS последних и не старше KEEP_DAYS. Файлы больше MAX_BYTES не копируются
-(запись идёт, но отката нет — об этом сказано в ответе инструмента).
+(запись идёт, но отката нет: об этом сказано в ответе инструмента).
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def _write(entries: list[dict]) -> None:
 
 
 def save(path: Path, operation: str) -> str | None:
-    """Сохранить текущий файл перед изменением. None — файла ещё нет или он слишком большой."""
+    """Сохранить текущий файл перед изменением. None: файла ещё нет или он слишком большой."""
     path = path.resolve()
     if not path.is_file() or path.stat().st_size > MAX_BYTES:
         return None
@@ -74,7 +74,7 @@ def history(path: str | None = None, limit: int = 20) -> list[dict]:
 
 
 def restore(identifier: str) -> dict:
-    """Вернуть версию на место. Текущее содержимое тоже сохраняется версией — откат откатываем."""
+    """Вернуть версию на место. Текущее содержимое тоже сохраняется версией: откат откатываем."""
     entry = next((e for e in _entries() if e["id"] == identifier), None)
     if entry is None:
         raise ValueError("Версия не найдена (или уже удалена по сроку хранения)")

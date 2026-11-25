@@ -1,6 +1,6 @@
 """Чтение документов для импорта в память: чаты Google AI Studio, PDF, Word, .txt и .md.
 
-Большие выгрузки чатов с ИИ (ChatGPT, Claude.ai) и архивы Google Takeout идут другим путём —
+Большие выгрузки чатов с ИИ (ChatGPT, Claude.ai) и архивы Google Takeout идут другим путём -
 через сборщики (collectors/ai_chats.py, collectors/takeout.py), по месяцам.
 """
 from __future__ import annotations
@@ -10,16 +10,16 @@ import json
 import re
 from pathlib import Path
 
-MAX_CHARS = 2_000_000  # ~35 порций разбора; больше — значит, нужен отдельный сборщик
+MAX_CHARS = 2_000_000  # ~35 порций разбора; больше: значит, нужен отдельный сборщик
 PART_CHARS = 60_000  # столько текста уходит мозгу за один вызов
-MODEL_REPLY_CHARS = 1500  # ответы ИИ в чатах — лишь контекст: факты берутся из слов пользователя
+MODEL_REPLY_CHARS = 1500  # ответы ИИ в чатах: лишь контекст: факты берутся из слов пользователя
 # Повторы при глубоком импорте: абзац выбрасывается, если DUP_SHARE его фраз по 5 слов
 # уже встречались в одном из других абзацев.
 SHINGLE, DUP_SHARE, MIN_DUP_CHARS = 5, 0.7, 80
 
 
 def _aistudio(data: dict) -> str:
-    """Переписка из AI Studio: реплики пользователя целиком, ответы модели — сокращённо,
+    """Переписка из AI Studio: реплики пользователя целиком, ответы модели; сокращённо,
     без «мыслей» модели."""
     lines = []
     for chunk in data.get("chunkedPrompt", {}).get("chunks", []):
@@ -36,7 +36,7 @@ def _aistudio(data: dict) -> str:
 
 
 def user_replicas(path: Path) -> list[str]:
-    """Только реплики пользователя из чата AI Studio — для анализа того, как он рассуждает."""
+    """Только реплики пользователя из чата AI Studio: для анализа того, как он рассуждает."""
     data = _load_aistudio(path)
     if data is None:
         return []

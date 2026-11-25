@@ -17,7 +17,7 @@ BACKGROUND_TOOLS = {
 }
 
 
-# Части пути, за которыми ключи, сессии и входы: их не читает никто, даже с его «да» в чате
+# Path components blocked from all reads even with user confirmation
 SECRET_PARTS = frozenset({
     '.ssh', '.gnupg', 'secrets', '.env', '.password-store', 'keyrings', 'kwalletd', '.pki',
     'tdata',  # сессия Telegram Desktop
@@ -51,9 +51,8 @@ def readable(target: Path) -> bool:
            for p in target.parts) or target.name in SECRET_FILES:
         return False
     if within(target, (config.DATA_DIR / 'db', config.DATA_DIR / 'secrets')):
-        return False  # её база и ключи — только через её же инструменты
-    # Читать можно всю домашнюю папку без вопросов (его решение 26.10.2026: «она не должна
-    # спрашивать разрешения»), кроме ключей, сессий и входов выше.
+        return False  # internal DB and secrets remain accessible only via store/tool APIs
+    # Home directory reads are permitted without interactive prompts except blocked secret paths above.
     allowed = roots('UBERMENSCH_READ_ROOTS',
                     (Path.home(), *config.PERSONAL_DIRS, *config.EXTRA_ROOTS, *config.FREE_ZONES,
                      config.DATA_DIR / 'career',  # его резюме, если данные не в домашней папке
@@ -63,7 +62,7 @@ def readable(target: Path) -> bool:
 
 def writable(target: Path) -> bool:
     target = target.expanduser().resolve()
-    vault = (config.VAULT_DIR,) if config.VAULT_DIR else ()  # всё его хранилище — без вопросов
+    vault = (config.VAULT_DIR,) if config.VAULT_DIR else ()  # всё его хранилище: без вопросов
     defaults = (config.DOCUMENTS_DIR, config.OUTPUT_DIR, config.DATA_DIR / 'workspace' / 'artifacts', *vault) \
         if background() else (*config.FREE_ZONES, *config.PERSONAL_DIRS, *vault)
     setting = 'UBERMENSCH_BACKGROUND_WRITE_ROOTS' if background() else 'UBERMENSCH_WRITE_ROOTS'

@@ -12,7 +12,7 @@ WIDTH, HEIGHT = 500, 150
 
 
 class PromptEdit(QPlainTextEdit):
-    """Enter — отправить, Shift+Enter — новая строка, Esc — закрыть."""
+    """Enter: отправить, Shift+Enter; новая строка, Esc; закрыть."""
     submitted = Signal()
     cancelled = Signal()
 
@@ -68,7 +68,7 @@ class PromptWindow(console.ConsoleWindow):
             self.popup(anchor)
 
     def popup(self, anchor: QRect) -> None:
-        """Появляется над маскотом (или под ним, если сверху нет места)."""
+        """Появляется над оверлеем (или под ним, если сверху нет места)."""
         area = self.screen().availableGeometry()
         x = max(area.left() + 4, min(anchor.center().x() - WIDTH // 2, area.right() - WIDTH - 4))
         y = anchor.top() - HEIGHT - 8

@@ -102,7 +102,7 @@ class CodeToolsTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await files.edit_file(str(code), "nothing", "x")
         code.write_text(code.read_text() + "# return a - b\n", encoding="utf-8")
-        with self.assertRaises(ValueError):  # фрагмент дважды — не угадываем
+        with self.assertRaises(ValueError):  # фрагмент дважды: не угадываем
             await files.edit_file(str(code), "return a - b", "return a + b")
         result = await files.edit_file(str(code), "    return a - b\n", "    return a + b\n")
         self.assertIn("-    return a - b", result["diff"])

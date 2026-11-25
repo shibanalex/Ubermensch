@@ -18,7 +18,7 @@ async def calendar_upcoming(days: int = 14) -> list[dict]:
 async def calendar_add(title: str, start: str, end: str | None = None, description: str = "",
                        reminder_minutes: int | None = None) -> dict:
     """Добавить событие в Google Календарь пользователя (сразу видно на телефоне).
-    start/end: «ГГГГ-ММ-ДД» — на весь день, «ГГГГ-ММ-ДДTЧЧ:ММ» — точное местное время."""
+    start/end: «ГГГГ-ММ-ДД»; на весь день, «ГГГГ-ММ-ДДTЧЧ:ММ»; точное местное время."""
     return await asyncio.to_thread(google_calendar.add, title, start, end, description,
                                    reminder_minutes)
 
@@ -26,7 +26,7 @@ async def calendar_add(title: str, start: str, end: str | None = None, descripti
 
 @registry.tool()
 async def calendar_delete(event_id: str) -> str:
-    """Удалить событие. Свои (добавленные Аней) — сразу, чужие — после подтверждения."""
+    """Удалить событие. Свои (добавленные ассистентом): сразу, чужие; после подтверждения."""
     current = await asyncio.to_thread(google_calendar.event, event_id)
     if not google_calendar.is_own(current.get("description")) and not await _ask(
             "Удалить событие из календаря", f"{current.get('summary', '')}\n"

@@ -30,7 +30,7 @@ class SensorTests(unittest.TestCase):
             (datetime(2026, 10, 17, 15, 0), "System returned from sleep operation 'suspend'.", "b"))
         with patch.object(power.subprocess, "run", return_value=SimpleNamespace(stdout=output)):
             events = power.collect(datetime(2026, 10, 1))
-        self.assertEqual(len(events), 1)  # второй сон — через перезагрузку, часы ненадёжны
+        self.assertEqual(len(events), 1)  # второй сон: через перезагрузку, часы ненадёжны
         self.assertEqual(events[0]["meta"]["minutes"], 460)
 
         store = Store(":memory:")
@@ -89,7 +89,7 @@ class SensorTests(unittest.TestCase):
             saved, cursor = gdrive.collect(Path(temp), None)
             again, _ = gdrive.collect(Path(temp), cursor)
             self.assertEqual(saved, ["Gemini — План_трио [abc12345].json"])
-            self.assertEqual(again, [])  # тот же файл — без повторного импорта
+            self.assertEqual(again, [])  # тот же файл: без повторного импорта
             self.assertEqual(Path(temp, saved[0]).read_bytes(), chat)
         self.assertEqual(cursor, "2026-10-19T11:00:00Z")
 

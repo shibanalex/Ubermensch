@@ -318,7 +318,7 @@ class PlanningStorage:
         snapshot['funnel']['groups'] = snapshot['funnel']['groups'][:20]
         def compact(value):
             if isinstance(value, str):
-                return value[:300] + (' …' if len(value) > 300 else '')  # подробности — planning_overview
+                return value[:300] + (' …' if len(value) > 300 else '')  # подробности: planning_overview
             if isinstance(value, dict):
                 return {k: compact(v) for k, v in value.items()}
             if isinstance(value, list):

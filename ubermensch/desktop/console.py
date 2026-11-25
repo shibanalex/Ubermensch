@@ -11,13 +11,13 @@ from PySide6.QtWidgets import QWidget
 
 from . import theme
 
-MONO = "Hack"  # моноширинный, похож на Consolas; запасной — любой моно из системы
+MONO = "Hack"  # моноширинный, похож на Consolas; запасной: любой моно из системы
 # палитра Nord (nordtheme.com)
 BG = QColor(46, 52, 64, 236)  # nord0, чуть прозрачный
 FG = QColor("#d8dee9")
 BRIGHT = QColor("#eceff4")
 DIM = QColor("#7b88a1")
-ACCENT = QColor("#88c0d0")  # Frost — лицо Ани, приглашение ввода
+ACCENT = QColor("#88c0d0")  # Frost: виджет оверлея, приглашение ввода
 GREEN = QColor("#a3be8c")
 RED = QColor("#bf616a")
 TITLE_BG = QColor(36, 41, 51, 245)
@@ -40,7 +40,7 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none
 
 
 def plain(markdown: str) -> str:
-    """Консоль показывает простой текст: убираем разметку, списки — точками."""
+    """Консоль показывает простой текст: убираем разметку, списки; точками."""
     s = re.sub(r"\*\*(.+?)\*\*", r"\1", markdown, flags=re.S)
     s = re.sub(r"`([^`]+)`", r"\1", s)
     s = re.sub(r"^#{1,6}\s*", "", s, flags=re.M)
@@ -120,7 +120,7 @@ class ConsoleWindow(QWidget):
 
     def glide(self, target: QPoint, ms: int = 260,
               curve=QEasingCurve.Type.InOutSine) -> QPropertyAnimation:
-        """Плавно переехать в target (прогулка маскота, перестановка окон)."""
+        """Плавно переехать в target (прогулка оверлея, перестановка окон)."""
         if self._gliding is not None:
             self._gliding.stop()
         self._gliding = self._animation(b"pos", self.pos(), target, ms, curve)
@@ -154,7 +154,7 @@ class ConsoleWindow(QWidget):
         self.paint_body(p)
 
     def paint_body(self, p: QPainter) -> None:
-        """Переопределяют окна, которые рисуют тело сами (маскот)."""
+        """Переопределяют окна, которые рисуют тело сами (оверлей)."""
 
     def frame_rect(self) -> QRect:
         """Прямоугольник самого окна; пузырь оставляет под ним место для хвостика."""

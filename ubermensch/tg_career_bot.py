@@ -292,7 +292,7 @@ def parse_and_filter_vacancy(text: str, entities=None, channel_username: str | N
     pos_lower = position.casefold()
     is_middle_combo = "middle" in pos_lower or "мидл" in pos_lower
 
-    # Если явно помечено как #senior / #lead — пропускаем (кроме смешанных вилок Middle+/Senior)
+    # Если явно помечено как #senior / #lead: пропускаем (кроме смешанных вилок Middle+/Senior)
     if SENIOR_GRADE_RE.search(text) and not is_middle_combo:
         return None
 
@@ -531,7 +531,7 @@ class TelegramCareerBot:
                     )
                     resume_file = paths[parsed.language]
 
-                    # Если у вакансии нет @username (или он не подходит), но есть email — отправляем на почту
+                    # Если у вакансии нет @username (или он не подходит), но есть email: отправляем на почту
                     if not parsed.hr_username and parsed.hr_email:
                         email_key = parsed.hr_email.casefold()
                         if email_key in emailed:
@@ -618,7 +618,7 @@ class TelegramCareerBot:
                         continue
 
                     if live() and len(sent_items) >= limit:
-                        # Дневной лимит достигнут — не двигаем курсор дальше этого сообщения,
+                        # Дневной лимит достигнут: не двигаем курсор дальше этого сообщения,
                         # чтобы откликнуться на него в следующей сессии
                         break
 

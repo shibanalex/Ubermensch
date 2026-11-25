@@ -9,8 +9,8 @@ PAPER = "#fbf6e9"
 PAPER_LINE = "#e9e0cc"  # линовка
 MARGIN_LINE = "#e3aaa1"  # красная линия полей
 INK = "#2d2a26"  # чернила / графит
-PENCIL = "#8f877a"  # карандаш — второстепенное
-RED_INK = "#a33a2c"  # красные чернила — акценты и твои реплики
+PENCIL = "#8f877a"  # карандаш: второстепенное
+RED_INK = "#a33a2c"  # красные чернила: акценты и твои реплики
 GREEN_INK = "#4f7a3a"
 TAPE = QColor(232, 219, 180, 200)
 
@@ -34,7 +34,7 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
 """
 
-# Поле ввода — просто строка на бумаге с линией снизу.
+# Поле ввода: просто строка на бумаге с линией снизу.
 LINE_INPUT = (f"background: transparent; color: {INK}; border: none;"
               f"border-bottom: 1px solid {PENCIL}; selection-background-color: {MARGIN_LINE};")
 
@@ -48,7 +48,7 @@ def paper_rect(widget: QWidget) -> QRectF:
 
 def paint_paper(widget: QWidget, *, ruled_from: float | None = None, step: float = 27,
                 margin_x: float | None = 34, tape: bool = False) -> None:
-    """Лист с мягкой тенью; по желанию — линовка, поля и полоска скотча сверху."""
+    """Лист с мягкой тенью; по желанию: линовка, поля и полоска скотча сверху."""
     p = QPainter(widget)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     paper = paper_rect(widget)

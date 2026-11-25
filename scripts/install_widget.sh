@@ -39,5 +39,5 @@ if [[ "${1:-}" != "--no-desktop" ]]; then
             var g = screenGeometry(desks[0].screen);
             desks[0].addWidget('$plugin', g.width - 380, 60, 340, 460);
         }" >/dev/null
-    echo "Виджет на рабочем столе (если его там не было — добавлен справа сверху)."
+    echo "Виджет на рабочем столе (added to top-right if missing)."
 fi

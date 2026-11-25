@@ -30,10 +30,10 @@ PROJECT_MARKERS = (".git", "pyproject.toml", "setup.py", "requirements.txt", "pa
 
 @registry.tool()
 async def project_run(path: str, command: str, timeout: int = 300) -> str:
-    """Команда в папке проекта в песочнице — сразу, без подтверждения и в фоне: проект
+    """Команда в папке проекта в песочнице: сразу, без подтверждения и в фоне: проект
     подключён только для чтения, сети нет, .env/secrets/ключи закрыты, /tmp пустой.
     Для диагностики кода: тесты (.venv/bin/python -m pytest / -m unittest), git status/diff/log,
-    линтеры, сборка без записи. Исправление — edit_file, затем снова project_run с тестами."""
+    линтеры, сборка без записи. Исправление: edit_file, затем снова project_run с тестами."""
     from ..runtime import policy
 
     folder = Path(path).expanduser().resolve()
@@ -50,11 +50,11 @@ async def project_run(path: str, command: str, timeout: int = 300) -> str:
 
 @registry.tool()
 async def run_shell(command: str, reason: str, mode: Literal['sandbox', 'host'] = 'sandbox') -> str:
-    """Команда bash. sandbox — изолированная папка без сети через bubblewrap (расчёты, разбор
-    файлов из workspace). host — на компьютере пользователя: управление рабочим столом и
+    """Команда bash. sandbox: изолированная папка без сети через bubblewrap (расчёты, разбор
+    файлов из workspace). host: на компьютере пользователя: управление рабочим столом и
     чтение состояния (kwriteconfig6, qdbus6, wpctl, playerctl, brightnessctl, systemctl status,
-    ls/cat/grep/journalctl …) выполняется сразу; всё остальное — после подтверждения.
-    В фоне shell запрещён. reason — зачем команда нужна."""
+    ls/cat/grep/journalctl …) выполняется сразу; всё остальное: после подтверждения.
+    В фоне shell запрещён. reason: зачем команда нужна."""
     if os.getenv('UBERMENSCH_SHELL_MODE', 'confirm') != 'confirm':
         return 'Shell отключён в настройках.'
     if mode == 'sandbox':
@@ -80,8 +80,8 @@ async def media_key(action: Literal["play_pause", "next", "previous", "volume_up
 
 @registry.tool()
 async def screenshot() -> dict:
-    """Снимок экрана пользователя — посмотреть, чем он занят или что на экране сломалось.
-    Картинка приходит вместе с результатом; если её не видно — открой image_path (Read).
+    """Снимок экрана пользователя: посмотреть, чем он занят или что на экране сломалось.
+    Картинка приходит вместе с результатом; если её не видно: открой image_path (Read).
     Не сработает, если на экране может быть личное (банк, пароли, инкогнито)."""
     window = windows.foreground()
     if reason := screen.skip_reason(window):
@@ -124,7 +124,7 @@ async def system_status() -> str:
 
 @registry.tool()
 async def desktop_notify(title: str, text: str, urgent: bool = False) -> str:
-    """Показать уведомление на экране компьютера (заметнее пузыря маскота; urgent — важное)."""
+    """Показать уведомление на экране компьютера (заметнее пузыря оверлея; urgent: важное)."""
     await asyncio.to_thread(plasma.notify, title, text, urgent)
     return "Уведомление показано"
 
@@ -157,7 +157,7 @@ async def clipboard_read() -> str:
 
 @registry.tool()
 async def clipboard_write(text: str) -> str:
-    """Положить текст в буфер обмена — пользователь вставит его сам (Ctrl+V)."""
+    """Положить текст в буфер обмена: пользователь вставит его сам (Ctrl+V)."""
     await asyncio.to_thread(plasma.set_clipboard, text)
     return "Текст в буфере обмена"
 
@@ -170,14 +170,14 @@ async def set_brightness(percent: int) -> str:
 
 @registry.tool()
 async def do_not_disturb(minutes: int) -> str:
-    """Режим «не беспокоить» для уведомлений на minutes минут (0 — выключить)."""
+    """Режим «не беспокоить» для уведомлений на minutes минут (0: выключить)."""
     on = await asyncio.to_thread(plasma.do_not_disturb, minutes)
     return f"«Не беспокоить» на {minutes} мин" if on else "«Не беспокоить» выключено"
 
 
 @registry.tool()
 async def suspend_computer(reason: str) -> str:
-    """Перевести компьютер в сон — только с подтверждением пользователя. reason — зачем."""
+    """Перевести компьютер в сон: только с подтверждением пользователя. reason; зачем."""
     if not await _ask("Усыпить компьютер", reason):
         return "Пользователь не разрешил."
     await asyncio.to_thread(plasma.suspend)

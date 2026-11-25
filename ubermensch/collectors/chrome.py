@@ -32,7 +32,7 @@ def _search_query(host: str, url: str) -> str | None:
 
 
 def collect(since: datetime, cursor: str | None) -> tuple[list[dict], str | None]:
-    """Возвращает (события, новый курсор). Курсор — последний обработанный visit_time."""
+    """Возвращает (события, новый курсор). Курсор: последний обработанный visit_time."""
     start_us = int(cursor) if cursor else int((since.astimezone(timezone.utc) - CHROME_EPOCH)
                                               / timedelta(microseconds=1))
     events: list[dict] = []
@@ -40,7 +40,7 @@ def collect(since: datetime, cursor: str | None) -> tuple[list[dict], str | None
     for history in USER_DATA.glob("*/History"):
         profile = history.parent.name
         with tempfile.TemporaryDirectory() as tmp:
-            # Chrome держит файл открытым — читаем копию
+            # Chrome держит файл открытым: читаем копию
             copy = Path(tmp) / "History"
             shutil.copy2(history, copy)
             db = sqlite3.connect(copy)

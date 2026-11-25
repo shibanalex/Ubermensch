@@ -1,8 +1,8 @@
 """Здоровье системы: известные проблемы и что с ними делать пользователю.
 
 Компоненты сообщают о проблеме (report) и о том, что она ушла (clear). Пользователь узнаёт
-о проблеме один раз, напоминание — не чаще REMIND_EVERY, и получает «починилось», когда
-она исчезает. Список проблем виден в /status, в API и у маскота.
+о проблеме один раз, напоминание: не чаще REMIND_EVERY, и получает «починилось», когда
+она исчезает. Список проблем виден в /status, в API и у оверлея.
 
 Ключи проблем: brain (Claude: лимит, вход, нет программы), telegram, gmail, disk, backup,
 service:<имя> (упавший фоновый сервис).
@@ -24,7 +24,7 @@ REMIND_EVERY = timedelta(hours=6)
 @dataclass
 class Problem:
     key: str
-    message: str  # что случилось и что сделать — по-человечески
+    message: str  # что случилось и что сделать: по-человечески
     since: datetime = field(default_factory=datetime.now)
     notified_at: datetime | None = None
 
@@ -47,7 +47,7 @@ class Health:
             self._notify(text)
 
     def report(self, key: str, message: str, *, quiet: bool = True) -> None:
-        """По умолчанию только в списке проблем (/status, API, маскот), без спама в Telegram."""
+        """По умолчанию только в списке проблем (/status, API, оверлей), без спама в Telegram."""
         problem = self._problems.get(key)
         if problem is None or problem.message != message:
             log.warning("Проблема [%s]: %s", key, message)

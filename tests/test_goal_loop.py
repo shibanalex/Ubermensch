@@ -14,7 +14,7 @@ from ubermensch.assistant import Outcome
 from ubermensch.brain import BrainError
 from ubermensch.store import Store
 
-# журнал ставит отметки по настоящим часам — «сейчас» в тестах того же дня
+# журнал ставит отметки по настоящим часам: «сейчас» в тестах того же дня
 NOON = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
 
 
@@ -75,12 +75,12 @@ class GoalLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.autonomy.goal_cycle(NOON), "needs_user")
         self.assertIn("нет измеримого плана", self.assistant.calls[0])
         self.assertEqual(self.notes, ["🎯 Удалённая работа Python backend: Предлагаю план…"])
-        # предложение видно в разговоре, чтобы Аня сохранила план после его «да»
+        # предложение видно в разговоре, чтобы ассистент сохранила план после подтверждения
         self.assertIn("Сколько приглашений сейчас?", goal_loop.proposals_context(self.store))
-        # сегодня и следующие дни без ответа — не переспрашивать
+        # сегодня и следующие дни без ответа: не переспрашивать
         self.assertIsNone(await self.autonomy.goal_cycle(NOON + timedelta(hours=3)))
         self.assertIsNone(self.store.due_goal(NOON + timedelta(days=2)))
-        # он утвердил план — цель снова в работе уже сегодня, предложение из контекста ушло
+        # он утвердил план: цель снова в работе уже сегодня, предложение из контекста ушло
         self.plan()
         self.assertIsNotNone(self.store.due_goal(NOON + timedelta(hours=1)))
         self.assertIsNotNone(self.store.due_goal(NOON + timedelta(days=1)))
@@ -167,9 +167,9 @@ class GoalLoopTests(unittest.IsolatedAsyncioTestCase):
         later = self.store.add_goal("growth", "Трио ре минор", "", "2027-10-31")
         sooner = self.store.add_goal("personal", "К бабушке", "", "2026-11-30")
         self.store.save_goal_plan(later, "Готовые части", "шт", 1, 3, 120, "Разработка", "Экспозиция готова")
-        self.assertEqual(self.store.due_goal(NOON)[0]["id"], later)  # с планом — первой
+        self.assertEqual(self.store.due_goal(NOON)[0]["id"], later)  # с планом: первой
         self.store.record_goal_cycle(later, "step", "done")
-        self.assertEqual(self.store.due_goal(NOON)[0]["id"], sooner)  # без плана — по сроку
+        self.assertEqual(self.store.due_goal(NOON)[0]["id"], sooner)  # без плана: по сроку
 
 
     async def test_reflection_learns_strategy_from_results_and_next_step_uses_it(self):

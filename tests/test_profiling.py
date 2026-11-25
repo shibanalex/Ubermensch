@@ -38,7 +38,7 @@ def _seed(store: Store) -> None:
 
 
 class FakeBrain:
-    """Отвечает по виду задачи: наблюдения ссылаются на записи 1–2, раздел — на o1."""
+    """Отвечает по виду задачи: наблюдения ссылаются на записи 1–2, раздел; на o1."""
 
     def __init__(self):
         self.calls = []
@@ -102,7 +102,7 @@ class ProfilingTests(unittest.IsolatedAsyncioTestCase):
         sources = {w.source for w in windows}
         self.assertIn("telegram", sources)
         self.assertIn("metrics", sources)
-        self.assertNotIn("youtube", sources)  # просмотры — только через метрики
+        self.assertNotIn("youtube", sources)  # просмотры: только через метрики
         self.assertNotIn("google_search", sources)
         telegram = next(w for w in windows if w.source == "telegram")
         self.assertIn("Я: Сегодня опять не выспался", telegram.text)

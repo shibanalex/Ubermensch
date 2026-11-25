@@ -1,11 +1,11 @@
 """Google Takeout: история YouTube, поиска Google и других действий в сервисах Google.
 
 Архивы (takeout-*.zip, хоть по частям) кладутся в папку импорта. Из них берём:
-- «Мои действия» и историю YouTube — события по времени;
-- свои комментарии и сообщения в чатах трансляций YouTube — его собственные слова;
-- партитуры MuseScore с Диска — что он сочиняет (как сборщик творчества);
-- чаты Google AI Studio с Диска и подписки/плейлисты YouTube — в папку импорта как документы:
-  их разберёт импорт (чаты — глубоко).
+- «Мои действия» и историю YouTube: события по времени;
+- свои комментарии и сообщения в чатах трансляций YouTube: его собственные слова;
+- партитуры MuseScore с Диска: что он сочиняет (как сборщик творчества);
+- чаты Google AI Studio с Диска и подписки/плейлисты YouTube: в папку импорта как документы:
+  их разберёт импорт (чаты: глубоко).
 Остальное (видео, музыка, картинки, книги, Фото) не трогаем. Понимаем оба формата выгрузки:
 JSON и HTML (по умолчанию Google отдаёт HTML), русские и английские названия.
 """
@@ -64,7 +64,7 @@ def _clean(fragment: str) -> str:
 
 
 def _items_html(text: str) -> Iterator[tuple[str, str, str, datetime]]:
-    """(сервис, действие, дополнение — канал и т. п., время) из HTML-страницы «Мои действия»."""
+    """(сервис, действие, дополнение: канал и т. п., время) из HTML-страницы «Мои действия»."""
     for cell in CELL.split(text)[1:]:
         header, content = HEADER.search(cell), CONTENT.search(cell)
         if not header or not content:
@@ -145,7 +145,7 @@ def _youtube_thread(name: str) -> str | None:
 
 
 def _comment_text(cell: str) -> str:
-    """Текст комментария в выгрузке — JSON-фрагменты {"text": ...} через запятую."""
+    """Текст комментария в выгрузке: JSON-фрагменты {"text": ...} через запятую."""
     try:
         parts = json.loads(f"[{cell}]")
         return "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
@@ -154,7 +154,7 @@ def _comment_text(cell: str) -> str:
 
 
 def _youtube_words(thread: str, raw: bytes, since: datetime) -> list[dict]:
-    """Свои комментарии и сообщения в чатах трансляций — его слова, как исходящие сообщения."""
+    """Свои комментарии и сообщения в чатах трансляций: его слова, как исходящие сообщения."""
     rows = list(csv.reader(io.StringIO(raw.decode("utf-8-sig", errors="replace"))))
     if len(rows) < 2:
         return []
@@ -189,7 +189,7 @@ def _youtube_words(thread: str, raw: bytes, since: datetime) -> list[dict]:
 
 
 def _drive_score(info: zipfile.ZipInfo, raw: bytes) -> dict | None:
-    """Партитура MuseScore с Google Диска — событие творчества на дату последней правки."""
+    """Партитура MuseScore с Google Диска: событие творчества на дату последней правки."""
     name = info.filename.replace("\\", "/")
     if not name.lower().endswith(".mscz") or "/.mscbackup/" in name or "/Корзина/" in name:
         return None
@@ -211,7 +211,7 @@ def _drive_score(info: zipfile.ZipInfo, raw: bytes) -> dict | None:
 
 
 def _entries(path: Path) -> Iterator[tuple[zipfile.ZipInfo | None, str, bytes]]:
-    """(сведения о файле в архиве или None, имя, содержимое) — из архива или папки Takeout."""
+    """(сведения о файле в архиве или None, имя, содержимое): из архива или папки Takeout."""
     if path.is_dir():
         for file in path.rglob("*"):
             if file.is_file():
@@ -244,7 +244,7 @@ def collect(paths: list[Path], since: datetime) -> list[dict]:
 
 
 def _filtered(path: Path, wanted) -> Iterator[tuple[zipfile.ZipInfo | None, str, bytes]]:
-    """Только нужные файлы — гигабайтные видео и музыку из архива не читаем."""
+    """Только нужные файлы: гигабайтные видео и музыку из архива не читаем."""
     if path.is_dir():
         for info, name, raw in _entries(path):
             if wanted(name):
@@ -271,8 +271,8 @@ def _ai_studio(name: str) -> bool:
 
 
 def extract_documents(paths: list[Path], import_dir: Path) -> list[str]:
-    """Чаты AI Studio с Диска и подписки/плейлисты YouTube — в папку импорта как документы
-    (импорт сам разберёт их, чаты — глубоко). Возвращает имена созданных файлов."""
+    """Чаты AI Studio с Диска и подписки/плейлисты YouTube: в папку импорта как документы
+    (импорт сам разберёт их, чаты: глубоко). Возвращает имена созданных файлов."""
     created, seen = [], set()
     channels: list[str] = []
     playlists: list[str] = []
@@ -309,5 +309,5 @@ def extract_documents(paths: list[Path], import_dir: Path) -> list[str]:
 
 
 def unpacked(import_dir: Path) -> list[Path]:
-    """Если архив распаковали сами — папки Takeout тоже подходят."""
+    """Если архив распаковали сами: папки Takeout тоже подходят."""
     return [p for p in import_dir.rglob("Takeout") if p.is_dir()] if os.path.isdir(import_dir) else []

@@ -1,9 +1,9 @@
 """Поиск по смыслу слов без тяжёлых моделей: основы слов (Snowball) и связанный прошлый опыт.
 
-Основа — без окончания («общежитием» → «общежит»), длинные основы короче ещё на букву
-(«откликаюсь» → «отклик»), поиск — по началу слова. На синтетическом наборе с разными формами
+Основа: без окончания («общежитием» → «общежит»), длинные основы короче ещё на букву
+(«откликаюсь» → «отклик»), поиск: по началу слова. На синтетическом наборе с разными формами
 слов это подняло hit@5 с 0.3 до 0.9 (scripts/evaluate_memory.py). Синонимы и пересказ
-этим не ловятся — для них нужны эмбеддинги, если появится измеримая польза.
+этим не ловятся: для них нужны эмбеддинги, если появится измеримая польза.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def stems(text: str, limit: int = 24) -> list[str]:
     """Основы значимых слов текста, без повторов."""
     result = []
     for word in re.findall(r"\w+", text.casefold()):
-        # двухбуквенные латинские сокращения (hh, cv, ai) значимы, русские («по», «на») — нет
+        # двухбуквенные латинские сокращения (hh, cv, ai) значимы, русские («по», «на»): нет
         if word in STOP or word.isdigit() or len(word) < 2 or (len(word) == 2 and not word.isascii()):
             continue
         stem = (_RU if re.search(r"[а-яё]", word) else _EN).stemWord(word)
@@ -34,7 +34,7 @@ def stems(text: str, limit: int = 24) -> list[str]:
 
 
 def fts_query(text: str) -> str:
-    """Выражение FTS5: любое из начал слов. Кавычки — чтобы основа не читалась как оператор."""
+    """Выражение FTS5: любое из начал слов. Кавычки; чтобы основа не читалась как оператор."""
     return " OR ".join(f'"{s}"*' for s in stems(text))
 
 
@@ -75,7 +75,7 @@ def related_experience(store, query: str, limit: int = 6) -> list[dict]:
                           "kind": "эксперимент", "goal": row["title"], "when": row["updated_at"][:10],
                           "status": row["verdict"] or row["status"], "what": row["hypothesis"][:300],
                           "result": row["result"][:300]}))
-    # в коротком запросе хватает одной общей основы, в длинном — нужны две
+    # в коротком запросе хватает одной общей основы, в длинном: нужны две
     threshold = 1 if len(wanted) <= 3 else 2
     found = [f for f in found if f[0] >= threshold]
     found.sort(key=lambda f: (f[0], f[1]), reverse=True)

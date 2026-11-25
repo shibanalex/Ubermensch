@@ -53,7 +53,7 @@ class ObsidianTests(unittest.TestCase):
     def test_collect_reads_whole_vault_and_marks_clippings(self):
         events = {e["external_id"]: e for e in obsidian.collect()}
         self.assertNotIn("08 AI/Reports/Профиль.md", events)
-        self.assertIn("90 Templates/Daily.md", events)  # 26.10.2026: читает всё хранилище
+        self.assertIn("90 Templates/Daily.md", events)  # читает всё хранилище
         self.assertIn("99 Assets/x.md", events)
         self.assertEqual(events["Clippings/статья.md"]["outgoing"], 0)
         self.assertEqual(events["03 Music/Grieg.md"]["outgoing"], 0)  # Web Clipper: source http
@@ -68,7 +68,7 @@ class ObsidianTests(unittest.TestCase):
         self.addCleanup(store.db.close)
         self.assertEqual(store.sync_events(obsidian.collect()), 9)
         row = store.db.execute("SELECT id FROM events WHERE external_id='06 Life/Личные ориентиры.md'").fetchone()
-        self.assertEqual(store.sync_events(obsidian.collect()), 0)  # без правок — без изменений
+        self.assertEqual(store.sync_events(obsidian.collect()), 0)  # без правок: без изменений
         _note(self.vault, "06 Life/Личные ориентиры.md", "Музыка и здоровье.")
         self.assertEqual(store.sync_events(obsidian.collect()), 1)
         updated = store.db.execute("SELECT id, text FROM events "
@@ -85,7 +85,7 @@ class ObsidianTests(unittest.TestCase):
         self.assertLessEqual(len(obsidian.context_notes(limit=40)), 40)
 
     def test_whole_vault_writable_except_obsidian_settings(self):
-        # 26.10.2026: «у неё должен быть свободный доступ» — и в чате, и в фоне
+        # «у неё должен быть свободный доступ»: и в чате, и в фоне
         with patch.object(config, "VAULT_DIR", self.vault), \
                 patch.object(config, "PROTECTED", (self.vault / ".obsidian",)):
             for mode in ("interactive", "background"):
@@ -123,7 +123,7 @@ class TaskWidgetAPITests(unittest.IsolatedAsyncioTestCase):
         listed = await (await self.client.get("/api/tasks", headers=self.headers)).json()
         self.assertEqual([(t["title"], t["status"]) for t in listed["tasks"]],
                          [("Купить две тетради", "done")])
-        await self.post(f"/api/tasks/{task}", {"status": "open"})  # мисклик — вернуть
+        await self.post(f"/api/tasks/{task}", {"status": "open"})  # мисклик: вернуть
         listed = await (await self.client.get("/api/tasks", headers=self.headers)).json()
         self.assertEqual(listed["tasks"][0]["status"], "open")
 

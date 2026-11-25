@@ -1,5 +1,5 @@
-"""Окно метрик: «Аня обо мне» — насколько он меня изучил, «Мои действия» — время за ПК,
-полезное и отвлекающее, задачи и цели. Псевдографика в консоли, данные — GET /api/metrics."""
+"""Окно метрик: «Профиль»; насколько он меня изучил, «Мои действия»; время за ПК,
+полезное и отвлекающее, задачи и цели. Псевдографика в консоли, данные: GET /api/metrics."""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -116,7 +116,7 @@ class MetricsWindow(console.ConsoleWindow):
             area = self.screen().availableGeometry()
             if isinstance(saved, QPoint) and area.contains(saved):
                 self.move(saved)
-            else:  # левее маскота, низом на его уровне
+            else:  # левее оверлея, низом на его уровне
                 self.move(max(area.left() + 4, anchor.left() - self.width() - 12),
                           max(area.top() + 4, anchor.bottom() - self.height()))
         self.show()
@@ -202,7 +202,7 @@ class MetricsWindow(console.ConsoleWindow):
         self._w(empty, DIM)
         self._ln(f"  {tail}", FG)
 
-    # --- «Аня обо мне» ---
+    # --- «Профиль» ---
 
     def _learning(self, d: dict) -> None:
         filled, empty = _bar(d["mastery"], 100, 30)
@@ -334,7 +334,7 @@ class MetricsWindow(console.ConsoleWindow):
                     self._ln("задач пока нет", DIM)
 
     def _spark(self, values: list[int]) -> None:
-        """Столбики по значениям; пустые — точками, чтобы было видно шкалу."""
+        """Столбики по значениям; пустые: точками, чтобы было видно шкалу."""
         line = _spark(values)
         for char in line:
             self._w("·" if char == " " else char, DIM if char == " " else GREEN)

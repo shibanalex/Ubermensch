@@ -10,10 +10,10 @@ Window {
     minimumWidth: 640
     minimumHeight: 500
     visible: true
-    title: "String Stops Checker — MuseScore Inspector"
+    title: "String Stops Checker - MuseScore Inspector"
     color: "#161b22"
 
-    property string scorePath: "/home/allegro/Партитуры/Trio.mscz"
+    property string scorePath: ""
     property var allRows: []
     property int currentFilter: -1 // -1: all, 0: ok, 1: diff, 2: imp
     property string searchText: ""

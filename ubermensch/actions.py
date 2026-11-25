@@ -58,7 +58,7 @@ class Submitted:
     action_id: int
     summary: str
     risk: str
-    result: str | None  # None — ждёт подтверждения
+    result: str | None  # None: ждёт подтверждения
 
 
 def submit(store: Store, kind: str, summary: str, params: dict) -> Submitted | None:

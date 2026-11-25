@@ -1,4 +1,4 @@
-"""Новый ЛК через JSON API: только чтение, разделы — «страницы» снимка, переход со старого обхода."""
+"""Новый ЛК через JSON API: только чтение, разделы; «страницы» снимка, переход со старого обхода."""
 from __future__ import annotations
 
 import tempfile
@@ -92,4 +92,4 @@ class CollectionIsolationTests(unittest.IsolatedAsyncioTestCase):
             health=SimpleNamespace(clear=lambda *a: None, report=lambda *a: None), _mark=marked.append)
         with patch.object(lk, "credentials", return_value=("l", "p")), self.assertLogs(analysis.log, "ERROR"):
             self.assertEqual(await analysis.Investigation._collect_university(fake), 0)
-        self.assertEqual(marked, [])  # не отмечаем «прочитано» — попробуем при следующем сборе
+        self.assertEqual(marked, [])  # не отмечаем «прочитано»: попробуем при следующем сборе

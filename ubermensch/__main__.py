@@ -38,7 +38,7 @@ def _setup_logging(settings: config.Settings) -> None:
     logging.basicConfig(level=logging.INFO, handlers=handlers,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("aiogram.event").setLevel(logging.WARNING)
-    logging.getLogger("pypdf").setLevel(logging.ERROR)  # предупреждения о шрифтах в PDF — шум
+    logging.getLogger("pypdf").setLevel(logging.ERROR)  # предупреждения о шрифтах в PDF: шум
     logging.getLogger("telethon").setLevel(logging.WARNING)
 
 
@@ -66,7 +66,7 @@ async def _serve(settings: config.Settings) -> None:
     core.health.bind(asyncio.get_running_loop())
     core.investigation = Investigation(store, assistant, core.notify, core.telegrams, core.health)
 
-    async def login_required(account: str) -> None:  # сессии нет — Аня сама просит код
+    async def login_required(account: str) -> None:  # сессии нет: ассистент сама просит код
         if core.login is None:
             core.notify(await core.start_tg_login(account))
 
@@ -114,7 +114,7 @@ def _data_available() -> bool:
 
 
 def _wait_for_data() -> None:
-    """Папки с данными нет (диск не подключён) — ждём, а не падаем."""
+    """Папки с данными нет (диск не подключён): ждём, а не падаем."""
     notified = False
     while not _data_available():
         if not notified and os.getenv("TG_BOT_TOKEN") and os.getenv("TG_CHAT_ID"):
@@ -127,7 +127,7 @@ def _wait_for_data() -> None:
                     data=body.encode(), timeout=15)
                 notified = True
             except OSError:
-                pass  # сети пока нет — попробуем на следующем круге
+                pass  # сети пока нет: попробуем на следующем круге
         time.sleep(30)
 
 
@@ -135,7 +135,7 @@ def main() -> None:
     _wait_for_data()
     settings = config.load()
     _setup_logging(settings)
-    lock = _single_instance(settings)  # noqa: F841 — держим файл открытым до выхода
+    lock = _single_instance(settings)  # noqa: F841; держим файл открытым до выхода
     session.start(notifications.FOLDER, listening.FOLDER)  # окно, простой, уведомления, музыка
     logging.info("Старт. Данные: %s, Claude: %s", settings.data_dir, settings.claude_bin)
     asyncio.run(_serve(settings))

@@ -1,12 +1,12 @@
 """Контролируемые эксперименты по цели: гипотеза → согласие → действие → замеры → вывод.
 
 Правила в коде, а не только в инструкции модели:
-- subject='anya' — меняется только способ работы Ани (источник поиска, формат отчёта):
-  такой эксперимент она начинает сама; subject='owner' — меняются его действия или привычки:
-  начинается только после его согласия (experiment_decide — только в разговоре).
+- subject='anya': меняется только способ работы ассистента (источник поиска, формат отчёта):
+  такой эксперимент она начинает сама; subject='owner': меняются его действия или привычки:
+  начинается только после его согласия (experiment_decide: только в разговоре).
 - sensitive (сон, питание, тренировки, здоровье) всегда subject='owner'; без медицинских
-  вмешательств и резких нагрузок — это проверяет и инструкция модели.
-- вывод keep / adjust / drop — только при min_observations замерах; раньше — inconclusive
+  вмешательств и резких нагрузок: это проверяет и инструкция модели.
+- вывод keep / adjust / drop: только при min_observations замерах; раньше; inconclusive
   или остановка. Скрытых экспериментов нет: всё видно в контексте разговора.
 """
 from __future__ import annotations
@@ -57,7 +57,7 @@ class ExperimentStorage:
                 or not 1 <= min_observations <= 100:
             raise ValueError("Минимум замеров — целое от 1 до 100")
         review_on = day(review_on)
-        # Свой способ работы Аня меняет сама; его жизнь — только после его «да».
+        # Свой способ работы ассистент меняет сама; его жизнь: только после подтверждения.
         status = "active" if subject == "anya" else "proposed"
         consent = "своё изменение Ани" if status == "active" else ""
         cursor = self.db.execute(
@@ -116,7 +116,7 @@ class ExperimentStorage:
         return self.experiment(identifier)
 
     def conclude_experiment(self, identifier, verdict, result, next_step):
-        """Вывод по данным: keep / adjust / drop — не раньше min_observations замеров."""
+        """Вывод по данным: keep / adjust / drop; не раньше min_observations замеров."""
         item = self.experiment(identifier)
         if item["status"] != "active":
             raise ValueError("Вывод делается по идущему эксперименту")

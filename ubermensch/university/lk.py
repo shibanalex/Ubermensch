@@ -1,10 +1,10 @@
 """Личный кабинет студента (старый кабинет e.mospolytech.ru): только чтение.
 
-Вход — Playwright через установленный Chrome, без окна, по LK_LOGIN и LK_PASSWORD из .env
-(капча или ошибка — окно для ручного входа: lk_login.sh). Браузер нужен только для входа:
+Вход: Playwright через установленный Chrome, без окна, по LK_LOGIN и LK_PASSWORD из .env
+(капча или ошибка: окно для ручного входа: lk_login.sh). Браузер нужен только для входа:
 сессия (cookies) сохраняется в secrets, дальше страницы читаются обычными HTTP-запросами.
 Обход: с главной по ссылкам внутри кабинета (без «выхода» и действий), плюс документы
-(PDF, Word). Снимок страниц хранится в папке данных, изменения между снимками — событиями.
+(PDF, Word). Снимок страниц хранится в папке данных, изменения между снимками: событиями.
 """
 from __future__ import annotations
 
@@ -28,14 +28,14 @@ log = logging.getLogger(__name__)
 
 ROOT = "https://e.mospolytech.ru/old/"  # вход: отсюда кабинет сам ведёт на страницу входа
 HOST = "e.mospolytech.ru"
-# Старый кабинет жил в /old/, сейчас (новый сломан) — в корне, разделы «/?p=marks». Обход
+# Старый кабинет жил в /old/, сейчас (новый сломан): в корне, разделы «/?p=marks». Обход
 # стартует с того, где нашлось меню разделов: когда новый починят, старый вернётся в /old/.
 STARTS = ("https://e.mospolytech.ru/", "https://e.mospolytech.ru/old/")
 MIN_MENU_LINKS = 5
 SESSION = config.DATA_DIR / "secrets" / "lk_session.json"
 SNAPSHOT = config.DATA_DIR / "raw" / "lk" / "snapshot.json"
 MAX_PAGES = 60
-PAUSE = 0.7  # между запросами — не нагружать сервер вуза
+PAUSE = 0.7  # между запросами: не нагружать сервер вуза
 UNSAFE = re.compile(r"(?i)logout|exit|выход|delete|remove|udal|cancel|otmen|submit|send|"
                     r"save|edit|\.(?:jpg|jpeg|png|gif|webp|zip|rar|mp4|mp3|css|js)(?:\?|$)")
 LOGIN_TIMEOUT_MS = 45_000
@@ -66,7 +66,7 @@ def _is_login_page(html: str) -> bool:
 # --- вход ---
 
 def login(interactive: bool = False) -> None:
-    """Войти и сохранить сессию. interactive — окно, где пользователь входит сам."""
+    """Войти и сохранить сессию. interactive: окно, где пользователь входит сам."""
     from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import sync_playwright
 
@@ -81,7 +81,7 @@ def login(interactive: bool = False) -> None:
                 page.goto(ROOT, timeout=LOGIN_TIMEOUT_MS)
             except PlaywrightError as e:
                 raise LkUnavailable(str(e).splitlines()[0]) from None
-            # на странице входа несколько форм (одна скрытая — ФИО и 4 цифры): только видимые поля
+            # на странице входа несколько форм (одна скрытая: ФИО и 4 цифры): только видимые поля
             password = page.locator("input[type=password]:visible").first
             if interactive:
                 # пользователь входит сам; ждём, пока поле пароля исчезнет (до 5 минут)
@@ -124,7 +124,7 @@ def _opener() -> urllib.request.OpenerDirector:
 # --- чтение ---
 
 def _get(url: str, opener) -> dict:
-    """Страница кабинета текстом; сессия кончилась — LkLoginFailed после повторного входа."""
+    """Страница кабинета текстом; сессия кончилась: LkLoginFailed после повторного входа."""
     try:
         raw, kind, final = site.fetch(url, opener)
     except urllib.error.HTTPError as e:
@@ -144,7 +144,7 @@ def _get(url: str, opener) -> dict:
 
 
 def _session_opener():
-    """Опенер с живой сессией: если сессии нет или она кончилась — входим заново."""
+    """Опенер с живой сессией: если сессии нет или она кончилась; входим заново."""
     opener = _opener()
     if not SESSION.exists() or _get(ROOT, opener)["login"]:
         login()
@@ -155,11 +155,11 @@ def _session_opener():
 
 
 def read(url: str) -> dict:
-    """Одна страница или документ кабинета (для инструмента Ани)."""
+    """Одна страница или документ кабинета (для инструмента ассистента)."""
     if urllib.parse.urlparse(url).hostname != HOST:
         raise ValueError("Это не личный кабинет")
     from .lk_api import PAGE_PREFIX
-    if url.startswith(PAGE_PREFIX):  # запись из API кабинета — из последнего снимка
+    if url.startswith(PAGE_PREFIX):  # запись из API кабинета: из последнего снимка
         page = load_snapshot().get(url)
         if page is None:
             raise ValueError("Такой записи в последнем снимке кабинета нет — найди её через lk_find")
@@ -192,7 +192,7 @@ def _start(opener) -> str:
 
 
 def crawl() -> dict[str, dict]:
-    """Кабинет: {адрес: {"title", "text", "hash"}}. С октября 2026 кабинет — React-приложение
+    """Кабинет: {адрес: {"title", "text", "hash"}}. С октября 2026 кабинет; React-приложение
     с JSON API (lk_api.py): уведомления, заявления, диалоги, договоры. Старый HTML-обход
     (crawl_html) остался на случай, если вуз вернёт прежний сайт."""
     from . import lk_api

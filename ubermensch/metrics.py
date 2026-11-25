@@ -1,6 +1,6 @@
-"""Метрики для окна «метрики»: насколько Аня изучила пользователя и что пользователь делает.
+"""Метрики для окна «метрики»: насколько ассистент изучила пользователя и что пользователь делает.
 
-Всё считается из базы на лету, без вызовов Claude. Единственное, что делает Claude, —
+Всё считается из базы на лету, без вызовов Claude. Единственное, что делает Claude, -
 раз в сутки размечает новые программы и сайты по категориям (analysis.Investigation).
 """
 from __future__ import annotations
@@ -16,10 +16,10 @@ BROWSERS = {"chrome", "msedge", "firefox", "opera", "browser", "brave", "vivaldi
 CATEGORIES = {"учёба": "useful", "работа": "useful", "музыка": "useful", "развитие": "useful",
               "общение": "neutral", "быт": "neutral", "система": "neutral",
               "развлечения": "distracting"}
-AREA_FULL = 60  # столько фактов в сфере — сфера «изучена»
+AREA_FULL = 60  # столько фактов в сфере: сфера «изучена»
 PLAN_SHARE, AREAS_SHARE = 0.6, 0.4  # освоение = 60% разобранных данных + 40% охвата сфер
 WEEK = 7
-# на этих сайтах бывает и полезное, и пустое — размечается каждое видео или страница
+# на этих сайтах бывает и полезное, и пустое: размечается каждое видео или страница
 MIXED_SITES = {"YouTube", "ВКонтакте", "VK", "Twitch", "Reddit", "Дзен", "Rutube", "TikTok"}
 
 
@@ -37,7 +37,7 @@ def activity_key(app: str, title: str) -> str:
 
 
 def display_key(key: str) -> str:
-    """Для списков «куда ушло время»: видео YouTube — одной строкой «сайт: YouTube»."""
+    """Для списков «куда ушло время»: видео YouTube; одной строкой «сайт: YouTube»."""
     return key.split(" · ")[0]
 
 
@@ -57,7 +57,7 @@ def _spread(start: datetime, seconds: int):
 
 def learning(store: Store, status: dict, labels: dict[str, str], voice_at: str | None,
              style_at: str | None) -> dict:
-    """Как далеко Аня продвинулась в изучении пользователя. labels — названия источников."""
+    """Как далеко ассистент продвинулась в изучении пользователя. labels: названия источников."""
     by_source = store.jobs_by_source()
     done = sum(d for _, d, _ in by_source)
     total = sum(t for _, _, t in by_source)
@@ -128,7 +128,7 @@ def activity(store: Store, today: date | None = None) -> dict:
     tasks = store.task_stats(today.isoformat(), week_start.isoformat())
     streak, day = 0, today
     done_days = set(tasks.pop("done_days"))
-    if today.isoformat() not in done_days:  # сегодня ещё можно успеть — серия не рвётся
+    if today.isoformat() not in done_days:  # сегодня ещё можно успеть: серия не рвётся
         day -= timedelta(days=1)
     while day.isoformat() in done_days:
         streak, day = streak + 1, day - timedelta(days=1)
@@ -161,7 +161,7 @@ def uncategorized(store: Store, days: int = 14, min_seconds: int = 300,
         seconds[key] += secs
         if len(titles[key]) < 3 and title not in titles[key]:
             titles[key].append(title[:80])
-    # видео и страницы смешанных сайтов короче — им хватает минуты
+    # видео и страницы смешанных сайтов короче: им хватает минуты
     keys = sorted((k for k, v in seconds.items()
                    if v >= (60 if " · " in k else min_seconds)), key=lambda k: -seconds[k])
     return [{"key": k, "minutes": _minutes(seconds[k]), "titles": titles[k]}

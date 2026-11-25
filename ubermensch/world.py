@@ -1,9 +1,9 @@
-"""Окно в мир: погода, курсы валют и главные новости — чтобы Аня знала, что происходит сегодня.
+"""Окно в мир: погода, курсы валют и главные новости; чтобы ассистент знала, что происходит сегодня.
 
 Обновляется раз в несколько часов (core.world_loop) и лежит в workspace/world.json; в контекст
 чата попадает коротким блоком <world>. Источники доступны и из России, и через VPN:
 Open-Meteo (погода), open.er-api.com (курсы), Google Новости (RSS, русская выдача).
-Всё — без ключей и без данных пользователя (запросы — только город и язык).
+Всё: без ключей и без данных пользователя (запросы; только город и язык).
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ CITY = os.getenv("WORLD_CITY", "Москва")
 LAT, LON = float(os.getenv("WORLD_LAT", "55.75")), float(os.getenv("WORLD_LON", "37.62"))
 NEWS_RSS = "https://news.google.com/rss?hl=ru&gl=RU&ceid=RU:ru"
 NEWS_COUNT = 10
-MAX_AGE = timedelta(hours=24)  # старше — в контекст не идёт (лучше ничего, чем вчерашнее)
+MAX_AGE = timedelta(hours=24)  # старше: в контекст не идёт (лучше ничего, чем вчерашнее)
 
 WEATHER = {0: "ясно", 1: "в основном ясно", 2: "переменная облачность", 3: "пасмурно",
            45: "туман", 48: "изморозь", 51: "морось", 53: "морось", 55: "сильная морось",
@@ -72,13 +72,13 @@ def news() -> list[str]:
 
 
 def refresh(path: Path) -> dict:
-    """Собрать свежее; что не получилось — взять из прошлого снимка."""
+    """Собрать свежее; что не получилось: взять из прошлого снимка."""
     old = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     snapshot = {"updated": datetime.now().isoformat(timespec="minutes")}
     for key, fetch in (("weather", weather), ("rates", rates), ("news", news)):
         try:
             snapshot[key] = fetch()
-        except Exception as e:  # сеть, формат — не страшно, есть прошлое значение
+        except Exception as e:  # сеть, формат: не страшно, есть прошлое значение
             log.warning("Окно в мир: %s не обновилось (%s)", key, e)
             if key in old:
                 snapshot[key] = old[key]
@@ -87,7 +87,7 @@ def refresh(path: Path) -> dict:
 
 
 def render(path: Path) -> str:
-    """Блок для контекста чата; пустая строка — снимка нет или он устарел."""
+    """Блок для контекста чата; пустая строка: снимка нет или он устарел."""
     if not path.exists():
         return ""
     data = json.loads(path.read_text(encoding="utf-8"))

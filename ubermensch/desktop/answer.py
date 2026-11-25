@@ -1,4 +1,4 @@
-"""Консоль ответов: чёрное окно, куда бот «печатает» ответы. Выше — вся история, как в терминале."""
+"""Консоль ответов: чёрное окно, куда бот «печатает» ответы. Выше; вся история, как в терминале."""
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, QRect, QSettings, Qt, QTimer, Signal
@@ -22,7 +22,7 @@ def _fmt(color: QColor) -> QTextCharFormat:
 
 
 class AnswerConsole(console.ConsoleWindow):
-    typing = Signal(bool)  # маскот «говорит», пока идёт печать
+    typing = Signal(bool)  # оверлей «говорит», пока идёт печать
 
     def __init__(self, api: Api):
         super().__init__("anya.exe — история")
@@ -111,7 +111,7 @@ class AnswerConsole(console.ConsoleWindow):
             area = self.screen().availableGeometry()
             if isinstance(saved, QPoint) and area.contains(saved):
                 self.move(saved)
-            else:  # слева от маскота, низом на его уровне
+            else:  # слева от оверлея, низом на его уровне
                 x = max(area.left() + 4, anchor.left() - self.width() - 12)
                 y = max(area.top() + 4, anchor.bottom() - self.height())
                 self.move(x, y)
@@ -124,7 +124,7 @@ class AnswerConsole(console.ConsoleWindow):
             self.api.onboard(self.end_request)
 
     def show_request(self, text: str) -> None:
-        """Сразу выводим запрос — ответ допечатается, когда придёт."""
+        """Сразу выводим запрос: ответ допечатается, когда придёт."""
         self._write("\n" + PROMPT, _fmt(ACCENT))
         self._write(text + "\n", _fmt(BRIGHT))
         self._shown_requests.append(text)

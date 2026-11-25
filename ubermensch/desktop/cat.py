@@ -2,7 +2,7 @@
 
 Эмоции: ожидание (моргает, следит за курсором), речь, думает, радуется, удивлён,
 перетаскивают (>.<), голова кружится после броска (@ @), спит ночью, нет связи (x x).
-Погладить — поводить курсором туда-сюда над мордочкой.
+Погладить: поводить курсором туда-сюда над мордочкой.
 Сам по себе (behavior.py): гуляет, оглядывается, напевает, подпрыгивает, зевает, скучает,
 спит, пока пользователя нет, и прячется за край экрана от полноэкранных окон.
 """
@@ -48,15 +48,15 @@ EMOTIONS = {
     "thinking": dict(eyes="open", mouth="w", tilt=5, talk=TALK, effect="dots"),
 }
 EMOTION_HOLD_MS = 5000  # после реплики выражение держится ещё столько
-POKES_TO_ANNOY = 4  # столько тычков за POKE_WINDOW_MS — раздражается
+POKES_TO_ANNOY = 4  # столько тычков за POKE_WINDOW_MS: раздражается
 POKE_WINDOW_MS = 2500
-PEEK = 30  # сколько маскота видно, когда она спряталась за край экрана
+PEEK = 30  # сколько оверлея видно, когда он скрыт за край экрана
 CHEERS = ("умничка :3", "минус одна, горжусь тобой", "вот это мой человек", "засчитано ♥",
           "кайф. дальше?")
 
 
 def icon_pixmap(size: int) -> QPixmap:
-    """Иконка для трея: маленькое чёрное окошко с мордочкой Ани."""
+    """Иконка для трея: маленькое чёрное окошко с иконкой оверлея."""
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     p = QPainter(pixmap)
@@ -86,11 +86,11 @@ class Mascot(console.ConsoleWindow):
         self.resize(self.W, self.H)
         self.setToolTip("Клик — спросить. Перетащи меня. Поводи курсором — погладишь :3")
         self.api = api
-        self.bubble = ReplyBubble()  # реплики маскота — мини-окна с хвостиком
+        self.bubble = ReplyBubble()  # реплики оверлея: мини-окна с хвостиком
         self.bubble.open_history.connect(self.open_history)
         self.bubble.typing.connect(self.set_typing)
         self.answer_visible = lambda: False  # подменяет приложение
-        self.engaged = lambda: False  # открыто окно запроса или история — не отвлекаться
+        self.engaged = lambda: False  # открыто окно запроса или история: не отвлекаться
         self.behavior = behavior.Behavior()
         self._tucked_from: QPoint | None = None  # откуда ушёл за край экрана
 
@@ -98,7 +98,7 @@ class Mascot(console.ConsoleWindow):
         self._blink_at, self._blink_until = 2500, 0
         self._talk_until = self._happy_until = self._surprise_until = self._dizzy_until = 0
         self._typing = False
-        self._last_touch = 0  # последнее взаимодействие — ночью котик засыпает без него
+        self._last_touch = 0  # последнее взаимодействие: ночью котик засыпает без него
         self._press: QPoint | None = None
         self._dragging = False
         self._drag_distance = 0
@@ -110,7 +110,7 @@ class Mascot(console.ConsoleWindow):
         self._last_reply_id: int | None = None
 
         self._settings = QSettings("Ubermensch", "desktop")
-        self.home = self._place()  # его место; гуляет вокруг него, после перетаскивания — новое
+        self.home = self._place()  # его место; гуляет вокруг него, после перетаскивания: новое
         api.event.connect(self._on_event)
         api.state_changed.connect(self._on_state)
 
@@ -178,7 +178,7 @@ class Mascot(console.ConsoleWindow):
         self._talk_until = max(self._talk_until, self._ms + int(min(seconds, 4.0) * 1000))
 
     def set_typing(self, typing: bool) -> None:
-        """Пока консоль ответа печатает текст, маскот «говорит»."""
+        """Пока консоль ответа печатает текст, оверлей «говорит»."""
         self._typing = typing
         if not typing:
             self._talk(0.3)
@@ -198,7 +198,7 @@ class Mascot(console.ConsoleWindow):
             self._last_touch = self._ms
             self._surprise_until = self._ms + 2500
             self.say(f"⏰ {event.get('text', '')}", seconds=60, title="Напоминание")
-        elif kind == "say":  # реплика от ядра — например, комментарий к экрану
+        elif kind == "say":  # реплика от ядра: например, комментарий к экрану
             self.say(event.get("text", ""), seconds=20)
         elif kind == "celebrate":
             self.feel("excited", 3.5)
@@ -281,7 +281,7 @@ class Mascot(console.ConsoleWindow):
             state.eyes, state.mouth = "x", "wave"
         elif mood == "surprised":
             state.eyes, state.mouth, state.brows = "wide", "o", 6
-        elif mood == "happy":  # радуется, гладят — «^ ^» и румянец
+        elif mood == "happy":  # радуется, гладят: «^ ^» и румянец
             state.eyes, state.blush, state.brows = "happy", True, 2
         elif mood == "thinking":
             state.brow_tilt = 5
@@ -329,7 +329,7 @@ class Mascot(console.ConsoleWindow):
             p.translate(cx, TITLE_H + body_h / 2)
             p.rotate(math.sin(self._ms / 90) * 7)
             p.translate(-cx, -(TITLE_H + body_h / 2))
-        elif mood == "walk":  # шагает — мордочка подпрыгивает в такт
+        elif mood == "walk":  # шагает: мордочка подпрыгивает в такт
             p.translate(0, -abs(math.sin(self._ms / 130)) * 4)
         elif mood == "hop":
             p.translate(0, -math.sin(self.behavior.progress(self._ms) * math.pi) * 14)
@@ -337,7 +337,7 @@ class Mascot(console.ConsoleWindow):
             p.translate(cx, TITLE_H + body_h / 2)
             p.rotate(math.sin(self._ms / 300) * 5)
             p.translate(-cx, -(TITLE_H + body_h / 2))
-        elif mood == "talk":  # говорит — голова чуть кивает в такт словам
+        elif mood == "talk":  # говорит: голова чуть кивает в такт словам
             p.translate(0, math.sin(self._ms / 110) * 1.5)
         elif mood == "emotion" and self._emotion == "excited":  # подпрыгивает от радости
             p.translate(0, -abs(math.sin(self._ms / 160)) * 5)
@@ -352,7 +352,7 @@ class Mascot(console.ConsoleWindow):
 
         status = {"offline": "нет связи с ядром", "thinking": "думаю..."}.get(mood)
         if not status and (problems := self.api.state.get("problems")):
-            status = "⚠ " + problems[0]["message"][:34] + "…"  # подробности — /status и история
+            status = "⚠ " + problems[0]["message"][:34] + "…"  # подробности: /status и история
         if status:
             p.setFont(QFont(MONO, 8))
             p.setPen(DIM)
@@ -448,7 +448,7 @@ class Mascot(console.ConsoleWindow):
             self.move(self._origin + delta)
 
     def _detect_petting(self, cursor: QPoint) -> None:
-        """Курсор водят туда-сюда над мордочкой — это поглаживание."""
+        """Курсор водят туда-сюда над мордочкой: это поглаживание."""
         if self._last_cursor is not None:
             self._pet_moves.append((self._ms, (cursor - self._last_cursor).manhattanLength()))
         self._last_cursor = cursor
@@ -469,10 +469,10 @@ class Mascot(console.ConsoleWindow):
         self._press = None
         if self._dragging:
             self._dragging = False
-            self.home = self.pos()  # куда поставили — там теперь его место
+            self.home = self.pos()  # куда поставили: там теперь его место
             self._tucked_from = None
             self._settings.setValue("mascot_pos", self.pos())
-            if self._drag_distance > 120:  # швырнули — голова кружится
+            if self._drag_distance > 120:  # швырнули: голова кружится
                 self._dizzy_until = self._ms + 1600
             return
         button = self.button_at(event.position().toPoint())
@@ -482,7 +482,7 @@ class Mascot(console.ConsoleWindow):
             self.open_history.emit()
         else:
             self._pokes = [t for t in self._pokes if self._ms - t < POKE_WINDOW_MS] + [self._ms]
-            if len(self._pokes) >= POKES_TO_ANNOY:  # затыкали — дуется
+            if len(self._pokes) >= POKES_TO_ANNOY:  # затыкали: дуется
                 self._pokes.clear()
                 self.feel("annoyed", 3)
                 self.say(random.choice(("эй, щекотно!", "ну хватит тыкать >_<", "я тебе не кнопка ¬_¬")),
@@ -492,7 +492,7 @@ class Mascot(console.ConsoleWindow):
             self.clicked.emit()
 
     def hide_to_tray(self) -> None:
-        """Прячет маскота; приложение подскажет, как его вернуть."""
+        """Прячет оверлея; приложение подскажет, как его вернуть."""
         self.hide()
         self.bubble.hide()
         self.hidden_to_tray.emit()

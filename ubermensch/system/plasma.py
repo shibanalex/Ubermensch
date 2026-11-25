@@ -1,5 +1,5 @@
 """Рабочий стол KDE Plasma: окна, уведомления, «не беспокоить», буфер обмена, яркость, батарея,
-громкость, что играет. Всё — через D-Bus и разовые скрипты KWin (session.kwin_eval)."""
+громкость, что играет. Всё: через D-Bus и разовые скрипты KWin (session.kwin_eval)."""
 from __future__ import annotations
 
 import re
@@ -81,7 +81,7 @@ _inhibit_lock = threading.Lock()
 
 
 def do_not_disturb(minutes: int) -> bool:
-    """Тихий режим уведомлений на minutes минут (0 — выключить). Держится, пока жив процесс."""
+    """Тихий режим уведомлений на minutes минут (0: выключить). Держится, пока жив процесс."""
     with _inhibit_lock:
         if _inhibit["timer"]:
             _inhibit["timer"].cancel()

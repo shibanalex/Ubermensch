@@ -1,6 +1,6 @@
-"""Творчество: партитуры MuseScore и проекты FL Studio — над чем и когда работает пользователь.
+"""Творчество: партитуры MuseScore и проекты FL Studio; над чем и когда работает пользователь.
 
-Каждая новая правка файла — отдельное событие, так со временем видно, как идёт работа.
+Каждая новая правка файла: отдельное событие, так со временем видно, как идёт работа.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "__pycache__", ".cache", "
 
 
 def mscz_xml(archive: zipfile.ZipFile) -> str:
-    """Текст партитуры (.mscx) из файла MuseScore (.mscz — это zip)."""
+    """Текст партитуры (.mscx) из файла MuseScore (.mscz: это zip)."""
     name = next(n for n in archive.namelist() if n.endswith(".mscx"))
     return archive.read(name).decode("utf-8", errors="replace")
 

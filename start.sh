@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Запуск в фоне: ядро (API + Telegram) и приложение с маскотом.
-# Если установлен автозапуск (scripts/install_autostart.sh) — через systemd, иначе напрямую.
+# Start background core daemon (API + Telegram) and desktop overlay.
+# Uses systemd user units if installed via scripts/install_autostart.sh.
 # Повторный запуск безопасен: каждый процесс сам не даст запустить второй экземпляр.
 cd "$(dirname "$0")"
 if systemctl --user cat ubermensch.service >/dev/null 2>&1; then

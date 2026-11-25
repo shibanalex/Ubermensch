@@ -245,7 +245,7 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
         ).fetchall()
 
     def relevant_facts(self, query: str, limit: int) -> list[sqlite3.Row]:
-        """Совпадения по основам слов (recall.fts_query) первыми; остальное — важные факты."""
+        """Совпадения по основам слов (recall.fts_query) первыми; остальное: важные факты."""
         matched = []
         if (expression := recall.fts_query(query)) and limit > 0:
             matched = self.db.execute(
@@ -319,7 +319,7 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
     # --- задачи ---
 
     def tasks(self) -> list[sqlite3.Row]:
-        """Открытые задачи и выполненные сегодня — то, что видно в листе."""
+        """Открытые задачи и выполненные сегодня: то, что видно в листе."""
         return self.db.execute(
             "SELECT * FROM tasks WHERE status = 'open' OR (status = 'done' AND done_at >= ?) "
             "ORDER BY status DESC, due IS NULL, due, id",
@@ -395,7 +395,7 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
         ).fetchall()
 
     def decide_action(self, action_id: int, status: str) -> bool:
-        """Переводит действие из pending в approved/rejected. False — если решение уже принято."""
+        """Переводит действие из pending в approved/rejected. False: если решение уже принято."""
         return self._changed(
             "UPDATE actions SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'",
             status, now(), action_id,
@@ -410,7 +410,7 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
 
     def sync_events(self, events: list[dict]) -> int:
         """Как add_events, но запись с тем же source + external_id обновляется на месте, если
-        изменилась (заметки, которые правят): id сохраняется — ссылки на неё остаются верными.
+        изменилась (заметки, которые правят): id сохраняется; ссылки на неё остаются верными.
         Возвращает число новых и изменённых."""
         before = self.db.total_changes
         self.db.execute("BEGIN")
@@ -433,7 +433,7 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
     def add_events(self, events: list[dict]) -> int:
         """Добавляет события; уже собранные (тот же source + external_id) пропускает.
 
-        Возвращает число новых. Одна транзакция — иначе десятки тысяч строк пишутся минутами.
+        Возвращает число новых. Одна транзакция: иначе десятки тысяч строк пишутся минутами.
         """
         before = self.db.total_changes
         self.db.execute("BEGIN")
@@ -483,7 +483,7 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
             "ORDER BY ts DESC LIMIT ?", (account, limit))]
 
     def my_ai_messages(self, limit: int) -> list[str]:
-        """Свежие реплики пользователя в разговорах с ИИ (длинные — как он рассуждает)."""
+        """Свежие реплики пользователя в разговорах с ИИ (длинные: как он рассуждает)."""
         return [r[0] for r in self.db.execute(
             "SELECT text FROM events WHERE source = 'ai_chat' AND LENGTH(text) > 80 "
             "ORDER BY ts DESC LIMIT ?", (limit,))]
@@ -500,7 +500,7 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
         self.db.execute("DELETE FROM cursors WHERE source = ?", (source,))
 
     def retry_failed_jobs(self, older_than: str) -> int:
-        """Порции, упавшие из-за сети или сна (не лимита — лимит разбор пережидает), —
+        """Порции, упавшие из-за сети или сна (не лимита: лимит разбор пережидает), -
         снова в очередь, если упали раньше older_than."""
         return self.db.execute(
             "UPDATE analysis_jobs SET status = 'pending' WHERE status = 'failed' AND done_at < ?",
@@ -526,8 +526,8 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
         )
 
     def next_job(self, sources: set[str] | None = None) -> sqlite3.Row | None:
-        """Сначала важное (priority), внутри — от старого к новому: свежие сведения
-        тогда уточняют устаревшие, а не наоборот. sources — только из этих источников."""
+        """Сначала важное (priority), внутри: от старого к новому: свежие сведения
+        тогда уточняют устаревшие, а не наоборот. sources: только из этих источников."""
         only = f"AND source IN ({','.join('?' * len(sources))}) " if sources else ""
         return self.db.execute(
             f"SELECT * FROM analysis_jobs WHERE status = 'pending' {only}"
@@ -540,7 +540,7 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
             (moment,)).fetchone()[0]
 
     def telegram_contacts(self, start: str, min_messages: int) -> list[sqlite3.Row]:
-        """Личные чаты с большой перепиской — для портретов отношений."""
+        """Личные чаты с большой перепиской: для портретов отношений."""
         return self.db.execute(
             "SELECT thread, COUNT(*) AS n, MIN(ts) AS first, MAX(ts) AS last FROM events "
             "WHERE source = 'telegram' AND json_extract(meta, '$.kind') = 'user' AND ts >= ? "
@@ -618,7 +618,7 @@ class Store(RuntimeStorage, PlanningStorage, GoalLoopStorage, ExperimentStorage,
             "GROUP BY 1", (since,))}
 
     def jobs_by_source(self) -> list[tuple[str, int, int]]:
-        """(источник, разобрано, всего) — пропущенные пустые порции считаются разобранными."""
+        """(источник, разобрано, всего): пропущенные пустые порции считаются разобранными."""
         return [(r[0], r[1], r[2]) for r in self.db.execute(
             "SELECT source, SUM(status IN ('done', 'skipped')), COUNT(*) FROM analysis_jobs "
             "GROUP BY source ORDER BY COUNT(*) DESC")]

@@ -1,10 +1,10 @@
 """Расследование: сбор данных из источников, разбор по частям и досье на пользователя.
 
-1. Сбор — сборщики раз в несколько часов докладывают новое в таблицу events.
-2. План — данные режутся по месяцам на порции до CHUNK_CHARS символов (задачи в очереди).
-   Последние RECENT_DAYS дней идут первыми, остальной год — в фоне.
-3. Разбор — по одной порции, моделью подешевле, с паузами: бережём лимиты подписки.
-4. Досье — когда разобраны свежие данные и когда разобрано всё.
+1. Сбор: сборщики раз в несколько часов докладывают новое в таблицу events.
+2. План: данные режутся по месяцам на порции до CHUNK_CHARS символов (задачи в очереди).
+   Последние RECENT_DAYS дней идут первыми, остальной год: в фоне.
+3. Разбор: по одной порции, моделью подешевле, с паузами: бережём лимиты подписки.
+4. Досье: когда разобраны свежие данные и когда разобрано всё.
 """
 from __future__ import annotations
 
@@ -34,34 +34,34 @@ log = logging.getLogger(__name__)
 HISTORY_DAYS = 365
 RECENT_DAYS = 30
 # Порция на один вызов. Каждый вызов несёт ещё и общий контекст (что уже известно), поэтому
-# порции покрупнее — больше данных на тот же лимит подписки.
+# порции покрупнее: больше данных на тот же лимит подписки.
 CHUNK_CHARS = 120_000
 LEGACY_CHUNK = 60_000  # порции, поставленные в очередь до 13.10.2026 (ключ без «@размер»)
 COLLECT_EVERY = 2 * 3600
 MAIL_EVERY = 15 * 60  # почта отдельно и часто: приглашения и ответы работодателей
 SLOW_SOURCES_EVERY = 24 * 3600  # документы и архив чатов с ИИ меняются редко
-GEMINI_EVERY = 6 * 3600  # чаты AI Studio с Диска — «иногда»
+GEMINI_EVERY = 6 * 3600  # чаты AI Studio с Диска: «иногда»
 # Лимит подписки Claude общий для разбора, бота и Claude Code: днём разбор идёт медленно
-# и уступает разговорам, ночью — быстро.
+# и уступает разговорам, ночью: быстро.
 DAY_PAUSE = 15 * 60  # не больше 4 порций в час
 NIGHT_PAUSE = 90
 NIGHT_HOURS = (1, 8)
-AWAY_SECONDS = 10 * 60  # пользователь отошёл от ПК (или экран заблокирован) — днём как ночью
+AWAY_SECONDS = 10 * 60  # пользователь отошёл от ПК (или экран заблокирован): днём как ночью
 QUIET_AFTER_CHAT = timedelta(minutes=10)
 LIMIT_PAUSE = 30 * 60  # если время сброса лимита неизвестно
-AUTH_WAIT = 5 * 60  # Claude разлогинен или не найден — проверяем снова через 5 минут
+AUTH_WAIT = 5 * 60  # Claude разлогинен или не найден: проверяем снова через 5 минут
 TELEGRAM_WAIT = timedelta(hours=24)
 STYLE_EVERY = 7 * 24 * 3600
 STYLE_SAMPLE, STYLE_CHARS = 2500, 35_000  # свежие сообщения пользователя для описания стиля
 THINKING_CHARS = 40_000
-WORK_STYLE_MIN = 50  # рабочий стиль — когда своих сообщений в рабочем Telegram хотя бы столько
+WORK_STYLE_MIN = 50  # рабочий стиль: когда своих сообщений в рабочем Telegram хотя бы столько
 CATEGORIZE_EVERY = 20 * 3600
-UNIVERSITY_EVERY = 20 * 3600  # новости вуза и личный кабинет — раз в сутки
-NEWS_SEEN = 300  # сколько адресов уже просмотренных новостей помнить  # разметка программ и сайтов — не чаще раза в сутки  # его реплики в разговорах с ИИ — как он рассуждает
+UNIVERSITY_EVERY = 20 * 3600  # новости вуза и личный кабинет: раз в сутки
+NEWS_SEEN = 300  # сколько адресов уже просмотренных новостей помнить  # разметка программ и сайтов: не чаще раза в сутки  # его реплики в разговорах с ИИ; как он рассуждает
 MAX_ATTEMPTS = 3
 RETRY_PAUSE = 5 * 60
-HELPER_PAUSE = 5  # после порции, разобранной вторым ИИ, — лимит Claude не тронут
-RETRY_FAILED_AFTER = timedelta(hours=12)  # упавшие порции (сеть, сон) — снова в очередь
+HELPER_PAUSE = 5  # после порции, разобранной вторым ИИ,: лимит Claude не тронут
+RETRY_FAILED_AFTER = timedelta(hours=12)  # упавшие порции (сеть, сон): снова в очередь
 DOSSIER_DIR = config.DATA_DIR / "dossier"
 SOURCES = {"telegram": "Telegram", "gmail": "Почта", "chrome": "Браузер",
            "ai_chat": "Разговоры с ИИ", "activity": "Активность за компьютером",
@@ -70,7 +70,7 @@ SOURCES = {"telegram": "Telegram", "gmail": "Почта", "chrome": "Брауз�
            "google_activity": "Действия в сервисах Google", "lk": "Личный кабинет вуза",
            "obsidian": "Заметки и дневник (Obsidian)", "music": "Что слушал (плееры)"}
 TAKEOUT_DAYS = 2 * 365  # из Google Takeout берём два года: интересы видны в динамике
-GROUP_LINES = 700  # строк на сервис в месяц (просмотры, запросы, уведомления) — дальше шум
+GROUP_LINES = 700  # строк на сервис в месяц (просмотры, запросы, уведомления): дальше шум
 PERSON_MIN_MESSAGES, PERSON_TOP = 300, 15  # портреты отношений: личные чаты от 300 сообщений
 CONSOLIDATE_EVERY = 10  # уборка памяти после каждых 10 разобранных порций
 MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь",
@@ -84,7 +84,7 @@ def _dm(ts: str) -> str:
 
 
 def _sample(texts: list[str], limit: int) -> str:
-    """Тексты подряд (свежие первыми), пока влезают в limit символов; длинные — обрезаются."""
+    """Тексты подряд (свежие первыми), пока влезают в limit символов; длинные: обрезаются."""
     lines, size = [], 0
     for text in texts:
         text = text[:2000]
@@ -96,7 +96,7 @@ def _sample(texts: list[str], limit: int) -> str:
 
 
 def _group_chatter(event) -> bool:
-    """Чужое сообщение в группе, не обращённое к пользователю, — шум, в разбор не идёт.
+    """Чужое сообщение в группе, не обращённое к пользователю,: шум, в разбор не идёт.
 
     Так же отсекаются и групповые сообщения, собранные до перехода на «только важное».
     """
@@ -205,7 +205,7 @@ def _pack(units: list[str], limit: int = CHUNK_CHARS) -> list[str]:
 
 
 def _periods(source: str, first: str, today: date) -> list[tuple[str, str, str]]:
-    """(начало, конец, подпись). Документы — по годам, остальное — по месяцам."""
+    """(начало, конец, подпись). Документы: по годам, остальное; по месяцам."""
     periods = []
     if source == "document":
         for year in range(int(first[:4]), today.year + 1):
@@ -223,7 +223,7 @@ def _periods(source: str, first: str, today: date) -> list[tuple[str, str, str]]
 def _stats_units(store: Store, start: str, end: str) -> list[str]:
     """Точные цифры вместо догадок: когда встаёт и ложится, когда активен, с кем и сколько пишет.
 
-    Активность — свои сообщения, страницы браузера, работа за ПК; день считается с 5 утра,
+    Активность: свои сообщения, страницы браузера, работа за ПК; день считается с 5 утра,
     чтобы ночные часы относились к прошедшему дню.
     """
     days: dict[str, dict] = defaultdict(lambda: {"first": None, "last": None, "sent": 0,
@@ -273,7 +273,7 @@ def _stats_units(store: Store, start: str, end: str) -> list[str]:
 
 def _person_units(store: Store, thread: str, start: str, end: str,
                   limit: int = CHUNK_CHARS) -> list[str]:
-    """Вся переписка с одним человеком за период; если не влезает — равномерная выборка."""
+    """Вся переписка с одним человеком за период; если не влезает: равномерная выборка."""
     events = [e for e in store.events("telegram", start, end, thread=thread)]
     lines = [f"[{_dm(e['ts'])}.{e['ts'][2:4]}] {'Я' if e['outgoing'] else thread}: "
              f"{e['text'][:400]}" for e in events]
@@ -292,13 +292,13 @@ def plan(store: Store) -> int:
     today = date.today()
     recent_from = (today - timedelta(days=RECENT_DAYS)).isoformat()
     added = 0
-    store.drop_legacy_jobs()  # не начатые порции старого размера — перепланировать крупнее
+    store.drop_legacy_jobs()  # не начатые порции старого размера: перепланировать крупнее
     retried = store.retry_failed_jobs((datetime.now() - RETRY_FAILED_AFTER).isoformat())
     if retried:
         log.info("Снова в очереди упавших порций: %d", retried)
     size = f"@{CHUNK_CHARS}"
 
-    # статистика по месяцам — с первого месяца, где есть переписка или браузер
+    # статистика по месяцам: с первого месяца, где есть переписка или браузер
     firsts = [f for f in (store.event_span(s)[0] for s in ("telegram", "chrome")) if f]
     if firsts:
         for start, end, period in _periods("stats", min(firsts), today):
@@ -309,7 +309,7 @@ def plan(store: Store) -> int:
                                    f"Статистика активности, {period}", start, end,
                                    2 if end > recent_from else 1)
 
-    # портреты отношений с близкими — раз в квартал по всей переписке за год
+    # портреты отношений с близкими: раз в квартал по всей переписке за год
     year_ago = (today - timedelta(days=HISTORY_DAYS)).isoformat()
     quarter = f"{today.year}-Q{(today.month - 1) // 3 + 1}"
     for contact in store.telegram_contacts(year_ago, PERSON_MIN_MESSAGES)[:PERSON_TOP]:
@@ -325,8 +325,8 @@ def plan(store: Store) -> int:
         for start, end, period in _periods(source, first, today):
             complete = end <= today.isoformat()
             prefix = f"{source}|{start}"
-            # незаконченный месяц разбираем один раз сразу, целиком — когда он закончится;
-            # активность копится с запуска трекера — её разбираем только за полный месяц
+            # незаконченный месяц разбираем один раз сразу, целиком: когда он закончится;
+            # активность копится с запуска трекера: её разбираем только за полный месяц
             if not complete and (source == "activity" or store.has_job_prefix(prefix)):
                 continue
             chunks = _pack(_units(store, source, start, end))
@@ -340,7 +340,7 @@ def plan(store: Store) -> int:
 
 
 def digest(store: Store, job) -> str:
-    """Текст порции для разбора — собирается заново из сырых данных."""
+    """Текст порции для разбора: собирается заново из сырых данных."""
     part, _, size = job["key"].rsplit("|", 1)[1].partition("@")
     number, total = map(int, part.split("/"))
     limit = int(size) if size else LEGACY_CHUNK  # порцию режем так же, как при планировании
@@ -361,10 +361,10 @@ class Investigation:
         self.store = store
         self.assistant = assistant
         self.telegrams = telegrams  # личный и рабочий
-        self.on_login_required = None  # ядро: начать вход в аккаунт (код — через бота)
+        self.on_login_required = None  # ядро: начать вход в аккаунт (код; через бота)
         self.health = health
         self.import_dir = config.DATA_DIR / "raw" / "import"
-        self.notify = notify  # сообщение пользователю (маскот + Telegram)
+        self.notify = notify  # сообщение пользователю (оверлей + Telegram)
         self.collecting = False
         self._mail_lock = asyncio.Lock()  # почту собирают и быстрый цикл, и общий сбор
         self._attempts: dict[int, int] = {}
@@ -428,7 +428,7 @@ class Investigation:
             found["takeout"] = await self._collect_takeout()
             found["ai_export"] = await self._collect_ai_exports()
 
-            try:  # сон ноутбука (журнал) и музыка (журнал плееров) — дёшево, каждый сбор
+            try:  # сон ноутбука (журнал) и музыка (журнал плееров): дёшево, каждый сбор
                 last = self.store.cursor("power")
                 start = datetime.fromisoformat(last) - timedelta(days=1) if last else since
                 found["power"] = self.store.add_events(await asyncio.to_thread(power.collect, start))
@@ -439,7 +439,7 @@ class Investigation:
 
             found["gemini"] = await self._collect_gemini()
 
-            try:  # хранилище Obsidian — каждый сбор: он пишет туда постоянно
+            try:  # хранилище Obsidian: каждый сбор: он пишет туда постоянно
                 found["obsidian"] = self.store.sync_events(
                     await asyncio.to_thread(obsidian.collect))
             except Exception:
@@ -464,7 +464,7 @@ class Investigation:
             self.collecting = False
 
     async def _collect_gemini(self) -> int:
-        """Чаты AI Studio / Gemini — раз в GEMINI_EVERY: по запомненным ссылкам (без входа) и
+        """Чаты AI Studio / Gemini: раз в GEMINI_EVERY: по запомненным ссылкам (без входа) и
         все с Google Диска, если есть вход Google."""
         if not self._due("gemini", GEMINI_EVERY):
             return 0
@@ -495,7 +495,7 @@ class Investigation:
         return len(saved)
 
     async def _collect_takeout(self) -> int:
-        """Новые архивы Google Takeout в папке импорта — каждый читается один раз."""
+        """Новые архивы Google Takeout в папке импорта: каждый читается один раз."""
         fresh = [p for p in takeout.archives(self.import_dir)
                  if self.store.import_status(takeout.archive_key(p)) != "done"]
         fresh += [p for p in takeout.unpacked(self.import_dir)
@@ -519,7 +519,7 @@ class Investigation:
         return added
 
     async def _collect_ai_exports(self) -> int:
-        """Выгрузки ChatGPT и Claude.ai из папки импорта — каждая читается один раз."""
+        """Выгрузки ChatGPT и Claude.ai из папки импорта: каждая читается один раз."""
         def key(path):
             return f"aiexport:{path.name}:{path.stat().st_size}"
         fresh = [p for p in ai_chats.export_files(self.import_dir)
@@ -537,8 +537,8 @@ class Investigation:
         return added
 
     async def _collect_university(self) -> int:
-        """Раз в сутки: новости вуза и личный кабинет. Важное — сообщением пользователю,
-        страницы кабинета (новые и изменившиеся) — событиями для разбора."""
+        """Раз в сутки: новости вуза и личный кабинет. Важное; сообщением пользователю,
+        страницы кабинета (новые и изменившиеся): событиями для разбора."""
         if not self._due("university", UNIVERSITY_EVERY):
             return 0
         added, ok = 0, True
@@ -555,7 +555,7 @@ class Investigation:
                 added = await self._university_lk()
                 self.health.clear("lk", "Личный кабинет вуза снова читается.")
             except lk.LkUnavailable as e:
-                ok = False  # сбой у вуза — попробуем при следующем сборе, без тревоги
+                ok = False  # сбой у вуза: попробуем при следующем сборе, без тревоги
                 log.info("Личный кабинет недоступен: %s", e)
             except lk.LkLoginFailed as e:
                 ok = False
@@ -574,7 +574,7 @@ class Investigation:
         items = await asyncio.to_thread(site.news, 2)
         seen = json.loads(self.store.cursor("university:news") or "null")
         fresh = [i for i in items if seen is not None and i["url"] not in seen]
-        if fresh:  # в первый раз только запоминаем: старые новости — не новость
+        if fresh:  # в первый раз только запоминаем: старые новости; не новость
             data = "\n\n".join(f"### {i['title']} ({i['date']})\n{i['text']}\n{i['url']}"
                                 for i in fresh)
             message = await self.assistant.university_digest("свежие новости сайта вуза", data)
@@ -589,7 +589,7 @@ class Investigation:
         new = await asyncio.to_thread(lk.crawl)
         from .university.lk_api import PAGE_PREFIX
         if not any(url.startswith(PAGE_PREFIX) for url in old):
-            old = {}  # первое чтение через API кабинета — как первый раз: всё «новое» — не новость
+            old = {}  # первое чтение через API кабинета: как первый раз: всё «новое»; не новость
         diff = lk.changes(old, new)
         now = datetime.now().isoformat(timespec="seconds")
         added = self.store.add_events([{
@@ -612,7 +612,7 @@ class Investigation:
         return added
 
     async def _update_categories(self) -> None:
-        """Новые программы и сайты, на которые ушло время, — по категориям (для метрик)."""
+        """Новые программы и сайты, на которые ушло время,: по категориям (для метрик)."""
         if not self._due("categories", CATEGORIZE_EVERY):
             return
         items = metrics.uncategorized(self.store)
@@ -634,7 +634,7 @@ class Investigation:
             self.notify(f"🗣 Обновила свой голос: {summary}")
 
     async def _update_style(self, force: bool = False) -> str:
-        """Раз в неделю: стиль переписки пользователя, затем голос Ани — «он, но лучше»."""
+        """Раз в неделю: стиль переписки пользователя, затем голос ассистента; «он, но лучше»."""
         if not force and not self._due("style", STYLE_EVERY):
             return ""
         messages = self.store.my_telegram_messages(STYLE_SAMPLE)
@@ -664,13 +664,13 @@ class Investigation:
             return ""
 
     async def collect_mail(self, since: datetime | None = None) -> dict[str, int]:
-        """Только почта — быстро и часто (MAIL_EVERY): письма с приглашениями не ждут двухчасового
-        сбора всего остального (27.10 приглашение TechCertify прошло мимо Ани)."""
+        """Только почта: быстро и часто (MAIL_EVERY): письма с приглашениями не ждут двухчасового
+        сбора всего остального (27.10 приглашение TechCertify прошло мимо ассистента)."""
         since = since or datetime.now() - timedelta(days=HISTORY_DAYS)
         found: dict[str, int] = {}
         async with self._mail_lock:
             for mailbox in config.mail_accounts():
-                # основной ящик — прежние ключи «gmail», дополнительные — «gmail_2», «gmail_3»…
+                # основной ящик: прежние ключи «gmail», дополнительные; «gmail_2», «gmail_3»…
                 key = "gmail" if mailbox.key == "1" else f"gmail_{mailbox.key}"
                 try:
                     last = self.store.cursor(key)
@@ -697,7 +697,7 @@ class Investigation:
                 await self.collect_mail()
             except Exception:
                 log.exception("Быстрый сбор почты не удался")
-            try:  # заказы бирж — тем же частым циклом: свежий заказ разбирают в первые часы
+            try:  # заказы бирж: тем же частым циклом: свежий заказ разбирают в первые часы
                 self.store.add_events(await asyncio.to_thread(freelance.collect))
             except Exception as e:
                 log.warning("Заказы FL.ru не собраны: %s", e)
@@ -712,19 +712,19 @@ class Investigation:
     # --- разбор ---
 
     def touch(self) -> None:
-        """Пользователь общается с ботом — разбор уступает ему лимит подписки."""
+        """Пользователь общается с ботом: разбор уступает ему лимит подписки."""
         self._last_chat = datetime.now()
 
     def _pause(self) -> float:
         """Сколько ждать перед следующей порцией: лимит подписки общий с чатом и Claude Code.
-        Ночью или пока пользователя нет за ПК — быстро, иначе медленно."""
+        Ночью или пока пользователя нет за ПК: быстро, иначе медленно."""
         now = datetime.now()
         if NIGHT_HOURS[0] <= now.hour < NIGHT_HOURS[1] or windows.idle_seconds() >= AWAY_SECONDS:
             return NIGHT_PAUSE
         return DAY_PAUSE
 
     async def _rest(self) -> None:
-        """Пауза между порциями Claude; отошёл пользователь посреди паузы — она сокращается.
+        """Пауза между порциями Claude; отошёл пользователь посреди паузы: она сокращается.
         Пока Claude отдыхает, второй ИИ разбирает свои порции: лимит Claude они не тратят."""
         started = time.monotonic()
         while time.monotonic() - started < self._pause():
@@ -752,7 +752,7 @@ class Investigation:
                 continue
             await self._maybe_consolidate()
             await self._maybe_dossier()
-            if engine == "claude":  # лимит Claude общий с чатом — бережём
+            if engine == "claude":  # лимит Claude общий с чатом: бережём
                 await self._rest()
             else:
                 await asyncio.sleep(HELPER_PAUSE)
@@ -776,7 +776,7 @@ class Investigation:
                             e.kind, e)
                 await asyncio.sleep(max(60, wait))
                 return None
-            # обрыв сети, сон компьютера — пробуем ещё, прежде чем сдаться
+            # обрыв сети, сон компьютера: пробуем ещё, прежде чем сдаться
             self._attempts[job["id"]] = self._attempts.get(job["id"], 0) + 1
             if self._attempts[job["id"]] < MAX_ATTEMPTS:
                 log.warning("Порция «%s»: попытка %d не удалась (%s), повторю позже",
@@ -792,7 +792,7 @@ class Investigation:
         return outcome.engine
 
     async def _maybe_consolidate(self) -> None:
-        """Каждые CONSOLIDATE_EVERY порций — уборка памяти: дубли, устаревшее, двойники людей."""
+        """Каждые CONSOLIDATE_EVERY порций: уборка памяти: дубли, устаревшее, двойники людей."""
         last = self.store.cursor("consolidated_at") or ""
         if self.store.jobs_done_since(last) < CONSOLIDATE_EVERY:
             return
@@ -807,7 +807,7 @@ class Investigation:
     # --- досье ---
 
     async def _maybe_dossier(self) -> None:
-        """Первое досье — после свежих данных, обновлённое — когда разобрано всё."""
+        """Первое досье: после свежих данных, обновлённое; когда разобрано всё."""
         made = self.store.cursor("dossier_at")
         if made is None:
             ready = self.store.job_counts(min_priority=2).get("pending", 0) == 0 \
@@ -819,7 +819,7 @@ class Investigation:
             await self.make_dossier()
 
     def _waiting_for_telegram(self) -> bool:
-        """Переписки — главный источник: первое досье ждёт их до TELEGRAM_WAIT после начала."""
+        """Переписки: главный источник: первое досье ждёт их до TELEGRAM_WAIT после начала."""
         if not os.getenv("TG_API_ID") or self.store.event_counts().get("telegram"):
             return False
         started = self.store.cursor("investigation_started")
@@ -838,7 +838,7 @@ class Investigation:
         path = DOSSIER_DIR / f"dossier-{datetime.now():%Y-%m-%d_%H-%M}.md"
         path.write_text(text, encoding="utf-8")
         (DOSSIER_DIR / "latest.md").write_text(text, encoding="utf-8")
-        try:  # копия в отчёты Ани — пользователю под рукой (в Obsidian, если он подключён)
+        try:  # копия в отчёты: пользователю под рукой (в Obsidian, если он подключён)
             config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             (config.OUTPUT_DIR / "Досье.md").write_text(text, encoding="utf-8")
         except OSError:

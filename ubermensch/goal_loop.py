@@ -1,12 +1,12 @@
 """Цикл цели: утверждённый план → следующий шаг → действие инструментами → проверка → новый шаг.
 
-Без плана Аня предлагает измеримый план и ждёт решения пользователя: показатель, исходную
-точку и цель меняет только он (goal_plan в разговоре). С планом — делает следующий шаг сама
+Без плана ассистент предлагает измеримый план и ждёт решения пользователя: показатель, исходную
+точку и цель меняет только он (goal_plan в разговоре). С планом: делает следующий шаг сама
 в пределах фоновых прав. «Сделано» засчитывается, только если в журнале этого запуска есть
 успешные вызовы инструментов; иначе заход «не подтверждён» и следующий шаг не сдвигается.
 
 Обучение на результатах: вечерняя рефлексия видит счёт эффективности (effectiveness) и
-заходы дня и записывает по каждой цели стратегию — что работает, что нет и какую гипотезу
+заходы дня и записывает по каждой цели стратегию: что работает, что нет и какую гипотезу
 проверить следующим шагом (goal_strategy); следующий заход получает её в <strategy>.
 """
 from __future__ import annotations
@@ -85,7 +85,7 @@ class GoalLoopStorage:
              evidence, stamp()))
 
     def effectiveness(self, days: int = 7) -> dict:
-        """Счёт самой Ани: что из её работы подтвердилось результатом. Только наблюдения."""
+        """Track verified outcomes from agent actions against active goal plans."""
         since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
         steps = Counter(dict(self.db.execute(
             "SELECT status, COUNT(*) FROM goal_cycles WHERE kind='step' AND created_at>=? "
@@ -102,7 +102,7 @@ class GoalLoopStorage:
             "SELECT rating, COUNT(*) FROM quality_feedback WHERE created_at>=? GROUP BY rating",
             (since,)).fetchall())
         attempted = sum(steps.values())
-        # Кто отвечал ему в чате: запасная модель (лимит подписки) — заметно слабее Opus
+        # Кто отвечал ему в чате: запасная модель (лимит подписки); заметно слабее Opus
         local_since = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
         replies, fallback = self.db.execute(
             "SELECT COUNT(*), COALESCE(SUM(notes LIKE '%запасной ИИ%'), 0) FROM messages "
@@ -139,7 +139,7 @@ class GoalLoopStorage:
         return cursor.lastrowid
 
     def advance_goal_step(self, goal_id: int, next_step: str) -> None:
-        """Следующий шаг — рабочая часть плана в утверждённом направлении: его двигает и фон.
+        """Следующий шаг: рабочая часть плана в утверждённом направлении: его двигает и фон.
         Показатель, единица, исходная точка и цель не трогаются."""
         next_step = required(next_step, "Следующий шаг", 2000)
         self.db.execute("UPDATE goal_plans SET next_step=?, updated_at=? WHERE goal_id=?",
@@ -152,9 +152,9 @@ class GoalLoopStorage:
             "SELECT id, name, status FROM tool_calls WHERE run_id=? ORDER BY rowid", (run_id,))]
 
     def due_goal(self, now: datetime) -> tuple[dict, dict | None] | None:
-        """Цель для следующего захода: не трогали сегодня; после вопроса к пользователю —
+        """Цель для следующего захода: не трогали сегодня; после вопроса к пользователю -
         не раньше чем через ASK_AGAIN_AFTER, если он не ответил планом. Сначала с планом,
-        затем без плана; внутри — по сроку."""
+        затем без плана; внутри: по сроку."""
         candidates = []
         for goal in self.db.execute("SELECT * FROM goals WHERE status='active' "
                                     "ORDER BY deadline IS NULL, deadline, id").fetchall():
@@ -164,7 +164,7 @@ class GoalLoopStorage:
             if last is not None:
                 when = datetime.fromisoformat(last["created_at"]).astimezone()  # в базе UTC
                 answered = plan is not None and plan["updated_at"] >= last["created_at"]
-                # сегодня уже был заход — кроме вопроса о плане, на который он уже ответил:
+                # сегодня уже был заход: кроме вопроса о плане, на который он уже ответил:
                 # первый шаг по утверждённому плану не ждёт завтра
                 if when.date() == now.astimezone().date() and not (last["kind"] == "plan" and answered):
                     continue
@@ -176,7 +176,7 @@ class GoalLoopStorage:
         return (candidates[0][1], candidates[0][2]) if candidates else None
 
     def plan_proposals(self) -> list[dict]:
-        """Предложенные Аней планы для целей, у которых плана всё ещё нет."""
+        """Предложенные ассистентом планы для целей, у которых плана всё ещё нет."""
         rows = self.db.execute(
             "SELECT c.goal_id, g.title, c.proposal, c.ask_user, c.created_at FROM goal_cycles c "
             "JOIN goals g ON g.id=c.goal_id WHERE c.kind='plan' AND c.proposal IS NOT NULL "
@@ -188,7 +188,7 @@ class GoalLoopStorage:
 def verify(outcome: str, evidence: list[dict]) -> str:
     """Статус захода по фактам, а не по словам модели."""
     if any(call["status"] == "uncertain" for call in evidence):
-        return "blocked"  # эффект неизвестен — не двигаемся дальше без сверки
+        return "blocked"  # эффект неизвестен: не двигаемся дальше без сверки
     if outcome == "done":
         return "done" if any(call["status"] == "completed" for call in evidence) else "unverified"
     return outcome if outcome in {"blocked", "needs_user"} else "failed"

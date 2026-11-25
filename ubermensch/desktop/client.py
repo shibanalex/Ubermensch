@@ -31,7 +31,7 @@ class Api(QObject):
         self._poll_timer = QTimer(self, interval=2000)
         self._poll_timer.timeout.connect(self.refresh)
         self._poll_timer.start()
-        # Несколько событий подряд — один запрос состояния.
+        # Несколько событий подряд: один запрос состояния.
         self._refresh_timer = QTimer(self, singleShot=True, interval=120)
         self._refresh_timer.timeout.connect(lambda: self._get("/api/state", self._on_state))
         QTimer.singleShot(0, self._connect_events)
@@ -146,7 +146,7 @@ class Api(QObject):
 
     def _connect_events(self) -> None:
         self._buffer = b""
-        # Ядро шлёт ping каждые 15 с; 40 с тишины — соединение мертво.
+        # Ядро шлёт ping каждые 15 с; 40 с тишины: соединение мертво.
         reply = self.nam.get(self._request("/api/events", 40_000))
         reply.readyRead.connect(self._on_events_data)
         reply.finished.connect(self._on_events_closed)
@@ -155,7 +155,7 @@ class Api(QObject):
     def _on_events_data(self) -> None:
         reply = self._events
         if reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute) != 200:
-            return  # например, неверный токен — обработает finished
+            return  # например, неверный токен: обработает finished
         self._set_online(True)
         self._buffer += bytes(reply.readAll())
         while b"\n\n" in self._buffer:

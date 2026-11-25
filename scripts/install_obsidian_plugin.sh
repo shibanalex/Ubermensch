@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Плагин «Аня» для Obsidian: копирует obsidian-plugin/ubermensch-anya в хранилище из
 # OBSIDIAN_VAULT (.env) и включает его. Повторный запуск обновляет плагин.
-# После установки: в Obsidian — Ctrl+P → «Перезагрузить приложение без сохранения» (или перезапуск).
+# After installation: run "Reload app without saving" in Obsidian or restart.
 set -euo pipefail
 project="$(cd "$(dirname "$0")/.." && pwd)"
-# путь — тот же, что видит ядро (config.VAULT_DIR из OBSIDIAN_VAULT в .env)
+# Target vault path matching config.VAULT_DIR (OBSIDIAN_VAULT in .env)
 vault="$(cd "$project" && .venv/bin/python -c 'from ubermensch import config; print(config.VAULT_DIR or "")')"
 [[ -n "$vault" && -d "$vault/.obsidian" ]] || { echo "Не найдено хранилище Obsidian (OBSIDIAN_VAULT в .env)"; exit 1; }
 target="$vault/.obsidian/plugins/ubermensch-anya"

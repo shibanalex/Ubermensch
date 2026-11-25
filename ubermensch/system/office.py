@@ -1,4 +1,4 @@
-"""Документы Word и таблицы Excel: Аня создаёт их сам, пользователь открывает в Office."""
+"""Документы Word и таблицы Excel: генерация отчётов на стороне ядра, пользователь открывает в Office."""
 from __future__ import annotations
 
 import re
@@ -35,7 +35,7 @@ def write_word(path: Path, title: str, markdown: str) -> Path:
 
 
 def write_excel(path: Path, sheet: str, rows: list[list], append: bool = False) -> Path:
-    """Лист таблицы: первая строка — заголовки. append — дописать строки в конец листа."""
+    """Лист таблицы: первая строка; заголовки. append; дописать строки в конец листа."""
     if path.exists():
         book = load_workbook(path)
     else:
@@ -43,7 +43,7 @@ def write_excel(path: Path, sheet: str, rows: list[list], append: bool = False) 
         book.remove(book.active)
     if sheet in book.sheetnames and not append:
         del book[sheet]
-    fresh = sheet not in book.sheetnames  # новый лист — первая строка станет заголовками
+    fresh = sheet not in book.sheetnames  # новый лист: первая строка станет заголовками
     target = book.create_sheet(sheet) if fresh else book[sheet]
     for row in rows:
         target.append(row)
@@ -66,7 +66,7 @@ def read_excel(path: Path, max_rows: int = 200) -> dict[str, list[list]]:
 
 def excel_text(path: Path, max_rows: int = 2000) -> str:
     """Таблица текстом для разбора: лист → строки «ячейка | ячейка», пустые строки пропущены,
-    даты — ГГГГ-ММ-ДД."""
+    даты: ГГГГ-ММ-ДД."""
     book = load_workbook(path, read_only=True, data_only=True)
     parts = []
     for name in book.sheetnames:

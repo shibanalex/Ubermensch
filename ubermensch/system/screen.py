@@ -1,6 +1,6 @@
 """Снимок экрана с фильтром приватности.
 
-Снимок не делается, если на экране может быть то, что нельзя видеть даже Ане:
+Снимок не делается, если на экране может быть то, что нельзя видеть даже ассистенту:
 банк, пароли, приватный режим браузера, госуслуги; и если идёт полноэкранная игра или фильм.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ SENSITIVE_APPS = ("keepass", "1password", "bitwarden", "seahorse", "kwalletmanag
 
 
 def skip_reason(window: windows.Window | None) -> str | None:
-    """Почему сейчас снимать нельзя (None — можно)."""
+    """Почему сейчас снимать нельзя (None: можно)."""
     if window is None:
         return "нет активного окна"
     app = window.app.casefold()
@@ -38,10 +38,10 @@ def skip_reason(window: windows.Window | None) -> str | None:
 
 
 def capture(path: Path, max_width: int = 1600) -> Path:
-    """Снимок экрана в JPEG (уменьшенный — для Claude хватает и бережёт лимит).
+    """Снимок экрана в JPEG (уменьшенный: для Claude хватает и бережёт лимит).
 
     Снимает Spectacle: на Wayland экран отдаёт только композитор, а Spectacle KWin
-    доверяет — без диалога «разрешить запись экрана»."""
+    доверяет: без диалога «разрешить запись экрана»."""
     with tempfile.TemporaryDirectory() as tmp:
         raw = Path(tmp) / "screen.png"
         subprocess.run(["spectacle", "--background", "--nonotify", "--fullscreen",

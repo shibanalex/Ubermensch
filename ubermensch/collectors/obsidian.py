@@ -1,10 +1,10 @@
-"""Хранилище Obsidian пользователя: дневник, ориентиры, проекты, заметки — его собственные слова.
+"""Хранилище Obsidian пользователя: дневник, ориентиры, проекты, заметки; его собственные слова.
 
-Каждая заметка — одно событие (`external_id` = путь в хранилище), которое обновляется на месте,
+Каждая заметка: одно событие (`external_id` = путь в хранилище), которое обновляется на месте,
 когда пользователь её правит: идентификатор записи не меняется, поэтому ссылки профиля
-остаются верными. Холсты (.canvas) — тексты их карточек. Вложения, шаблоны, служебные папки
-и отчёты самой Ани (08 AI/Reports) не читаются. Вырезки из веба (Clippings) и референсы
-(папки References) — сведения о мире, а не его слова.
+остаются верными. Холсты (.canvas): тексты их карточек. Вложения, шаблоны, служебные папки
+и отчёты самой системы (08 AI/Reports) не читаются. Вырезки из веба (Clippings) и референсы
+(папки References): сведения о мире, а не его слова.
 """
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from pathlib import Path
 
 from .. import config
 
-SKIP_DIRS = {".obsidian", ".claudian", ".trash", ".git"}  # остальное хранилище — целиком (его решение 26.10.2026)
-NOT_OWN_WORDS = {"Clippings", "References"}  # вырезки и референсы — сведения, не его слова
+SKIP_DIRS = {".obsidian", ".claudian", ".trash", ".git"}  # остальное хранилище: целиком (его решение 26.10.2026)
+NOT_OWN_WORDS = {"Clippings", "References"}  # вырезки и референсы: сведения, не его слова
 MAX_CHARS = 30_000
 DATE_IN_NAME = re.compile(r"(\d{4}-\d{2}-\d{2})")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n?", re.S)
@@ -24,7 +24,7 @@ COMMENTS = re.compile(r"<!--.*?-->", re.S)
 
 
 def _frontmatter(text: str) -> dict[str, str]:
-    """Простые поля «ключ: значение» (mood, energy, date, type) — без полного YAML."""
+    """Простые поля «ключ: значение» (mood, energy, date, type); без полного YAML."""
     match = FRONTMATTER.match(text)
     if not match:
         return {}
@@ -49,7 +49,7 @@ def _canvas_text(raw: str) -> str:
 
 
 def _moment(path: Path, fields: dict[str, str]) -> str:
-    """Дата заметки: из полей, из имени (2026-10-18.md), иначе — время последней правки."""
+    """Дата заметки: из полей, из имени (2026-10-18.md), иначе; время последней правки."""
     for candidate in (fields.get("date", ""), path.stem):
         if found := DATE_IN_NAME.search(candidate):
             return f"{found.group(1)}T21:00:00"
@@ -104,7 +104,7 @@ def collect(vault: Path | None = None) -> list[dict]:
 
 
 def context_notes(vault: Path | None = None, limit: int = 8000) -> str:
-    """Что пользователь сам написал для своего ИИ и о себе сейчас — для каждого разговора:
+    """Что пользователь сам написал для своего ИИ и о себе сейчас: для каждого разговора:
     «08 AI/Обо мне», «08 AI/Сейчас», «06 Life/Личные ориентиры» и дневник за два дня."""
     vault = vault or config.VAULT_DIR
     if vault is None or not vault.is_dir():

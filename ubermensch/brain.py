@@ -38,8 +38,8 @@ LIMIT_FALLBACK = timedelta(minutes=30)  # если время сброса ли�
 class BrainError(RuntimeError):
     @property
     def kind(self) -> str:
-        """limit — лимит подписки, auth — слетел вход, missing — нет программы,
-        timeout — не ответил вовремя, other — прочее."""
+        """limit: лимит подписки, auth; слетел вход, missing; нет программы,
+        timeout: не ответил вовремя, other; прочее."""
         text = str(self).lower()
         if any(word in text for word in LIMIT_WORDS):
             return "limit"
@@ -53,13 +53,13 @@ class BrainError(RuntimeError):
 
     @property
     def is_limit(self) -> bool:
-        """Упёрлись в лимит подписки (или Claude перегружен) — подождать, а не сдаваться."""
+        """Упёрлись в лимит подписки (или Claude перегружен): подождать, а не сдаваться."""
         return self.kind == "limit"
 
     @property
     def reset_at(self) -> datetime | None:
         """Когда лимит сбросится. Claude Code пишет «resets 10pm (Europe/Moscow)», для недельного
-        лимита — «resets Oct 20, 10am», в старых версиях — «limit reached|<unix-время>»."""
+        лимита: «resets Oct 20, 10am», в старых версиях; «limit reached|<unix-время>»."""
         text, now = str(self), datetime.now()
         if match := RESET_EPOCH.search(text):
             return datetime.fromtimestamp(int(match[1]))
@@ -122,10 +122,10 @@ class Brain:
         self.claude_bin = settings.claude_bin
         self._blocked_until: datetime | None = None  # лимит или слетевший вход
         self._blocked_by: BrainError | None = None
-        self._auth_failures = 0  # подряд; первая после пробуждения часто ложная — сеть не поднялась
+        self._auth_failures = 0  # подряд; первая после пробуждения часто ложная: сеть не поднялась
 
     def _resolve_binary(self) -> str:
-        """Путь к claude меняется при обновлении расширения VS Code — ищем заново."""
+        """Путь к claude меняется при обновлении расширения VS Code: ищем заново."""
         if not self.claude_bin or not Path(self.claude_bin).exists():
             try:
                 self.claude_bin = find_claude()
@@ -134,7 +134,7 @@ class Brain:
         return self.claude_bin
 
     async def ask(self, prompt: str, **kwargs) -> Answer:
-        """Вызов Claude с учётом здоровья: пока висит лимит — сразу отказ, без лишних вызовов."""
+        """Вызов Claude с учётом здоровья: пока висит лимит; сразу отказ, без лишних вызовов."""
         if self._blocked_until and datetime.now() < self._blocked_until and self._blocked_by:
             raise self._blocked_by
         try:
@@ -155,14 +155,14 @@ class Brain:
 
     @property
     def blocked_until(self) -> datetime | None:
-        """До когда подписка недоступна (лимит, вход); None — доступна."""
+        """До когда подписка недоступна (лимит, вход); None: доступна."""
         if self._blocked_until and datetime.now() < self._blocked_until:
             return self._blocked_until
         return None
 
     async def wait_out(self, error: BrainError) -> bool:
-        """Для фоновой работы: ждать, пока Claude снова доступен (лимит — до сброса, вход и
-        программа — проверка раз в 5 минут). False — ошибка не из тех, что проходят сами."""
+        """Для фоновой работы: ждать, пока Claude снова доступен (лимит; до сброса, вход и
+        программа: проверка раз в 5 минут). False; ошибка не из тех, что проходят сами."""
         if error.kind not in ("limit", "auth", "missing"):
             return False
         until = self._blocked_until or datetime.now() + AUTH_PAUSE
@@ -175,7 +175,7 @@ class Brain:
         """Останавливаем и Claude, и его MCP-процессы до передачи запроса другому ИИ."""
         if proc.returncode is not None:
             return
-        try:  # Claude запущен в своей группе процессов — гасим её целиком
+        try:  # Claude запущен в своей группе процессов: гасим её целиком
             os.killpg(proc.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
@@ -193,10 +193,10 @@ class Brain:
                    agents: str | None = None) -> Answer:
         """Один изолированный вызов: без сохранения сессии и без чужих MCP-серверов.
 
-        tools — встроенные инструменты Claude Code (только безопасные), mcp_config — наш
+        tools: встроенные инструменты Claude Code (только безопасные), mcp_config; наш
         сервер инструментов (ubermensch.tools); всё остальное запрещено (dontAsk).
         Промпт идёт через stdin (длинный контекст не влезает в аргументы командной строки),
-        ответ — JSON по схеме.
+        ответ: JSON по схеме.
         """
         if agents:  # помощники (runtime/models.py): основная модель вызывает их инструментом Agent
             tools = (*tools, "Agent")
@@ -215,7 +215,7 @@ class Brain:
         allowed = list(tools)
         if mcp_config:
             args += ["--mcp-config", str(mcp_config)]
-            allowed.append(f"mcp__{MCP_SERVER}")  # наши инструменты сами спрашивают «да/нет»
+            allowed.append(f"mcp__{MCP_SERVER}")  # наши инструменты сами спрашивают подтверждение
         if allowed:
             args += ["--allowedTools", ",".join(allowed)]
         if effort:
@@ -234,7 +234,7 @@ class Brain:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.settings.workspace,
                 start_new_session=True,  # своя группа: при отмене гасим Claude вместе с MCP
-                # инструмент может ждать «да/нет» пользователя до 10 минут
+                # инструмент может ждать подтверждение пользователя до 10 минут
                 env={**os.environ, "MCP_TOOL_TIMEOUT": str(limit * 1000)},
             )
         except FileNotFoundError:
@@ -245,7 +245,7 @@ class Brain:
         except TimeoutError:
             await self._terminate(proc)
             raise BrainError(f"нет ответа за {limit} с") from None
-        except asyncio.CancelledError:  # вызов отменили (сторож чата) — процесс не оставляем
+        except asyncio.CancelledError:  # вызов отменили (сторож чата): процесс не оставляем
             await self._terminate(proc)
             raise
 

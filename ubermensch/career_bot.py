@@ -1,10 +1,10 @@
-"""Отклики на hh через бота пользователя (HHruBot, Playwright от его аккаунта) — по расписанию.
+"""Отклики на hh через бота пользователя (HHruBot, Playwright от его аккаунта): по расписанию.
 
-Аня запускает его CLI: `responses` обновляет статусы, `run --dry-run|--live --limit N` готовит
-письма или откликается. Письма — из шаблонов Ани (DATA_DIR/career/cover_letters.json), не от
+ассистент запускает его CLI: `responses` обновляет статусы, `run --dry-run|--live --limit N` готовит
+письма или откликается. Письма: из шаблонов ассистента (DATA_DIR/career/cover_letters.json), не от
 нейросети. Результаты переносятся в её воронку (career_opportunities / career_events) с
-отметкой шаблона — так видно, какое письмо работает. По умолчанию — только подготовка писем;
-настоящие отклики — после HHBOT_LIVE=1 в .env (это его решение, не её).
+отметкой шаблона: так видно, какое письмо работает. По умолчанию; только подготовка писем;
+настоящие отклики: после HHBOT_LIVE=1 в .env (это его решение, не её).
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def daily_limit() -> int:
 
 
 def available() -> str | None:
-    """None — можно запускать; иначе причина, почему нельзя."""
+    """None: можно запускать; иначе причина, почему нельзя."""
     base = folder()
     if not (base / ".venv" / "bin" / "hhbot").exists():
         return f"Бот не найден или не установлен: {base}/.venv/bin/hhbot"
@@ -49,8 +49,8 @@ def available() -> str | None:
 
 
 async def command(*args: str, timeout: int = TIMEOUT, on_line=None) -> tuple[int, str]:
-    """Запустить CLI бота; вывод — последние строки (подробности у бота в data/hhbot.log).
-    on_line(строка) — сразу по каждой строке: капча ждёт его в окне браузера только 10 минут."""
+    """Запустить CLI бота; вывод: последние строки (подробности у бота в data/hhbot.log).
+    on_line(строка): сразу по каждой строке: капча ждёт его в окне браузера только 10 минут."""
     base = folder()
     process = await asyncio.create_subprocess_exec(
         str(base / ".venv" / "bin" / "hhbot"), *args, cwd=base, stdin=asyncio.subprocess.DEVNULL,
@@ -82,7 +82,7 @@ def _database() -> sqlite3.Connection:
 
 
 def _templates() -> list[tuple[str, re.Pattern]]:
-    """Шаблоны писем как регулярки: подстановки {position}/{company} — любой текст."""
+    """Шаблоны писем как регулярки: подстановки {position}/{company}; любой текст."""
     path = config.DATA_DIR / "career" / "cover_letters.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -104,8 +104,8 @@ def template_of(letter: str, templates=None) -> str | None:
 
 
 def sync(store) -> dict:
-    """Перенести отклики и статусы бота в воронку Ани. Повторный перенос ничего не дублирует.
-    Возвращает новые приглашения — о них стоит сказать сразу."""
+    """Перенести отклики и статусы бота в воронку ассистента. Повторный перенос ничего не дублирует.
+    Возвращает новые приглашения: о них стоит сказать сразу."""
     templates = _templates()
     invited, added = [], Counter()
     with _database() as db:
@@ -144,7 +144,7 @@ def sync(store) -> dict:
 
 def template_stats() -> list[dict]:
     """Конверсия по шаблонам писем: отправлено, просмотрено, приглашений, отказов.
-    Малые числа — наблюдение, не доказательство."""
+    Малые числа: наблюдение, не доказательство."""
     templates = _templates()
     stats = {}
     with _database() as db:

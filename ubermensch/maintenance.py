@@ -1,8 +1,8 @@
 """Обслуживание: ночные резервные копии и проверка места на диске.
 
-Бэкап — зашифрованный архив 7-Zip с manifest, SQLite snapshot, данными агента, raw,
-профилем, workspace, Obsidian и документами Ани. Проверяется пробной распаковкой.
-Пароль — BACKUP_PASSWORD в .env; хранить отдельно от ноутбука.
+Бэкап: зашифрованный архив 7-Zip с manifest, SQLite snapshot, данными агента, raw,
+профилем, workspace, Obsidian и документами ассистента. Проверяется пробной распаковкой.
+Пароль: BACKUP_PASSWORD в .env; хранить отдельно от ноутбука.
 
 Архивы лежат в <данные>/backups (последние 7) и копируются на внешний диск или флешку,
 если в корне носителя есть папка AnyaBackup (последние 14). Сессия Telegram и ключи из .env
@@ -25,19 +25,19 @@ from .backups import create_archive
 log = logging.getLogger(__name__)
 
 SEVEN_ZIP = shutil.which("7z") or shutil.which("7za")
-# BACKUP_DIR — куда класть локальные архивы (по умолчанию папка данных; архив — гигабайты)
+# BACKUP_DIR: куда класть локальные архивы (по умолчанию папка данных; архив; гигабайты)
 LOCAL_DIR = Path(os.getenv("BACKUP_DIR", "") or config.DATA_DIR / "backups").expanduser()
 MARKER = "AnyaBackup"  # папка в корне внешнего носителя: сюда копировать архивы
 MARKERS = (MARKER, "OswaldBackup")  # старое имя тоже понимаем
 KEEP_LOCAL, KEEP_EXTERNAL = 7, 14
-EXTERNAL_SHARE = 0.5  # на внешнем носителе архивы Ани занимают не больше половины его объёма
+EXTERNAL_SHARE = 0.5  # на внешнем носителе архивы бэкапов занимают не больше половины его объёма
 FAT_LIMIT = 4 * 1024 ** 3 - 1  # vfat/exFAT-старые: файл больше 4 ГБ не запишется
 CHUNK = 8 * 1024 * 1024
 CHECK_EVERY = 10 * 60
 RETRY_AFTER_FAILURE = timedelta(hours=6)
   # сбой бэкапа не повторять каждые 10 минут
 NIGHT = range(2, 6)  # бэкап ночью, когда компьютер свободен…
-OVERDUE = timedelta(hours=36)  # …но если ночью был выключен — днём
+OVERDUE = timedelta(hours=36)  # …но если ночью был выключен: днём
 EXTERNAL_STALE = timedelta(days=7)
 MIN_FREE_GB = 5
 
@@ -125,8 +125,8 @@ class Maintenance:
 
     @staticmethod
     def _prune_external(folder: Path, incoming: int) -> bool:
-        """Освободить место под новый архив: старые — пока архивы Ани укладываются в
-        EXTERNAL_SHARE носителя и KEEP_EXTERNAL штук. False — места всё равно не хватит."""
+        """Освободить место под новый архив: старые; пока архивы бэкапов укладываются в
+        EXTERNAL_SHARE носителя и KEEP_EXTERNAL штук. False: места всё равно не хватит."""
         for stale in folder.glob("*.partial"):  # оборванные прошлые копии
             stale.unlink(missing_ok=True)
         archives = _archives(folder)
@@ -145,7 +145,7 @@ class Maintenance:
         else:
             self.health.clear("disk", "Место на диске снова есть.")
 
-    # Время сбоя — в файле, а не в памяти: 25.10 после каждого перезапуска ядра бэкап
+    # Время сбоя: в файле, а не в памяти: 25.10 после каждого перезапуска ядра бэкап
     # пробовался заново, и за 20 минут пришло пять одинаковых предупреждений.
     @property
     def _failed_at(self) -> datetime | None:

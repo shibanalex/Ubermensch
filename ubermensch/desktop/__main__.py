@@ -1,8 +1,8 @@
 """Приложение на ПК: python -m ubermensch.desktop (ядро запускается отдельно).
 
-Это присмотр за процессом маскота (mascot_app — мордочка, пузыри, запрос, история, трей):
-упал — поднимается снова с растущей паузой; «Выход» у маскота (код 0) закрывает всё.
-Список задач — отдельный виджет Plasma (plasmoid/, ставится scripts/install_widget.sh).
+Это присмотр за процессом оверлея (mascot_app: мордочка, пузыри, запрос, история, трей):
+упал: поднимается снова с растущей паузой; «Выход» у оверлея (код 0) закрывает всё.
+Список задач: отдельный виджет Plasma (plasmoid/, ставится scripts/install_widget.sh).
 """
 from __future__ import annotations
 
@@ -17,12 +17,12 @@ from logging.handlers import RotatingFileHandler
 from .. import config
 from .link import ALREADY_RUNNING
 
-CHILDREN = {"маскот": "ubermensch.desktop.mascot_app"}  # задачи — виджет Plasma (plasmoid/)
+CHILDREN = {"маскот": "ubermensch.desktop.mascot_app"}  # задачи: виджет Plasma (plasmoid/)
 MAIN = "маскот"  # его «Выход» закрывает приложение
 BACKOFF = (2, 5, 15, 60)  # пауза перед перезапуском после 1-го, 2-го, ... падения подряд
-STABLE_S = 300  # проработал столько — счётчик падений сбрасывается
-# Окна Ани ходят по экрану и сами выбирают место — на Wayland так нельзя, поэтому они
-# работают через XWayland. Остальное (активное окно, простой) — от сенсоров ядра.
+STABLE_S = 300  # проработал столько: счётчик падений сбрасывается
+# Окна оверлея ходят по экрану и сами выбирают место: на Wayland так нельзя, поэтому они
+# работают через XWayland. Остальное (активное окно, простой): от сенсоров ядра.
 CHILD_ENV = {**os.environ, "QT_QPA_PLATFORM": "xcb"}
 
 log = logging.getLogger("desktop")
@@ -41,7 +41,7 @@ def _single_instance():
 
 
 def _log_file():
-    """Лог приложения в папке данных; если её пока нет (диск не подключён) — без файла."""
+    """Лог приложения в папке данных; если её пока нет (диск не подключён): без файла."""
     try:
         folder = config.DATA_DIR / "logs"
         folder.mkdir(parents=True, exist_ok=True)
@@ -75,7 +75,7 @@ class Child:
             self.proc.terminate()
 
     def check(self) -> int | None:
-        """None — работает (или ждёт перезапуска), иначе код выхода."""
+        """None: работает (или ждёт перезапуска), иначе код выхода."""
         if self.proc is None:
             if time.monotonic() >= self.restart_at:
                 self.start()
@@ -84,7 +84,7 @@ class Child:
         if code is None:
             return None
         self.proc = None
-        if code == ALREADY_RUNNING:  # жив экземпляр от прошлого присмотра — подождать его
+        if code == ALREADY_RUNNING:  # жив экземпляр от прошлого присмотра: подождать его
             self.restart_at = time.monotonic() + 30
             return None
         if code == 0:

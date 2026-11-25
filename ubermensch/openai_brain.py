@@ -1,4 +1,4 @@
-"""Второй ИИ — OpenAI API (платно, по токенам): фоновый разбор без личного и запасной ответ
+"""Второй ИИ: OpenAI API (платно, по токенам): фоновый разбор без личного и запасной ответ
 в чате, когда Claude в лимите или завис.
 
 Тот же интерфейс, что у Brain (ask → Answer по JSON-схеме). В чате доступны общие
@@ -6,8 +6,8 @@
 Две модели: дешёвая для фона (много данных) и посильнее для запасного ответа в чате (ответов
 мало, качество важнее). Флагман (GPT-6 Astra) на бюджет в $10 не рассчитан: весь Takeout
 обошёлся бы в ~$58.
-Каждый вызов считается в долларах по токенам; на OPENAI_WARN_USD — предупреждение, на
-OPENAI_BUDGET_USD — стоп, всё возвращается на Claude. Системный прокси учитывается (trust_env).
+Каждый вызов считается в долларах по токенам; на OPENAI_WARN_USD: предупреждение, на
+OPENAI_BUDGET_USD: стоп, всё возвращается на Claude. Системный прокси учитывается (trust_env).
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from .runtime.http_tools import ToolExecutionUncertain
 log = logging.getLogger(__name__)
 
 API = "https://api.openai.com/v1"
-# Первая доступная по порядку (список моделей аккаунта — GET /models).
+# Первая доступная по порядку (список моделей аккаунта: GET /models).
 PREFERRED = {
     "background": ("gpt-6-luna", "gpt-6.1-luna", "gpt-5.6-luna", "gpt-5-mini", "gpt-4.1-mini",
                    "gpt-4o-mini"),
@@ -44,7 +44,7 @@ EFFORT = {"background": "low", "chat": "medium"}
 TOOL_INCOMPATIBLE = ("gpt-6.1-sol",)
 TOOL_EFFORT_NONE = ("gpt-6-sol",)
 # $ за миллион токенов (вход, выход); по самому длинному совпадению начала имени.
-# Неизвестная модель считается по цене флагмана — бюджет не уйдёт в минус незаметно.
+# Неизвестная модель считается по цене флагмана: бюджет не уйдёт в минус незаметно.
 PRICES = {"gpt-6-astra": (10.0, 50.0), "gpt-6.1-sol": (2.0, 10.0), "gpt-6-sol": (2.0, 10.0),
           "gpt-6-luna": (0.1, 0.5), "gpt-6.1-luna": (0.1, 0.5), "gpt-5.6-terra": (2.0, 12.0),
           "gpt-5.6-luna": (0.2, 1.2), "gpt-5-mini": (0.25, 2.0), "gpt-5-nano": (0.05, 0.4),
@@ -54,7 +54,7 @@ UNKNOWN_PRICE = (10.0, 50.0)
 TIMEOUT = 240
 MAX_TOOL_ROUNDS = 12
 MAX_TOOL_RESULT = 60000
-PAUSE_AFTER_FAILURE = timedelta(hours=1)  # ключ, баланс или регион — не долбить каждую минуту
+PAUSE_AFTER_FAILURE = timedelta(hours=1)  # ключ, баланс или регион: не долбить каждую минуту
 
 
 class OpenAIError(BrainError):
@@ -150,7 +150,7 @@ class OpenAIBrain:
     async def ask(self, prompt: str, *, system_prompt_file: Path, schema: dict,
                   role: str = "background", tool_gateway: ToolGateway | None = None,
                   timeout: int | None = None, **_ignored) -> Answer:
-        """Как Brain.ask: ответ JSON по схеме. role — background (дешёвая модель) или chat
+        """Как Brain.ask: ответ JSON по схеме. role; background (дешёвая модель) или chat
         (посильнее). Инструменты разрешены только для chat и только явно выданные."""
         if role not in MODEL_ENV:
             raise OpenAIError(f"OpenAI: неизвестная роль {role}")
@@ -179,7 +179,7 @@ class OpenAIBrain:
                     "name": "answer", "schema": schema, "strict": False}},
             }
             if model.startswith(("gpt-5", "gpt-6", "o")):  # модели с рассуждением
-                body["reasoning_effort"] = EFFORT[role]  # фон — «low»: дешевле и быстрее
+                body["reasoning_effort"] = EFFORT[role]  # фон: «low»: дешевле и быстрее
             if definitions:
                 body["tools"] = [{"type": "function", "function": {
                     "name": tool.name, "description": tool.description,
@@ -230,7 +230,7 @@ class OpenAIBrain:
             body["messages"].append({"role": "assistant", "content": message.get("content"),
                                      "tool_calls": calls})
             allowed = {tool["function"]["name"] for tool in body["tools"]}
-            pictures = []  # в сообщении инструмента у OpenAI только текст — картинки следом
+            pictures = []  # в сообщении инструмента у OpenAI только текст: картинки следом
             for call in calls:
                 if not self.usable:
                     raise OpenAIError("OpenAI: бюджет исчерпан, следующие действия остановлены")

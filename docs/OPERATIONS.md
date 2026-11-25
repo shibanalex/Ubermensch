@@ -1,192 +1,59 @@
-# Эксплуатация
+# Operations
 
-Для нового разработчика: [CONFIGURATION](CONFIGURATION.md) и [TESTING](TESTING.md).
-Контракты API — в [API](API.md), состав данных и резервных копий — в
-[DATA_MODEL](DATA_MODEL.md). Здесь описано обслуживание установленной системы.
+## Requirements
 
-## Установка с нуля
+- Linux desktop session (tested on Arch Linux and Ubuntu 26.04 with KDE Plasma 6 / Wayland)
+- Python 3.12+
+- Optional system tools: `claude` CLI (if using Claude Code subscription), `bwrap` (`bubblewrap` for shell sandboxing), `7z` (encrypted backups), `pdftoppm` / `libreoffice` (document rendering)
 
-Окружение: Linux с KDE Plasma 6 на Wayland (проверено на Ubuntu 26.04). Состав внешних
-программ — в [CONFIGURATION](CONFIGURATION.md#платформа-и-зависимости).
+## Initial Setup
 
-1. Системные пакеты: `sudo apt install python3-venv git 7zip plocate fd-find` (KDE, Spectacle,
-   PipeWire и Google Chrome обычно уже стоят).
-2. Claude Code: `curl -fsSL https://claude.ai/install.sh | bash`, затем `claude` → `/login`
-   (аккаунт с подпиской).
-3. Код: `git clone https://github.com/shibanalex/Ubermensch_Project.git`, затем
+1. Create a virtual environment and install dependencies:
+
    ```bash
    python3 -m venv .venv
    .venv/bin/pip install -r requirements.txt
    ```
-4. `.env` по образцу `.env.example` (токен бота, chat_id, ключи Telegram API, Gmail, пароль
-   бэкапов), права `chmod 600 .env`.
-5. Данные: восстановить из бэкапа (см. ниже) или создать `~/Projects/Ubermensch/db`
-   (по умолчанию данные лежат в папке `Ubermensch` рядом с папкой проекта; при другом
-   `UBERMENSCH_DATA` — `db` внутри него). Пустого корня недостаточно: стартовая проверка
-   ждёт каталог `db` до загрузки настроек.
-6. Вход в Telegram: `./telegram_login.sh`; рабочий аккаунт (если задан
-   `TG_WORK_API_ID`/`TG_WORK_HASH`) — `./telegram_work_login.sh`. Сессии с другого
-   компьютера (файлы `*.session`) переносятся как есть.
-7. Личный кабинет вуза: `LK_LOGIN`/`LK_PASSWORD` в `.env` (или ручной вход `./lk_login.sh`).
-8. Запуск: `./start.sh`; автозапуск при входе в Plasma: `./scripts/install_autostart.sh`.
-9. Виджет задач на рабочий стол: `./scripts/install_widget.sh` (повторный запуск обновляет виджет).
-10. Хранилище Obsidian: `OBSIDIAN_VAULT=<путь>` в `.env`.
 
-### Дополнительно (рекомендуется)
+2. Configure environment variables outside the repository (`DATA_DIR/.env`, or `.env` next to checkout for local testing):
 
-- **plocate** — мгновенный поиск файлов по индексу (обновляется раз в сутки таймером
-  `plocate-updatedb`); поиск в конкретной папке — `fdfind`. Без них поиск идёт обходом папок.
-- **KeePassXC** — хранить `BACKUP_PASSWORD` и ключи.
-- **Шифрование данных.** Сессии Telegram — полный доступ к аккаунтам. Если корневой
-  раздел не зашифрован (LUKS), папку данных стоит держать в зашифрованном месте:
-  см. [SECURITY](SECURITY.md#хранение-на-диске).
+   ```bash
+   cp .env.example ~/Projects/Ubermensch/.env
+   ```
 
-### Подключение Google: Календарь и Диск (один раз)
+   Minimum required values: `TG_BOT_TOKEN`, `TG_CHAT_ID`, plus at least one LLM credential (Claude Code CLI session, `CLAUDE_AI_API_KEY`, or `OPENAI_API_KEY`).
 
-1. console.cloud.google.com → создать проект (любое имя, например «Anya»).
-2. «APIs & Services» → «Library» → **Google Calendar API** и **Google Drive API** → Enable.
-3. «OAuth consent screen» → External → заполнить имя и свою почту → в «Test users» добавить свой Gmail.
-4. «Credentials» → «Create credentials» → **OAuth client ID** → тип **Desktop app** → Download JSON.
-5. Сохранить файл как `<данные>/secrets/google_oauth_client.json`.
-6. Запустить `./google_login.sh` → в браузере разрешить доступ к событиям календаря и чтение Диска.
-   Чтение Диска нужно, чтобы Аня раз в 6 часов забирала твои чаты Gemini из AI Studio. Если вход
-   делался раньше только для календаря — запусти `./google_login.sh` ещё раз.
+3. Bootstrap external sessions once interactively:
 
-Доступ ограничен событиями календаря и чтением Диска; отозвать — myaccount.google.com/permissions.
+   ```bash
+   ./telegram_login.sh        # Telethon personal session
+   ./telegram_work_login.sh   # Optional work account
+   ./google_login.sh          # Google Calendar / Drive OAuth token
+   ./lk_login.sh              # Optional university portal cookies
+   ```
 
-## Запуск и остановка
+## Running as systemd User Services
 
-| Что | Как |
-|---|---|
-| Всё в фоне | `./start.sh` — через systemd, если установлен автозапуск; повторный запуск безопасен |
-| Ядро с логами в терминале | `./run.sh` |
-| Автозапуск | `./scripts/install_autostart.sh` — сервисы `ubermensch` и `ubermensch-desktop`; удалить: `systemctl --user disable --now ubermensch ubermensch-desktop` |
-| Перезапуск после обновления кода | `systemctl --user restart ubermensch ubermensch-desktop` |
-| Остановить | ПКМ по маскоту → «Выход» (закрывает и маскота, и лист); ядро — `systemctl --user stop ubermensch` (без автозапуска — Ctrl+C в `run.sh` или `pkill -f "python -m ubermensch$"`) |
-
-## Где что лежит
-
-`<данные>` — `UBERMENSCH_DATA`, по умолчанию `~/Projects/Ubermensch`.
-
-| Путь | Содержимое |
-|---|---|
-| `<данные>/db/ubermensch.db` | вся память: факты, люди, цели, задачи, история, собранные данные, очередь разбора |
-| `<данные>/logs/ubermensch.log` | лог ядра (5 МБ, до 5 резервных файлов ротации); под systemd — ещё `journalctl --user -u ubermensch` |
-| `<данные>/secrets/` | токен API, сессии Telegram (= полный доступ к аккаунту); права `700` |
-| `<данные>/workspace/` | рабочая папка мозга: промпты, `tg_style.md` (как ты пишешь), `anya_persona.md` (голос Ани), `mcp.json` |
-| `<данные>/workspace/runs/<uuid>/tools.jsonl` | журнал вызовов инструментов: имя и статус, без аргументов; временный `mcp.json` удаляется при завершении разговора |
-| `<данные>/dossier/latest.md` | последнее досье |
-| `<данные>/raw/import/` | сюда класть файлы для импорта (см. ниже) |
-| `<данные>/raw/notifications/ГГГГ-ММ-ДД.jsonl` | уведомления программ и сайтов, услышанные на D-Bus (хранятся 30 дней) |
-| `<данные>/backups/` | зашифрованные бэкапы (последние 7) |
-| `<данные>/personalization/` | профиль: опубликованные версии, последний снимок данных, кеш наблюдений |
-| `<хранилище>/08 AI/Reports/` | отчёты Ани в твоём Obsidian: «Профиль.md», «Досье.md», «Конспекты/», её заметки |
-| `~/Документы/Аня/` | документы Word/Excel; путь `ANYA_DOCUMENTS` |
-| `OBSIDIAN_VAULT` | твоё хранилище: Аня читает всё, кроме вложений и шаблонов; правит только `08 AI/Reports` |
-| `<данные>/logs/desktop.log` | присмотр за приложением: запуски и падения маскота и листа; ошибки самих окон — `desktop-stderr.log` |
-
-### Что понимает папка импорта
-
-| Что положить | Как разбирается |
-|---|---|
-| Чат Google AI Studio (файл из Google Drive) | глубоко: целиком, без повторов, в память — только новое; сжатый конспект новых сведений — в `08 AI/Reports/Конспекты` хранилища. Повторить: `POST /api/import/deep` с `{"name": "<имя файла>"}` |
-| PDF, Word (.docx), .txt, .md | целиком, как документ |
-| Выгрузка ChatGPT или Claude.ai (`conversations.json` или zip с ним) | твои реплики → «Разговоры с ИИ», разбор по месяцам |
-| Архивы Google Takeout (`takeout-*.zip`, все части) | «Мои действия» и история YouTube → по месяцам; твои комментарии и чаты трансляций YouTube; партитуры с Диска → «Творчество»; чаты AI Studio с Диска → глубокий импорт; подписки и плейлисты → документ. Видео, музыка, картинки, книги и Фото не читаются. Что выгружать: «Мои действия», YouTube, Диск, Chrome (почта уже собирается напрямую) |
-
-Обычный импорт пропускает файл с тем же хешем и статусом done; skipped/failed
-пробуются снова. Ручной deep import может повторно обработать уже известный файл.
-Механизмы продолжения обычного и глубокого импорта различаются, см. [BACKGROUND](BACKGROUND.md).
-
-## Состояние и диагностика
-
-- **Telegram `/status`** — сервисы, расследование, известные проблемы.
-- **Telegram `/profile`** — где сейчас построение профиля; `/profile обновить` — перестроить сейчас.
-- **Telegram `/agent`** — последний heartbeat, поручения и расписание. Поручить работу или поставить регулярную — просто попроси в чате («разберись…», «каждый понедельник…»).
-- **Что Аня делает сама и чему научилась** — в Obsidian: `08 AI/Reports/Дневник Ани/`, `Уроки Ани.md`, `Навыки/`; за чем ей следить — `08 AI/Reports/Heartbeat.md` (можно править).
-- **Telegram `/question`** — Аня задаст вопрос из профиля сейчас (обычно сама, не чаще раза в день). Сказать, что вывод о тебе неверен, можно прямо в чате — она отметит его.
-- **Маскот** — `⚠` в строке состояния, если есть проблема; серый `x x` — нет связи с ядром.
-- **Окно метрик** — ПКМ по маскоту (или трей, или «⋯» в виджете задач) → «Метрики»: прогресс разбора и памяти, время за ПК, полезное/отвлекающее, задачи. F5 — обновить, Tab — вкладка.
-- **API**: `GET /api/health` (проблемы + сервисы), `GET /api/investigation` (сбор и разбор), `POST /api/collect` (собрать сейчас), `POST /api/voice` (пересобрать стиль и голос Ани), `GET /api/metrics` (то же, что в окне метрик). Заголовок `Authorization: Bearer <токен из secrets/api_token>`.
-- **Лог**: `<данные>/logs/ubermensch.log` или `journalctl --user -u ubermensch -f`.
-
-### Резервный ИИ и общий API инструментов
-
-После обновления перезапустить ядро (`systemctl --user restart ubermensch`): уже работающий процесс сам код
-не перечитывает. Дополнительный ключ не нужен: используется существующий `OPENAI_API_KEY`.
-Модель `OPENAI_CHAT_MODEL` должна поддерживать Chat Completions, функции и JSON Schema.
-Общие инструменты доступны через `GET /api/tools` и `POST /api/tools/call`
-с заголовком `Authorization: Bearer <токен>`; тело вызова:
-`{"name":"read_file","arguments":{"path":"/home/<пользователь>/заметка.txt"},"run_id":"<UUID>"}`.
-`run_id` необязателен: без него ядро создаёт новый.
-
-Лимит Claude до запуска инструментов переключает запрос на OpenAI. Если инструмент уже
-начат или его результат неизвестен после сбоя, запрос автоматически не повторяется.
-Проверить результат вручную, затем дать новую просьбу на оставшиеся действия.
-Для диагностики использовать журнал попытки и основной лог. Журналы пока не очищаются
-автоматически; это небольшие записи имён и статусов.
-
-Проверки без внешних ИИ и реальных отправок:
+Install user units (`ubermensch.service` and `ubermensch-desktop.service`):
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -v
+./scripts/install_autostart.sh
+systemctl --user status ubermensch.service
+journalctl --user -u ubermensch.service -f
 ```
 
-## Известные ситуации и что делать
-
-| Ситуация | Что видно | Что делает система | Что делать тебе |
-|---|---|---|---|
-| Лимит подписки Claude | Сообщение о лимите либо резервный ответ | До начала общих инструментов чат может перейти на доступный OpenAI. После начала автоматического повтора нет. Фоновая работа ждёт сброса; deep import имеет сохранённый прогресс частей, обычный импорт не даёт той же гарантии после рестарта | Проверить результат уже начатого действия; подробности в AI_RUNTIME и BACKGROUND |
-| Перезапуск или сон посреди глубокого импорта | — | прогресс сохраняется после каждой части (курсор `distill:<хэш>`), импорт продолжается со следующей части | ничего |
-| Порция не разобралась 3 раза подряд (сеть, сон) | в логе «не разобрана» | через 12 часов снова ставится в очередь | ничего |
-| Claude разлогинился | «Claude разлогинился…» | не дёргает Claude 5 минут, потом проверяет снова; сообщает со второй неудачи подряд (первая после пробуждения обычно ложная — сеть ещё не поднялась) | терминал → `claude` → `/login` |
-| Обновилось расширение VS Code / пропал Claude Code | «Не нахожу Claude Code» | ищет `claude` заново при каждом вызове | установить Claude Code или обновить расширение |
-| Завершена сессия Telegram | бот: «🔑 Нужен вход в … Telegram» | Аня сама начинает вход: спрашивает номер (или берёт `TG_PHONE`/`TG_WORK_PHONE` из `.env`), Telegram присылает код | прислать код в бота **с пробелами или дефисами** (`1 2 3 4 5` — целый код Telegram сбрасывает), при облачном пароле — его; бот удалит их из чата. Вручную: `/login`, `/login work`, отмена — `/login_cancel`. Запасной путь — `./telegram_login.sh` |
-| Отозван пароль Gmail | «Gmail не пускает…» | сбор почты пропускается | новый пароль приложения → `GMAIL_PASSWORD` в `.env` |
-| Папки с данными нет (диск не подключён или зашифрованная папка не открыта) | сообщение в Telegram «Не вижу папку с данными» | ядро ждёт и стартует само | подключить диск / открыть зашифрованную папку |
-| Разбор днём медленный | ~4 порции в час | так задумано: лимит подписки общий с чатом и Claude Code; стоит отойти от ПК на 10+ минут или заблокировать экран (Meta+L) — темп как ночью | ничего; хочешь быстрее — блокируй экран, когда уходишь |
-| С закрытой крышкой от сети ноутбук всё равно засыпает | бот молчит, в журнале `systemd-logind: Lid closed … will suspend` | logind по умолчанию обрабатывает крышку сам, мимо настройки KDE; PowerDevil читает `powerdevilrc` только при старте службы | один раз: `sudo mkdir -p /etc/systemd/logind.conf.d && printf '[Login]\nHandleLidSwitchExternalPower=ignore\nHandleLidSwitchDocked=ignore\n' \| sudo tee /etc/systemd/logind.conf.d/ubermensch-lid.conf && sudo systemctl kill -s HUP systemd-logind`, затем `systemctl --user restart plasma-powerdevil` (проверка: `qdbus6 org.kde.Solid.PowerManagement /org/kde/Solid/PowerManagement/Actions/HandleButtonEvents org.kde.Solid.PowerManagement.Actions.HandleButtonEvents.lidAction` → `0`) |
-| Ночь, а разбор стоит | в логе нет «Разобрано» с 01:00 до 08:00 | ночью разбор идёт быстро, но только пока ноутбук не спит | на ночь — на зарядку. От сети закрытая крышка и простой ноутбук не усыпляют (`install_autostart.sh` ставит `LidAction=0`, `AutoSuspendAction=0` в профиле AC `powerdevilrc`). От батареи закрытая крышка усыпляет, как обычно |
-| Компьютер уснул | — | бот и сервисы замирают и продолжают после пробуждения; оборванный разбор повторяется до 3 раз | ничего |
-| Не пускает в личный кабинет вуза | «Не могу войти в личный кабинет вуза…» | кабинет не читается, сайт вуза работает | проверить `LK_LOGIN`/`LK_PASSWORD` в `.env`; если капча — `./lk_login.sh` и войти вручную |
-| Личный кабинет лежит (сбой у вуза) | — | тихо пробует при каждом сборе (раз в 2 ч), пока не прочитает | ничего |
-| OpenAI: ключ не принят, кончились деньги, отказ в доступе | «OpenAI …» | час не обращается к OpenAI, всё делает Claude | проверить ключ / пополнить баланс |
-| Бюджет OpenAI исчерпан | «Бюджет OpenAI $9 исчерпан» (на $7 — предупреждение) | всё на Claude | пополнить и поднять `OPENAI_BUDGET_USD` в `.env` |
-| Упало окно маскота | пропало на пару секунд | присмотр поднимает упавший процесс (2 → 5 → 15 → 60 с) | прислать `desktop-stderr.log`, если повторяется |
-| Упал фоновый сервис | после 3 падений — «Фоновая служба … падает» | перезапуск с паузой 5 с → 5 мин | прислать лог, если повторяется |
-| Мало места на диске с данными (< 5 ГБ) | «На диске осталось …» | предупреждает | освободить место |
-| Нет пароля бэкапов / 7-Zip | «Резервные копии не делаются…» | бэкап пропускается | задать `BACKUP_PASSWORD` в `.env`; 7-Zip — `sudo apt install 7zip` |
-| Давно нет копии вне ноутбука | «Подключи внешний диск…» | — | подключить носитель с папкой `AnyaBackup` |
-| Действие ждёт подтверждения 10 минут | — | считается отказом | — |
-| Календарь не подключён / доступ отозван | Аня говорит «Календарь не подключён…» | инструменты календаря возвращают ошибку | раздел «Подключение Google Календаря» |
-| Виджет задач пишет «Аня не на связи» | — | ядро не отвечает или токен сменился (виджет перечитывает его сам) | `systemctl --user status ubermensch`; после смены порта или папки данных — снова `./scripts/install_widget.sh` |
-| Виджет не обновился после изменения QML | старый вид | Plasma держит загруженный QML | `plasmashell --replace & disown` |
-| Нет plocate / fd | — | поиск файлов медленнее (обход папок) | `sudo apt install plocate fd-find` |
-| Ядро не видит активное окно и простой | метрики времени за ПК стоят, маскот не прячется от полноэкранных окон | сенсоры сеанса отключены (нет KWin, Wayland или D-Bus), остальное работает | запустить ядро внутри сеанса Plasma (автозапуск через systemd это делает); проверить `qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.isScriptLoaded ubermensch-tracker` |
-| Маскот не двигается / окно не на своём месте | — | окна Ани работают через XWayland (`QT_QPA_PLATFORM=xcb`) | проверить, что XWayland включён (`echo $DISPLAY` в сеансе не пуст) |
-
-## Резервные копии и восстановление
-
-Ночной архив включает SQLite, raw, поручения/расписания, профиль, workspace,
-Obsidian и документы Ани. Secrets, .env и сессии исключены. Пароль BACKUP_PASSWORD
-нужно хранить отдельно. Сохраняются 7 локальных и 14 внешних архивов; внешняя
-папка-маркер — AnyaBackup. Каждый новый архив проверяется пробным восстановлением.
+Optional integrations:
 
 ```bash
-.venv/bin/python -m ubermensch.backups verify /path/to/anya-....7z
-.venv/bin/python -m ubermensch.backups restore /path/to/anya-....7z --to /path/to/new-restore
+./scripts/install_obsidian_plugin.sh
+./scripts/install_widget.sh
 ```
 
-Каталог назначения должен отсутствовать. Для переключения остановить Core,
-сохранить прежний комплект данных с WAL/SHM, перенести восстановленный data/ в
-DATA_DIR, vault/ и documents/ в настроенные пути, восстановить секреты и запустить
-Core. Проверить health, задачи и историю. Живую БД не подменять.
-Старые архивы без manifest нужно распаковывать вручную; новая команда их отклоняет.
-Состав, исключения и пределы согласованности: [RELIABILITY](RELIABILITY.md).
+## Backups and Maintenance
 
-## Код и GitHub
+- Nightly backups (`ubermensch/backups.py`) write encrypted 7-Zip archives containing a `manifest`, consistent SQLite snapshot, and configuration files using `BACKUP_PASSWORD`.
+- Run tests after any change:
 
-Репозиторий проекта — `shibanalex/Ubermensch_Project`. Рабочие данные по умолчанию
-лежат вне checkout. `.gitignore` исключает `.env`, `.venv`, `__pycache__` и файлы
-Telegram-сессий, но не защищает произвольные копии экспортов, токенов и тестовых
-данных с другими именами. Перед коммитом проверять список включённых файлов.
+  ```bash
+  .venv/bin/python -m unittest discover -s tests
+  ```

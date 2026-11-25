@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 
 def local_iso(moment: datetime) -> str:
-    """Время в местном часовом поясе без смещения — так хранится всё в базе."""
+    """Время в местном часовом поясе без смещения: так хранится всё в базе."""
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     return moment.astimezone().replace(tzinfo=None).isoformat(timespec="seconds")

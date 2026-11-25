@@ -1,8 +1,8 @@
-/* Аня (Übermensch) — Obsidian как часть интерфейса Ани.
+/* Übermensch Obsidian integration plugin.
  *
  * Чат и панель целей ходят в локальное ядро (http://127.0.0.1:8765) с токеном из папки
- * данных. Решения кнопками — его решения: «Утвердить план», «Согласен на эксперимент»,
- * «Да/Нет» на подтверждения. Без сборки: обычный CommonJS, API Obsidian — require('obsidian').
+ * data. Button actions map to core approval endpoints (plan approval, experiment consent,
+ * confirmation prompts). Zero-build CommonJS module using Obsidian API via require('obsidian').
  */
 const {
   ItemView, MarkdownRenderer, Modal, Notice, Plugin, PluginSettingTab, Setting, requestUrl, setIcon,
@@ -11,7 +11,7 @@ const {
 const CHAT_VIEW = "anya-chat";
 const DASHBOARD_VIEW = "anya-dashboard";
 const SECTIONS = ["now", "goals", "proposals", "consent", "hh", "effectiveness"];
-const CHAT_CHANNELS = ["tg", "desktop", "obsidian"];  // служебные (импорт, бэкап) — не в чат
+const CHAT_CHANNELS = ["tg", "desktop", "obsidian"];  // internal channels (import, backup) excluded from chat
 const DEFAULTS = {
   apiUrl: "http://127.0.0.1:8765",
   tokenFile: "~/Projects/Ubermensch/secrets/api_token",
@@ -105,7 +105,7 @@ class Sections {
       el(this.root, "div", { cls: "anya-error", text: "Аня не на связи: " + e.message });
       return;
     }
-    const signature = JSON.stringify(data);  // ничего не поменялось — не сбивать прокрутку
+    const signature = JSON.stringify(data);  // skip re-render when state unchanged to preserve scroll
     if (!force && signature === this.signature) return;
     this.signature = signature;
     this.root.empty();
@@ -116,7 +116,7 @@ class Sections {
   }
 
   box(title, icon, folded = false) {
-    // folded — второстепенный блок: заголовок виден, содержимое по клику
+    // folded: collapsible secondary block
     const box = el(this.root, folded ? "details" : "div", { cls: "anya-box" });
     if (folded && this.open.has("box:" + title)) box.open = true;
     if (folded) box.addEventListener("toggle", () => {
@@ -436,7 +436,7 @@ class ChatView extends ItemView {
       waiting.setText("Не вышло: " + e.message);
     } finally {
       this.busy = false;
-      this.signature = null;  // своё сообщение уже нарисовано — показать историю целиком
+      this.signature = null;  // user message rendered optimistically; force full history sync
       await this.renderHistory();
     }
   }
@@ -474,7 +474,7 @@ module.exports = class AnyaPlugin extends Plugin {
       },
     });
 
-    // ```anya goals tasks``` — живая панель прямо в заметке
+    // ```anya goals tasks``` live note block
     this.registerMarkdownCodeBlockProcessor("anya", async (source, root) => {
       const known = [...SECTIONS, "tasks"];
       const names = source.split(/\s+/).map((s) => s.trim()).filter((s) => known.includes(s));

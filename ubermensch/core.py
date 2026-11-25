@@ -1,13 +1,13 @@
 """Ядро: единая точка для всех клиентов (Telegram, приложение на ПК, позже телефон).
 
 Клиенты вызывают методы Core, а об изменениях узнают из шины событий:
-  {"type": "thinking", "on": bool}   — мозг думает (маскот показывает это)
-  {"type": "changed"}                — данные изменились, перечитать состояние
-  {"type": "reminder", "text": str}  — сработало напоминание
-  {"type": "celebrate"}              — выполнена задача
-  {"type": "notify", "text": str}    — сообщение от системы (например, досье готово)
-  {"type": "approval", "id", "title", "details"} — действие ждёт «да/нет» пользователя
-  {"type": "say", "text": str}       — реплика маскота (например, комментарий к экрану)
+  {"type": "thinking", "on": bool}  ; мозг думает (оверлей показывает это)
+  {"type": "changed"}               ; данные изменились, перечитать состояние
+  {"type": "reminder", "text": str} ; сработало напоминание
+  {"type": "celebrate"}             ; выполнена задача
+  {"type": "notify", "text": str}   ; сообщение от системы (например, досье готово)
+  {"type": "approval", "id", "title", "details"}; действие ждёт подтверждение пользователя
+  {"type": "say", "text": str}      ; реплика оверлея (например, комментарий к экрану)
 """
 from __future__ import annotations
 
@@ -42,9 +42,9 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-WORLD_EVERY = 3 * 3600  # погода, курсы и новости — раз в 3 часа
+WORLD_EVERY = 3 * 3600  # погода, курсы и новости: раз в 3 часа
 
-APPROVAL_TIMEOUT = 10 * 60  # секунд ждём «да/нет», потом считаем отказом
+APPROVAL_TIMEOUT = 10 * 60  # секунд ждём подтверждение, потом считаем отказом
 
 
 class Bus:
@@ -85,7 +85,7 @@ class Core:
         self.telegrams = {key: TelegramAccount(profile) for key, profile in PROFILES.items()}
         self.telegram = self.telegrams["personal"]
         self._brain_calls = 0  # счётчик, а не флаг: вызовы могут стоять в очереди друг за другом
-        self._approvals: dict[int, asyncio.Future] = {}  # действия, ждущие «да/нет»
+        self._approvals: dict[int, asyncio.Future] = {}  # действия, ждущие подтверждение
         self.login: dict | None = None  # идёт вход в Telegram: {"account", "step"}
         self.tool_registry = load_registry()
         self.assistant.jobs = self.jobs
@@ -137,19 +137,19 @@ class Core:
         with self._brain_busy():
             outcome = await self.assistant.handle(text, channel=channel, from_user=from_user)
             if outcome.emotion and outcome.emotion != "neutral":
-                # до «changed»: маскот начнёт печатать ответ уже с этим выражением
+                # до «changed»: оверлей начнёт печатать ответ уже с этим выражением
                 self.bus.publish({"type": "emotion", "emotion": outcome.emotion})
         return outcome
 
     def notify(self, text: str) -> None:
-        """Сообщение от системы: появится у маскота и придёт в Telegram."""
+        """Сообщение от системы: появится у оверлея и придёт в Telegram."""
         with self.store.transaction():
             message_id = self.store.add_message("assistant", text, "system")
             self.store.enqueue_delivery(f'message:{message_id}', {'type': 'notify', 'text': text})
         self.bus.publish({"type": "changed"})
 
     def say(self, text: str) -> None:
-        """Реплика маскота на ПК (пузырь), без Telegram и истории чата."""
+        """Реплика оверлея на ПК (пузырь), без Telegram и истории чата."""
         self.bus.publish({"type": "say", "text": text})
 
     def needs_onboarding(self) -> bool:
@@ -159,7 +159,7 @@ class Core:
         return await self.chat(ONBOARDING_EVENT, channel, from_user=False)
 
     def decide(self, action_id: int, approve: bool) -> str | None:
-        """None — решение по действию уже принято раньше (например, в другом клиенте)."""
+        """None: решение по действию уже принято раньше (например, в другом клиенте)."""
         row = self.store.get_action(action_id)
         if row and row['call_id']:
             return self.execution.decide(action_id, approve)
@@ -169,7 +169,7 @@ class Core:
         if not self.store.decide_action(action_id, "approved" if approve else "rejected"):
             return None
         if (waiting := self._approvals.get(action_id)) is not None:
-            # действие ждёт внутри инструмента — отдаём решение, выполнит оно само
+            # действие ждёт внутри инструмента: отдаём решение, выполнит оно само
             if not waiting.done():
                 waiting.set_result(approve)
             self.store.finish_action(action_id, "approved" if approve else "rejected", "")
@@ -180,7 +180,7 @@ class Core:
         return result
 
     async def request_approval(self, title: str, details: str = "") -> bool:
-        """Спрашивает пользователя (Telegram + приложение) и ждёт ответа. Молчание — это «нет»."""
+        """Спрашивает пользователя (Telegram + приложение) и ждёт ответа. Молчание: это «нет»."""
         if (context := current.get()) and context.call_id:
             return await self.execution.approval(title, details)
         action_id = self.store.add_action("approval", title, {"details": details}, "external")
@@ -198,9 +198,9 @@ class Core:
         finally:
             self._approvals.pop(action_id, None)
 
-    # --- действия от имени пользователя (всё внешнее — только после «да») ---
+    # --- external side effects (require user confirmation) ---
 
-    # --- вход в Telegram: Аня входит сама, номер, код и пароль присылают в бота ---
+    # --- вход в Telegram: ассистент входит сама, номер, код и пароль присылают в бота ---
 
     async def start_tg_login(self, account: str = "personal") -> str:
         """Начать вход (сессии нет или она слетела). Возвращает, что сказать пользователю."""
@@ -350,17 +350,17 @@ class Core:
         }
 
     async def import_pending(self, *, retry_failed: bool = False) -> list[str]:
-        """Импортирует новые файлы из папки импорта. Каждый файл — один раз (по хэшу)."""
+        """Импортирует новые файлы из папки импорта. Каждый файл: один раз (по хэшу)."""
         results = []
         # архивы Google Takeout разбирает расследование (collectors/takeout.py), не этот импорт
         for path in sorted(p for p in self.import_dir.iterdir()
                            if p.is_file() and p.suffix.lower() != ".zip"):
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             status = self.store.import_status(digest)
-            # пропущенное (вдруг формат стал поддерживаться) и упавшее (лимит прошёл) — пробуем снова
+            # пропущенное (вдруг формат стал поддерживаться) и упавшее (лимит прошёл): пробуем снова
             if status == "done":
                 continue
-            if ingest.is_aistudio(path):  # чаты с ИИ — глубоко: сведения живут и в ответах ИИ
+            if ingest.is_aistudio(path):  # чаты с ИИ: глубоко: сведения живут и в ответах ИИ
                 results.append(await self.deep_import(path, digest, only_new=True))
                 continue
             text = ingest.read_document(path)
@@ -383,7 +383,7 @@ class Core:
         return results
 
     def metrics(self) -> dict:
-        """Окно метрик: как далеко Аня изучила пользователя и что пользователь делает."""
+        """Окно метрик: как далеко ассистент изучила пользователя и что пользователь делает."""
         def mtime(name: str) -> str | None:
             path = self.assistant.workspace / name
             return (datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="minutes")
@@ -402,10 +402,10 @@ class Core:
     async def deep_import(self, path: Path, digest: str | None = None, *,
                           only_new: bool = False) -> str:
         """Чат с ИИ целиком: без повторов, только новое относительно памяти; сжатый конспект
-        новых сведений — в Obsidian (Конспекты). Можно запускать повторно на уже импортированном.
-        only_new — новая версия живого чата (он продолжает писать в Gemini): разбираются только
+        новых сведений: в Obsidian (Конспекты). Можно запускать повторно на уже импортированном.
+        only_new: новая версия живого чата (он продолжает писать в Gemini): разбираются только
         абзацы, которых не было в прошлых разборах, а не весь чат заново. До 26.10 чат
-        «мастер-контекст» разбирался целиком при каждом изменении — по 11 больших запросов
+        «мастер-контекст» разбирался целиком при каждом изменении: по 11 больших запросов
         подписки, 4 раза за день."""
         digest = digest or hashlib.sha256(path.read_bytes()).hexdigest()
         paragraphs, dropped = ingest.dedup(ingest.aistudio_full(path))
@@ -456,7 +456,7 @@ class Core:
             await asyncio.sleep(300)
 
     async def world_loop(self) -> None:
-        """Окно в мир: погода, курсы и новости для контекста Ани — раз в WORLD_EVERY."""
+        """Окно в мир: погода, курсы и новости для контекста ассистента; раз в WORLD_EVERY."""
         while True:
             try:
                 await asyncio.to_thread(world.refresh, self.assistant.workspace / "world.json")

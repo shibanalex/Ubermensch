@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 SAMPLE_SECONDS = 5
 IDLE_SECONDS = 120
 MIN_SESSION_SECONDS = 10
-SLEEP_GAP_SECONDS = 60  # замеры раз в 5 с; пропуск больше минуты — компьютер спал
+SLEEP_GAP_SECONDS = 60  # замеры раз в 5 с; пропуск больше минуты: компьютер спал
 
 
 class ActivityTracker:
@@ -44,7 +44,7 @@ class ActivityTracker:
         while True:
             now = datetime.now()
             if (now - last_sample).total_seconds() > SLEEP_GAP_SECONDS:
-                # компьютер спал: сессия кончилась на последнем замере, сон — не работа
+                # компьютер спал: сессия кончилась на последнем замере, сон; не работа
                 self._close_session(last_sample)
             last_sample = now
             active = None

@@ -16,7 +16,7 @@ class RecallTests(unittest.TestCase):
 
     def test_word_forms_share_a_stem(self):
         self.assertEqual(recall.stems("что там с общежитием"), ["общежи"])
-        # совпадение — по началу слова, как в поиске
+        # совпадение: по началу слова, как в поиске
         self.assertEqual(recall.overlap(recall.stems("общежитием"), "место в общежитии"), 1)
         self.assertEqual(recall.overlap(recall.stems("откликаюсь"), "откладывает отклики"), 1)
         self.assertEqual(recall.stems("и в 2026 он"), [])

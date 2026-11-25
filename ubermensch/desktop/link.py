@@ -1,7 +1,7 @@
-"""Связь с маскотом (anya.exe): виджет задач и другие программы просят его что-то сделать.
+"""Связь с оверлеем (desktop HUD): виджет задач и другие программы просят его что-то сделать.
 
 Команды идут строкой по локальному каналу Qt (сокет в каталоге сеанса, только этот
-пользователь этого компьютера). Канал маскота заодно не даёт запустить второго маскота.
+пользователь этого компьютера). Канал оверлея заодно не даёт запустить второго оверлея.
 Из командной строки (так делает виджет Plasma): python -m ubermensch.desktop.link plan
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ from PySide6.QtCore import QObject
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 MASCOT = "ubermensch-mascot"
-# показать маскота, спросить, история, план дня, метрики
+# показать оверлея, спросить, история, план дня, метрики
 COMMANDS = ("show", "prompt", "history", "plan", "metrics")
 ALREADY_RUNNING = 3  # код выхода второго экземпляра: присмотр не считает его падением
 
@@ -47,7 +47,7 @@ def serve(key: str, parent: QObject, handler: Callable[[str], None] | None = Non
 
 
 def send(command: str, key: str = MASCOT) -> bool:
-    """Отправить команду; False — адресат не запущен (присмотр его скоро поднимет)."""
+    """Отправить команду; False: адресат не запущен (присмотр его скоро поднимет)."""
     socket = QLocalSocket()
     socket.connectToServer(key)
     if not socket.waitForConnected(500):

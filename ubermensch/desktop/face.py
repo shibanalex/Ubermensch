@@ -1,11 +1,11 @@
-"""Мордочка Ани по эскизу пользователя: брови-дуги, большие аниме-глаза (веко с ресничкой,
+"""Виджет оверлея по эскизу пользователя: брови-дуги, большие аниме-глаза (веко с ресничкой,
 радужка со штрихами и бликами), нос-чёрточка, рот «ω». Зелёные линии на чёрном.
 
 Манга-приёмы для эмоций: глаза-звёздочки, слёзы, плоский взгляд, подмигивание; брови
-«злые» и «обеспокоенные»; эффекты вокруг лица — капля пота, знак злости, искры, тучка грусти.
+«злые» и «обеспокоенные»; эффекты вокруг лица: капля пота, знак злости, искры, тучка грусти.
 
-Эмоция — это состояние лица (FaceState): какие глаза, куда смотрят, какой рот, брови, румянец.
-Рисуется векторно, поэтому одинаково чётко и в окне маскота, и в значке трея.
+Эмоция: это состояние лица (FaceState): какие глаза, куда смотрят, какой рот, брови, румянец.
+Рисуется векторно, поэтому одинаково чётко и в окне оверлея, и в значке трея.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 BLUSH = QColor(236, 140, 170, 170)
 WATER = QColor(136, 192, 208, 220)  # слёзы и капля пота
 ANGER = QColor(191, 97, 106, 235)  # знак злости
-PUPIL = QColor("#2e3440")  # детали глаз — цветом фона окна
+PUPIL = QColor("#2e3440")  # детали глаз: цветом фона окна
 EYE_DX = 40  # глаза от центра
 EYE_W, EYE_H = 23, 22  # полуширина глаза и высота века над центром
 
@@ -33,7 +33,7 @@ class FaceState:
     brow_angle: float = 0.0  # + внутренние концы вниз (злится), − вверх (переживает)
     wink: bool = False  # правый глаз подмигивает «^»
     blush: bool = False
-    t: int = 0  # время, мс — для вращения «@ @»
+    t: int = 0  # время, мс: для вращения «@ @»
 
 
 def _pen(color: QColor, width: float, alpha: int = 255) -> QPen:
@@ -95,7 +95,7 @@ def _open_eye(p: QPainter, ex: float, ey: float, m: int, s: FaceState, color: QC
         _star(p, ix - m * 3.5, iy - ry * 0.4, 6.5 * twinkle, PUPIL)
         _star(p, ix + m * 3.5, iy + ry * 0.3, 3.2 * twinkle, PUPIL)
     else:
-        p.setPen(_pen(PUPIL, 2.6))  # блики — вертикальные чёрточки
+        p.setPen(_pen(PUPIL, 2.6))  # блики: вертикальные чёрточки
         p.drawLine(QPointF(ix - m * 3.5, iy - ry * 0.65), QPointF(ix - m * 3.5, iy - ry * 0.15))
         p.drawLine(QPointF(ix - m * 0.5, iy - ry * 0.55), QPointF(ix - m * 0.5, iy - ry * 0.35))
         if teary:  # влажный блеск: ещё два блика
@@ -146,7 +146,7 @@ def _eye(p: QPainter, ex: float, ey: float, m: int, s: FaceState, color: QColor)
     elif s.eyes in ("open", "half", "wide", "sparkle", "teary"):
         _open_eye(p, ex, ey, m, s, color, half=s.eyes == "half", wide=s.eyes == "wide",
                   sparkle=s.eyes == "sparkle", teary=s.eyes == "teary")
-    elif s.eyes == "flat":  # «¬ ¬» — плоский взгляд: веко прямой чертой, под ним край радужки
+    elif s.eyes == "flat":  # «¬ ¬»: плоский взгляд: веко прямой чертой, под ним край радужки
         p.drawLine(QPointF(inner, ey - 1), QPointF(outer + m * 4, ey - 3))
         p.setPen(_pen(color, 2.0))
         iris = QPainterPath(QPointF(ex - 8 + s.look.x(), ey + 1))
@@ -164,7 +164,7 @@ def _eye(p: QPainter, ex: float, ey: float, m: int, s: FaceState, color: QColor)
     elif s.eyes == "x":
         for a, b in (((-9, -9), (9, 9)), ((-9, 9), (9, -9))):
             p.drawLine(QPointF(ex + a[0], ey + a[1]), QPointF(ex + b[0], ey + b[1]))
-    elif s.eyes == "chevron":  # «> <» — зажмурилась
+    elif s.eyes == "chevron":  # «> <»: зажмурилась
         tip = ex - m * 6  # остриё смотрит к носу: «> <»
         p.drawPolyline([QPointF(tip + m * 13, ey - 10), QPointF(tip, ey), QPointF(tip + m * 13, ey + 10)])
     elif s.eyes == "dizzy":  # спираль «@»
@@ -180,12 +180,12 @@ def _eye(p: QPainter, ex: float, ey: float, m: int, s: FaceState, color: QColor)
 
 
 def _brow(p: QPainter, ex: float, by: float, m: int, color: QColor, angle: float = 0.0) -> None:
-    """angle > 0 — внутренний конец (у носа) ниже: злится; < 0 — выше: переживает."""
+    """angle > 0: внутренний конец (у носа) ниже: злится; < 0; выше: переживает."""
     path = QPainterPath(QPointF(ex - m * 19, by + 4 + angle))
     path.quadTo(QPointF(ex + m * 2, by - 7), QPointF(ex + m * 21, by - 1 - angle * 0.5))
     p.setPen(_pen(color, 2.8))
     p.drawPath(path)
-    p.setPen(_pen(color, 1.4, 160))  # второй штрих — как набросок от руки
+    p.setPen(_pen(color, 1.4, 160))  # второй штрих: как набросок от руки
     thin = QPainterPath(QPointF(ex - m * 14, by + 1 + angle * 0.8))
     thin.quadTo(QPointF(ex + m * 3, by - 8), QPointF(ex + m * 17, by - 4 - angle * 0.4))
     p.drawPath(thin)
@@ -194,7 +194,7 @@ def _brow(p: QPainter, ex: float, by: float, m: int, color: QColor, angle: float
 def _mouth(p: QPainter, cx: float, y: float, kind: str, color: QColor) -> None:
     p.setPen(_pen(color, 2.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
-    if kind == "w":  # «ω» — как на эскизе
+    if kind == "w":  # «ω»: как на эскизе
         path = QPainterPath(QPointF(cx - 24, y - 4))
         path.cubicTo(QPointF(cx - 20, y + 5), QPointF(cx - 6, y + 5), QPointF(cx, y - 1))
         path.cubicTo(QPointF(cx + 6, y + 5), QPointF(cx + 20, y + 5), QPointF(cx + 24, y - 4))
@@ -208,7 +208,7 @@ def _mouth(p: QPainter, cx: float, y: float, kind: str, color: QColor) -> None:
         path.quadTo(QPointF(cx, y - 4), QPointF(cx + 12, y - 2))
         path.quadTo(QPointF(cx, y + 12), QPointF(cx - 12, y - 2))
         p.drawPath(path)
-    elif kind == "wave":  # «~» — скучает
+    elif kind == "wave":  # «~»: скучает
         path = QPainterPath(QPointF(cx - 16, y))
         path.cubicTo(QPointF(cx - 8, y - 6), QPointF(cx, y + 6), QPointF(cx + 8, y))
         path.quadTo(QPointF(cx + 12, y - 3), QPointF(cx + 16, y))
@@ -237,7 +237,7 @@ def _mouth(p: QPainter, cx: float, y: float, kind: str, color: QColor) -> None:
         p.setBrush(QBrush(QColor(BLUSH.red(), BLUSH.green(), BLUSH.blue(), 120)))
         p.setPen(_pen(color, 2.0))
         p.drawPath(tongue)
-    elif kind == "flat":  # «—»
+    elif kind == "flat":  # «-»
         p.drawLine(QPointF(cx - 10, y + 1), QPointF(cx + 10, y))
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Автозапуск Übermensch при входе в KDE Plasma — сервисы systemd пользователя:
-#   ubermensch          — ядро (API, Telegram, сбор и разбор, сенсоры сеанса)
-#   ubermensch-desktop  — маскот и лист задач
+# Autostart Übermensch on KDE Plasma login via user systemd units:
+#   ubermensch          : core daemon (API, Telegram, ingestion, session sensors)
+#   ubermensch-desktop  : desktop overlay and task console
 # Упавший сервис перезапускается. Логи: journalctl --user -u ubermensch -f
 # Удалить: systemctl --user disable --now ubermensch ubermensch-desktop
 set -euo pipefail
@@ -34,7 +34,7 @@ After=graphical-session.target ubermensch.service
 [Service]
 WorkingDirectory=$project
 ExecStart=$project/.venv/bin/python -m ubermensch.desktop
-# «Выход» в меню маскота — код 0: не поднимать заново до следующего входа
+# Tray Exit exits with code 0; do not auto-restart until next login
 Restart=on-failure
 RestartSec=5
 
@@ -42,7 +42,7 @@ RestartSec=5
 WantedBy=graphical-session.target
 UNIT
 
-# Ядро — сервер: от сети закрытая крышка и простой не усыпляют ноутбук (от батареи — как обычно)
+# Prevent suspend on AC power while core daemon runs (normal sleep on battery)
 kwriteconfig6 --file powerdevilrc --group AC --group SuspendAndShutdown --key LidAction 0
 kwriteconfig6 --file powerdevilrc --group AC --group SuspendAndShutdown --key AutoSuspendAction 0
 systemctl --user restart plasma-powerdevil.service || true  # reparseConfiguration файл не перечитывает

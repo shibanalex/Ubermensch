@@ -1,6 +1,6 @@
 """Разговоры пользователя с ИИ: история Claude Code (на этом компьютере и в архивах).
 
-Берём только реплики самого пользователя — это его собственные слова о себе, делах и планах.
+Берём только реплики самого пользователя: это его собственные слова о себе, делах и планах.
 Чаты AI Studio приходят отдельно, через папку импорта.
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ def _user_texts(lines: Iterable[bytes], project: str) -> Iterator[dict]:
         if entry.get("type") != "user" or entry.get("isMeta") or not entry.get("timestamp"):
             continue
         content = entry.get("message", {}).get("content")
-        if isinstance(content, list):  # результаты инструментов — не слова пользователя
+        if isinstance(content, list):  # результаты инструментов: не слова пользователя
             content = "\n".join(b.get("text", "") for b in content
                                 if isinstance(b, dict) and b.get("type") == "text")
         text = NOISE.sub("", content or "").strip()

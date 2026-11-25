@@ -1,5 +1,5 @@
 // Скрипт KWin: сообщает ядру Ани об активном окне.
-// На Wayland программы не видят чужих окон — их видит только композитор, поэтому
+// On Wayland windows cannot inspect peer surfaces directly; query active window via KWin
 // скрипт живёт внутри KWin и звонит ядру по D-Bus. Загружает его ядро (system/session.py).
 
 const SERVICE = "org.ubermensch.Anya";

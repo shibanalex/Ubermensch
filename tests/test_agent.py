@@ -1,4 +1,4 @@
-"""Самостоятельность: расписание, heartbeat, поручения, рефлексия и память Ани."""
+"""Самостоятельность: расписание, heartbeat, поручения, рефлексия и память ассистента."""
 from __future__ import annotations
 
 import asyncio
@@ -72,7 +72,7 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.autonomy.heartbeat(), "без перемен")  # Claude не вызывался
         self.assertEqual(len(self.assistant.calls), 1)
         self.assistant.answers = [{"decision": "message", "reply": "Ещё одно", "journal": ""}]
-        await self.autonomy.heartbeat(force=True)  # только что писала — 90 минут молчит
+        await self.autonomy.heartbeat(force=True)  # recently messaged: suppress duplicate notification within 90m
         self.assertEqual(self.notes, ["Пора на пару"])
         self.assertIn("писать сейчас нельзя", self.assistant.calls[-1])
         self.assertIn("напомнила", agent.journal_path(date.today()).read_text(encoding="utf-8"))

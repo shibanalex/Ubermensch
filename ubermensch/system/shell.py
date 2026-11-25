@@ -11,7 +11,7 @@ from pathlib import Path
 
 OUTPUT_CHARS = 8000
 
-# Команды, которые что-то меняют. Остальные (ls, cat, grep, ps, df, journalctl …) — только чтение.
+# Команды, которые что-то меняют. Остальные (ls, cat, grep, ps, df, journalctl …): только чтение.
 MUTATING = re.compile(
     r"(?i)(^|[;&|(`]|\$\()\s*(sudo\s+)?(rm|rmdir|mv|cp|mkdir|touch|ln|chmod|chown|chgrp|dd|"
     r"truncate|shred|kill|pkill|killall|xkill|systemctl|loginctl|apt|apt-get|dpkg|snap|flatpak|"
@@ -20,7 +20,7 @@ MUTATING = re.compile(
     r"7z|gio|kioclient6|trash|reboot|poweroff|shutdown|halt)\b"
     r"|\bsed\s+(-\w*\s+)*-i|>|\|\s*(sh|bash|zsh|python3?)\b")
 
-# Команды, которые могут сломать систему, данные или доступ: их Аня выполняет только с «да».
+# Команды, которые могут сломать систему, данные или доступ: их ассистент выполняет только с подтверждением.
 DANGEROUS = re.compile(
     r"(?i)\b(sudo|su|pkexec|doas|mkfs(\.\w+)?|fdisk|sfdisk|gdisk|parted|wipefs|cryptsetup|"
     r"dd|shred|shutdown|reboot|poweroff|halt|useradd|userdel|usermod|passwd|chpasswd|visudo|"
@@ -39,19 +39,19 @@ HARMLESS_REDIRECTS = re.compile(r"\d*>&\d+|&?\d*>>?\s*/dev/null\b")  # 2>/dev/nu
 
 
 def is_read_only(command: str) -> bool:
-    """Ничего не меняет. Перенаправление в /dev/null и между потоками — не запись."""
+    """Ничего не меняет. Перенаправление в /dev/null и между потоками: не запись."""
     return not MUTATING.search(HARMLESS_REDIRECTS.sub(" ", command))
 
 
 def is_dangerous(command: str) -> bool:
-    """Опасно: ломает систему или доступ — или меняет что-то в системных папках, памяти и
-    коде Ани. Остальное (в том числе меняющее) Аня делает сама."""
+    """Опасно: ломает систему или доступ; или меняет что-то в системных папках, памяти и
+    коде системы. Остальное (в том числе меняющее) ассистент делает сама."""
     return bool(DANGEROUS.search(command)) or (
         not is_read_only(command) and bool(PROTECTED_WORDS.search(command)))
 
 
 # Управление рабочим столом и чтение состояния: на компьютере пользователя без подтверждения.
-# Только сами эти программы — без перенаправлений, подстановок и цепочек с чем-то другим.
+# Только сами эти программы: без перенаправлений, подстановок и цепочек с чем-то другим.
 SAFE_HOST_COMMANDS = frozenset({
     "kwriteconfig6", "kreadconfig6", "qdbus6", "qdbus", "busctl", "wpctl", "pactl", "playerctl",
     "brightnessctl", "notify-send", "plasma-apply-colorscheme", "plasma-apply-desktoptheme",
@@ -65,7 +65,7 @@ SAFE_HOST_COMMANDS = frozenset({
 # Секреты, которые не должны попасть в вывод без вопроса.
 SECRETS = re.compile(r"(?i)id_(rsa|ed25519|ecdsa)|\.session\b|secrets?\b|\.password-store|keyring"
                      r"|wallet|Cookies|Login Data|\.netrc|credentials|token")
-# systemctl/loginctl/nmcli/bluetoothctl меняют систему только этими подкомандами — их спрашиваем.
+# systemctl/loginctl/nmcli/bluetoothctl меняют систему только этими подкомандами: их спрашиваем.
 RISKY_SUBCOMMANDS = re.compile(
     r"(?i)\b(systemctl|loginctl)(\s+-\S+)*\s+(?!(status|show|is-active|is-enabled|is-failed|"
     r"list-units|list-timers|list-sessions|show-session|cat)\b)[a-z]|\bnmcli\s+\S+\s+(delete|down|modify)\b"
@@ -74,9 +74,9 @@ RISKY_SUBCOMMANDS = re.compile(
 
 
 def runs_on_host_freely(command: str) -> bool:
-    """Безопасная системная команда: каждая часть цепочки — из SAFE_HOST_COMMANDS, без записи
-    в файлы, подстановок, sudo и упоминаний секретов, системных папок и кода Ани."""
-    # глушить ошибки можно: «2>/dev/null» ничего не пишет; любой другой «>» — запись в файл
+    """Безопасная системная команда: каждая часть цепочки; из SAFE_HOST_COMMANDS, без записи
+    в файлы, подстановок, sudo и упоминаний секретов, системных папок и кода ассистента."""
+    # глушить ошибки можно: «2>/dev/null» ничего не пишет; любой другой «>»; запись в файл
     command = re.sub(r"\s2>\s*/dev/null\b", " ", command)
     if re.search(r"[`<>]|\$\(|\$\{|\|\||(?<!&)&(?!&)|&&\s*$", command) or "\n" in command:
         return False
@@ -97,8 +97,8 @@ SECRET_DIRS = {"secrets", ".ssh", ".gnupg"}
 
 
 def _secret_masks(project: Path, depth: int = 4) -> list[str]:
-    """bwrap-аргументы, закрывающие секреты внутри проекта: .env*, сессии, ключи — пустышками,
-    папки secrets/.ssh/.gnupg — пустыми tmpfs. .env.example остаётся видимым."""
+    """bwrap-аргументы, закрывающие секреты внутри проекта: .env*, сессии, ключи; пустышками,
+    папки secrets/.ssh/.gnupg: пустыми tmpfs. .env.example остаётся видимым."""
     masks = []
     base = len(project.parts)
     for folder, dirs, names in os.walk(project):
@@ -170,7 +170,7 @@ def run(command: str, timeout: int = 120, *, sandbox: bool = False) -> str:
 
 async def run_async(command: str, timeout: int = 120, *, sandbox: bool = False,
                     project: Path | None = None) -> str:
-    """project — папка проекта: подключается в песочницу только для чтения (sandbox обязателен)."""
+    """project: папка проекта: подключается в песочницу только для чтения (sandbox обязателен)."""
     if project is not None and not sandbox:
         raise ValueError("Проект подключается только в песочнице")
     args, folder, environment = _command(command, sandbox, project)
@@ -242,5 +242,5 @@ def open_target(target: str) -> None:
 
 
 def to_recycle_bin(path: str) -> None:
-    """Удаление в Корзину — его можно отменить."""
+    """Удаление в Корзину: его можно отменить."""
     subprocess.run(["gio", "trash", "--", path], check=True, capture_output=True, timeout=60)

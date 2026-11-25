@@ -1,6 +1,6 @@
 """Первый вход в Telegram: python -m ubermensch.collectors.telegram_login [work]
 
-Telegram пришлёт код в приложение; если включён облачный пароль — спросит и его.
+Telegram пришлёт код в приложение; если включён облачный пароль: спросит и его.
 После входа ядро сразу начинает собирать переписки.
 """
 from __future__ import annotations

@@ -21,7 +21,7 @@ class TierTests(unittest.TestCase):
         self.assertEqual(models.cli("goal_step"), (None, None))  # основная (opus) на подписке
         self.assertEqual(models.cli("heartbeat")[0], "haiku")
         self.assertEqual(models.cli("analysis")[0], "sonnet")
-        self.assertEqual(models.api_role("goal_step"), "chat")  # запасной — Sonnet, а не Haiku
+        self.assertEqual(models.api_role("goal_step"), "chat")  # запасной: Sonnet, а не Haiku
         self.assertEqual(models.api_role("heartbeat"), "background")
         self.assertEqual(models.tier("неизвестное"), models.STRONG)
 

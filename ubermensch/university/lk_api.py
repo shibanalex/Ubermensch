@@ -1,11 +1,11 @@
-"""Новый личный кабинет (React) — через его JSON API, без браузера.
+"""Новый личный кабинет (React): через его JSON API, без браузера.
 
 Приложение e.mospolytech.ru ходит в old-e.mospolytech.ru/lk_api.php: вход POST ulogin/upassword →
-токен, дальше GET ?<запрос>&token=…. Здесь — только чтение: профиль, уведомления, заявления
+токен, дальше GET ?<запрос>&token=…. Здесь: только чтение: профиль, уведомления, заявления
 (со статусами и ответами), диалоги и договоры. Запросы, которые что-то меняют (sign*, set*,
 clear*, create*, save*, newMessage, changeADPass, mailCode), не вызываются.
 
-Кабинет отдаётся «страницами» в формате lk.crawl ({адрес: {title, text, hash}}): адреса —
+Кабинет отдаётся «страницами» в формате lk.crawl ({адрес: {title, text, hash}}): адреса -
 PAGE_PREFIX/<раздел>/<id>, так работают снимок, поиск lk_find и события об изменениях.
 """
 from __future__ import annotations
@@ -69,7 +69,7 @@ def _get(query: str, token: str):
 
 
 def session_token() -> str:
-    """Сохранённый токен, если он ещё действует; иначе — новый вход."""
+    """Сохранённый токен, если он ещё действует; иначе: новый вход."""
     if TOKEN.exists():
         token = TOKEN.read_text(encoding="utf-8").strip()
         user = _get("getUser", token)
@@ -90,7 +90,7 @@ def _page(title: str, lines: list[str]) -> dict:
 
 
 def _flatten(value, prefix="") -> list[str]:
-    """Договоры и прочие вложенные данные — строками «ключ: значение»."""
+    """Договоры и прочие вложенные данные: строками «ключ: значение»."""
     if isinstance(value, dict):
         return [line for k, v in value.items() for line in _flatten(v, f"{prefix}{k}.")]
     if isinstance(value, list):

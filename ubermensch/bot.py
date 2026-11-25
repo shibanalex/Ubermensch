@@ -72,14 +72,14 @@ def split(text: str, limit: int = TG_LIMIT) -> list[str]:
 
 
 async def send(bot: Bot, chat_id: int, text: str, **kwargs) -> None:
-    markup = kwargs.pop("reply_markup", None)  # кнопки — под последним куском, а не под каждым
+    markup = kwargs.pop("reply_markup", None)  # кнопки: под последним куском, а не под каждым
     chunks = split(text)
     for number, chunk in enumerate(chunks):
         extra = {**kwargs, "reply_markup": markup} if number == len(chunks) - 1 and markup else kwargs
         try:
             await bot.send_message(chat_id, to_html(chunk), **extra)
         except TelegramBadRequest:
-            # Модель выдала разметку, которую Telegram не принял — шлём как есть.
+            # Модель выдала разметку, которую Telegram не принял: шлём как есть.
             await bot.send_message(chat_id, chunk, parse_mode=None, **extra)
 
 
@@ -128,12 +128,12 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
     strangers = Router(name="strangers")
     started_at = time.monotonic()
     stats = {"calls": 0, "last_ms": 0}
-    # После 👎 его следующее сообщение (в пределах WHY_WINDOW) — пояснение «что не так»
+    # После 👎 его следующее сообщение (в пределах WHY_WINDOW): пояснение «что не так»
     why = {"message_id": None, "until": 0.0}
 
     async def deliver(bot: Bot, outcome: Outcome) -> None:
         # Как человек в мессенджере: несколько коротких сообщений с паузой «печатает…».
-        # Служебные строки («запомнил…») тут не нужны — они видны в консоли на ПК.
+        # Служебные строки («запомнил…») тут не нужны: они видны в консоли на ПК.
         parts = [p.strip() for p in outcome.reply.split("\n\n") if p.strip()] or ["…"]
         for number, part in enumerate(parts):
             if number:
@@ -150,7 +150,7 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
             )
 
     async def think(bot: Bot, text: str | None) -> None:
-        """text=None — знакомство при первом запуске."""
+        """text=None: знакомство при первом запуске."""
         started = time.monotonic()
         try:
             async with ChatActionSender.typing(bot=bot, chat_id=settings.tg_chat_id):
@@ -370,7 +370,7 @@ def create_dispatcher(settings: Settings, core: Core) -> Dispatcher:
 
 
 async def forward_events(bot: Bot, core: Core, chat_id: int) -> None:
-    """Напоминания, уведомления и запросы подтверждения из ядра — в Telegram, чтобы дойти до телефона."""
+    """Напоминания, уведомления и запросы подтверждения из ядра: в Telegram, чтобы дойти до телефона."""
     queue = core.bus.subscribe()
     try:
         while True:
@@ -400,7 +400,7 @@ async def forward_events(bot: Bot, core: Core, chat_id: int) -> None:
                 if event["type"] in ("reminder", "notify"):
                     prefix = "⏰ " if event["type"] == "reminder" else ""
                     await send(bot, chat_id, f"{prefix}{event['text']}")
-                elif event["type"] == "approval":  # действие ждёт «да/нет»
+                elif event["type"] == "approval":  # действие ждёт подтверждение
                     details = event["details"][:3000]
                     await bot.send_message(
                         chat_id, f"🔐 <b>{html.escape(event['title'])}</b>"
@@ -416,7 +416,7 @@ COMMANDS_RETRY = 5  # с, первая пауза перед повтором м
 
 
 async def _set_commands(bot: Bot) -> None:
-    """Меню команд — оформление. Без сети при старте (например, сразу после сна) это не повод
+    """Меню команд: оформление. Без сети при старте (например, сразу после сна) это не повод
     падать всему ядру: повторяем с растущей паузой, опрос Telegram тем временем ждёт сеть сам."""
     delay = COMMANDS_RETRY
     while True:

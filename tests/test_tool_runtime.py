@@ -234,7 +234,7 @@ class RouterTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_background_work_is_not_cut_by_chat_watchdog(self):
-        # 25.10: шаг по цели шёл на подписке 4 мин и был отдан Haiku сторожем чата
+        # шаг по цели шёл на подписке 4 мин и был отдан Haiku сторожем чата
         assistant = Assistant.__new__(Assistant)
         assistant.router = SimpleNamespace(ask=AsyncMock(return_value=(Answer({}, 1), "claude")))
         assistant.brain, assistant.agent_prompt_file, assistant.mcp_config = object(), Path("p"), self.config

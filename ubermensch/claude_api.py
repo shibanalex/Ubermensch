@@ -1,13 +1,13 @@
 """Claude API (платно, по токенам, CLAUDE_AI_API_KEY): дешёвый фон и запасной ответ в чате.
 
-Подписка Claude Code — главный мозг; её лимит общий для чата, разбора и профиля. Сюда уходит
+Подписка Claude Code: главный мозг; её лимит общий для чата, разбора и профиля. Сюда уходит
 то, что может идти мимо подписки:
-- background — heartbeat и мелкие фоновые решения: Claude Haiku 5.5, effort low;
-- chat — запасной ответ, когда подписка в лимите: Claude Sonnet 5.5, effort medium
-  (с серверным запасным вариантом при отказе классификатора — fallbacks="default").
+- background: heartbeat и мелкие фоновые решения: Claude Haiku 5.5, effort low;
+- chat: запасной ответ, когда подписка в лимите: Claude Sonnet 5.5, effort medium
+  (с серверным запасным вариантом при отказе классификатора: fallbacks="default").
 Тот же интерфейс, что у Brain/OpenAIBrain: ask → Answer по JSON-схеме (output_config.format),
-инструменты — общие, через ToolGateway (те же подтверждения). Каждый вызов считается в долларах:
-на CLAUDE_API_WARN_USD — предупреждение, на CLAUDE_API_BUDGET_USD — стоп.
+инструменты: общие, через ToolGateway (те же подтверждения). Каждый вызов считается в долларах:
+на CLAUDE_API_WARN_USD: предупреждение, на CLAUDE_API_BUDGET_USD; стоп.
 """
 from __future__ import annotations
 
@@ -31,11 +31,11 @@ log = logging.getLogger(__name__)
 
 MODELS = {"background": "claude-haiku-5-5", "chat": "claude-sonnet-5-5"}
 EFFORT = {"background": "low", "chat": "medium"}
-# $ за 1 млн токенов: вход, выход, чтение кеша, запись кеша (запись — 1.25× входа)
+# $ за 1 млн токенов: вход, выход, чтение кеша, запись кеша (запись; 1.25× входа)
 PRICES = {"claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125),
           "claude-sonnet-5-5": (2.00, 10.00, 0.20, 2.50),
           "claude-opus-5-5": (4.00, 20.00, 0.20, 5.00)}
-UNKNOWN_PRICE = (4.00, 20.00, 0.40, 5.00)  # запасной ответ сервера — по худшей из цен
+UNKNOWN_PRICE = (4.00, 20.00, 0.40, 5.00)  # запасной ответ сервера: по худшей из цен
 MAX_TOKENS = 16000
 MAX_TOOL_ROUNDS = 12
 MAX_TOOL_RESULT = 60000
@@ -44,22 +44,22 @@ PAUSE_AFTER_FAILURE = timedelta(days=7)
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
-# Структурированный вывод API не принимает числовые и строковые границы в схеме — снимаем их
+# Структурированный вывод API не принимает числовые и строковые границы в схеме: снимаем их
 # (значения и так проверяются при применении ответа).
 UNSUPPORTED = {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
                "minLength", "maxLength"}
 
 
-# Свободных объектов API тоже не принимает: каждый объект — с явным списком полей. Такой в схеме
-# ответа один — params действия (напоминание: at, text); новое действие — добавить его поля сюда.
+# Свободных объектов API тоже не принимает: каждый объект; с явным списком полей. Такой в схеме
+# ответа один: params действия (напоминание: at, text); новое действие; добавить его поля сюда.
 ACTION_PARAMS = {"type": "object", "additionalProperties": False,
                  "properties": {"at": {"type": "string"}, "text": {"type": "string"}}}
 
 
 def api_schema(schema):
     """Копия JSON Schema в виде, который принимает output_config.format: без числовых и
-    строковых границ, у каждого объекта — additionalProperties: false, свободный объект
-    (params действия) — с перечисленными полями."""
+    строковых границ, у каждого объекта: additionalProperties: false, свободный объект
+    (params действия): с перечисленными полями."""
     if isinstance(schema, list):
         return [api_schema(v) for v in schema]
     if not isinstance(schema, dict):
@@ -108,7 +108,7 @@ class ClaudeApiBrain:
     async def ask(self, prompt: str, *, system_prompt_file: Path, schema: dict,
                   role: str = "background", tool_gateway: ToolGateway | None = None,
                   timeout: int | None = None, **_ignored) -> Answer:
-        """Как Brain.ask: ответ JSON по схеме. Инструменты — только явно выданные."""
+        """Как Brain.ask: ответ JSON по схеме. Инструменты; только явно выданные."""
         if role not in MODELS:
             raise ClaudeApiError(f"Claude API: неизвестная роль {role}")
         if not self.usable:
@@ -116,7 +116,7 @@ class ClaudeApiBrain:
         model = MODELS[role]
         request = {
             "model": model, "max_tokens": MAX_TOKENS,
-            # системный промпт стабилен — кешируется; инструменты идут раньше и кешируются с ним
+            # системный промпт стабилен: кешируется; инструменты идут раньше и кешируются с ним
             "system": [{"type": "text", "text": system_prompt_file.read_text(encoding="utf-8"),
                         "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": prompt}],
@@ -139,7 +139,7 @@ class ClaudeApiBrain:
 
     async def _create(self, request: dict):
         try:
-            if request["model"] == MODELS["chat"]:  # отказ классификатора — серверный запасной
+            if request["model"] == MODELS["chat"]:  # отказ классификатора: серверный запасной
                 return await self.client.beta.messages.create(
                     **request, betas=[FALLBACK_BETA], fallbacks="default")
             return await self.client.messages.create(**request)
@@ -186,7 +186,7 @@ class ClaudeApiBrain:
                 return answer
             if gateway is None or turn == MAX_TOOL_ROUNDS:
                 raise ClaudeApiError("Claude API: превышен лимит вызовов инструментов")
-            # весь ответ целиком (с блоками рассуждений) — так модель продолжит с того же места
+            # весь ответ целиком (с блоками рассуждений): так модель продолжит с того же места
             request["messages"].append({"role": "assistant", "content": response.content})
             results = []
             for call in calls:
@@ -197,7 +197,7 @@ class ClaudeApiBrain:
                     content = json.dumps(result, ensure_ascii=False)
                     if len(content) > MAX_TOOL_RESULT:
                         content = content[:MAX_TOOL_RESULT] + " …(обрезано)"
-                    if image := images.attached(result):  # снимок экрана — модели самой картинкой
+                    if image := images.attached(result):  # снимок экрана: модели самой картинкой
                         content = [{"type": "text", "text": content},
                                    {"type": "image", "source": {"type": "base64", "media_type": image[0],
                                                                 "data": image[1]}}]

@@ -15,7 +15,7 @@ from .planning import required
 REMOTIVE_URL = 'https://remotive.com/api/remote-jobs'
 ARBEITNOW_URL = 'https://www.arbeitnow.com/api/job-board-api'  # Германия и ЕС, бесплатное публичное API
 ARBEITNOW_PAGES = 5  # 300 вакансий на страницу; снимок раз в 6 часов
-# Визовая поддержка и релокация — по формулировкам в тексте: поля в выдаче нет
+# Визовая поддержка и релокация: по формулировкам в тексте: поля в выдаче нет
 VISA = re.compile(r'(?i)visa[\s-]*(sponsor|support|assistance)|sponsor(ship)?\s+(of\s+)?(your\s+|a\s+)?(work\s+)?visa'
                   r'|relocation\s+(package|support|assistance|bonus|budget)|blue\s*card|we\s+(help|support)\s+with\s+relocation'
                   r'|visumsunterstützung|umzugsunterstützung')
@@ -110,7 +110,7 @@ def remotive_item(raw):
 
 
 def visa_note(text):
-    """«найдено в тексте» или «не сказано» — не «нет»: отсутствие фразы не значит отказ."""
+    """«найдено в тексте» или «не сказано»: не «нет»: отсутствие фразы не значит отказ."""
     return 'найдено в тексте' if VISA.search(text or '') else 'не сказано'
 
 
@@ -128,7 +128,7 @@ def arbeitnow_item(raw):
 
 
 async def _snapshot(store, key, fetch):
-    """Общий снимок источника на все запросы — не чаще раза в 6 часов, и после перезапуска."""
+    """Общий снимок источника на все запросы: не чаще раза в 6 часов, и после перезапуска."""
     cache = store.planning_setting(key)
     now = datetime.now(timezone.utc)
     if not cache or now - datetime.fromisoformat(cache['at']) >= timedelta(hours=6):

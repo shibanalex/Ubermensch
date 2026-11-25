@@ -40,7 +40,7 @@ class ExperimentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(his["status"], "proposed")
         with self.assertRaises(ValueError):  # без согласия замеров нет
             self.store.observe_experiment(his["id"], "10%", "воронка")
-        with self.assertRaises(ValueError):  # сон, питание, тренировки — только над ним
+        with self.assertRaises(ValueError):  # сон, питание, тренировки: только над ним
             self.propose(subject="anya", sensitive=True)
         declined = self.store.decide_experiment(self.propose()["id"], False, "не хочу менять график")
         self.assertEqual(declined["status"], "declined")

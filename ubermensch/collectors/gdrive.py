@@ -1,8 +1,8 @@
-"""Чаты Gemini в Google AI Studio — с Google Диска, где AI Studio их хранит.
+"""Чаты Gemini в Google AI Studio: с Google Диска, где AI Studio их хранит.
 
 Раз в несколько часов: файлы-промпты AI Studio, изменившиеся с прошлого раза, скачиваются в
-папку импорта («Gemini — <название> [id].json»). Дальше их разбирает обычный глубокий импорт
-(core.deep_import): изменившийся чат — новый хеш, и в память попадает только новое.
+папку импорта («Gemini: <название> [id].json»). Дальше их разбирает обычный глубокий импорт
+(core.deep_import): изменившийся чат; новый хеш, и в память попадает только новое.
 Нужен вход Google с доступом к Диску (google_login.sh); без него сборщик молча ничего не делает.
 Чаты по ссылке «всем, у кого есть ссылка» (download_shared) забираются и без входа, а ссылки
 запоминаются: свежая версия каждого такого чата забирается при каждом сборе.
@@ -27,7 +27,7 @@ def _target(import_dir: Path, item: dict) -> Path:
 
 
 def collect(import_dir: Path, since: str | None) -> tuple[list[str], str | None]:
-    """(скачанные имена, новый курсор modifiedTime). since — RFC 3339 из прошлого раза."""
+    """(скачанные имена, новый курсор modifiedTime). since: RFC 3339 из прошлого раза."""
     from googleapiclient.http import MediaIoBaseDownload
 
     drive = google_calendar.service("drive", "v3")
@@ -52,7 +52,7 @@ def collect(import_dir: Path, since: str | None) -> tuple[list[str], str | None]
         try:
             json.loads(raw)
         except ValueError:
-            continue  # не чат (или формат AI Studio поменялся) — не тащим в импорт
+            continue  # не чат (или формат AI Studio поменялся): не тащим в импорт
         target = _target(import_dir, item)
         if not target.exists() or target.read_bytes() != raw:
             target.write_bytes(raw)
@@ -70,8 +70,8 @@ def file_id(url: str) -> str | None:
 
 
 def download_shared(url: str, import_dir: Path) -> str:
-    """Чат AI Studio по ссылке с доступом «всем, у кого есть ссылка» — без входа Google.
-    Кладёт его в папку импорта; дальше — глубокий импорт. Возвращает имя файла."""
+    """Чат AI Studio по ссылке с доступом «всем, у кого есть ссылка»: без входа Google.
+    Кладёт его в папку импорта; дальше: глубокий импорт. Возвращает имя файла."""
     import urllib.request
 
     identifier = file_id(url)
@@ -93,7 +93,7 @@ def download_shared(url: str, import_dir: Path) -> str:
     title = " ".join(first.lstrip("#* ").split()[:6]) or "чат"
     target = _target(import_dir, {"id": identifier, "name": title})
     existing = [p for p in import_dir.glob(f"*[[]{identifier[:8]}[]].json")]
-    if existing:  # тот же чат уже лежит — перезаписываем его, а не плодим копии
+    if existing:  # тот же чат уже лежит: перезаписываем его, а не плодим копии
         target = existing[0]
     if not target.exists() or target.read_bytes() != raw:
         target.write_bytes(raw)

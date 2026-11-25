@@ -1,6 +1,6 @@
-"""Реплика маскота: мини-окно консоли с хвостиком, как пузырь в комиксе.
+"""Реплика оверлея: мини-окно консоли с хвостиком, как пузырь в комиксе.
 
-Появляется над маскотом, текст печатается по буквам. Висит, пока его читают:
+Появляется над оверлеем, текст печатается по буквам. Висит, пока его читают:
 наведённая мышь не даёт ему исчезнуть. ☐ открывает полную историю.
 """
 from __future__ import annotations
@@ -50,7 +50,7 @@ class ReplyBubble(console.ConsoleWindow):
         self.button_clicked.connect(
             lambda name: self.open_history.emit() if name == "maximize" else self.hide())
 
-    # --- форма: окно + хвостик к маскоту ---
+    # --- форма: окно + хвостик к оверлею ---
 
     def frame_rect(self) -> QRect:
         return self.rect().adjusted(0, 0, 0, -TAIL_H)
@@ -85,7 +85,7 @@ class ReplyBubble(console.ConsoleWindow):
         self.resize(width, height)
         self.view.setGeometry(PAD, TITLE_H + PAD // 2, width - PAD - 4, body_h + PAD)
 
-        # над маскотом, хвостик смотрит на его середину
+        # над оверлеем, хвостик смотрит на его середину
         x = anchor.x() + anchor.width() // 2 - width + 70
         x = max(area.left() + 4, min(x, area.right() - width - 4))
         y = max(area.top() + 4, anchor.y() - height + 8)

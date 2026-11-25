@@ -56,7 +56,7 @@ def collect() -> tuple[list[dict], int]:
             continue
         for folder, dirs, files in os.walk(root):
             if PROJECT_MARKERS & (set(dirs) | set(files)):
-                dirs.clear()  # папка проекта — не заходим ни в неё, ни глубже
+                dirs.clear()  # папка проекта: не заходим ни в неё, ни глубже
                 continue
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
             for name in files:

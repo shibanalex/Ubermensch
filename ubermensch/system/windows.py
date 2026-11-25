@@ -1,7 +1,7 @@
 """Окна и ввод: активное окно, простой, полноэкранность, блокировка, музыка и громкость.
 
-Окно и простой — от сенсоров сеанса (session.py: KWin и Wayland). Музыка — через MPRIS
-(D-Bus-интерфейс любого плеера: Chrome, Spotify, VLC…), громкость — через PipeWire (wpctl).
+Окно и простой: от сенсоров сеанса (session.py: KWin и Wayland). Музыка; через MPRIS
+(D-Bus-интерфейс любого плеера: Chrome, Spotify, VLC…), громкость; через PipeWire (wpctl).
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def is_desktop(window: Window | None) -> bool:
 
 
 def is_fullscreen(window: Window) -> bool:
-    """Окно занимает весь монитор — игра, фильм, презентация."""
+    """Окно занимает весь монитор: игра, фильм, презентация."""
     return window.fullscreen
 
 
@@ -71,7 +71,7 @@ def _playback_status(connection, player: str) -> str:
 
 
 def _media(action: str) -> None:
-    """Плеер, который играет сейчас; если никто не играет — первый на паузе."""
+    """Плеер, который играет сейчас; если никто не играет: первый на паузе."""
     with open_dbus_connection(bus="SESSION") as connection:
         players = _players(connection)
         if not players:

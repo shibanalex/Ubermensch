@@ -1,4 +1,4 @@
-"""Поиск файлов: мгновенно по индексу plocate, в конкретной папке — fd, иначе обходом папок."""
+"""Поиск файлов: мгновенно по индексу plocate, в конкретной папке; fd, иначе обходом папок."""
 from __future__ import annotations
 
 import os
@@ -21,12 +21,12 @@ def _visible(path: str) -> bool:
 
 
 def _plocate(name_part: str, limit: int) -> list[str] | None:
-    """None — индекса нет. Индекс обновляется раз в сутки: свежие файлы найдёт fd/обход."""
+    """None: индекса нет. Индекс обновляется раз в сутки: свежие файлы найдёт fd/обход."""
     if not shutil.which("plocate"):
         return None
     done = subprocess.run(["plocate", "-i", "-l", str(limit * 10), "--", name_part],
                           capture_output=True, timeout=30)
-    if done.returncode not in (0, 1):  # 1 — ничего не найдено
+    if done.returncode not in (0, 1):  # 1: ничего не найдено
         return None
     lines = done.stdout.decode("utf-8", errors="replace").splitlines()
     roots = [str(r) for r in SEARCH_ROOTS]

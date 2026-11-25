@@ -1,17 +1,17 @@
 """Профиль пользователя со всех сторон: ценности, цели, психика, тело, мышление, люди, среда,
-ресурсы и расхождения слов с делами — с опорой на конкретные записи.
+ресурсы и расхождения слов с делами: с опорой на конкретные записи.
 
 Как строится (фоновая служба «профиль», раз в неделю, когда очередь разбора пуста):
-1. Корпус — неизменяемый снимок базы (profile_corpus) плюс метрики поведения (behavior).
-2. Окна — порции по ~60 тыс. символов: собственные слова пользователя и переписки целиком,
-   память Ани, сводки прежнего разбора и метрики. Объёмные шумные источники (просмотры YouTube,
-   действия Google, поиск, страницы браузера, трекер окон) — только через метрики и сводки.
-3. Наблюдения (map, sonnet): из каждого окна — наблюдения по измерениям с номерами записей.
+1. Корпус: неизменяемый снимок базы (profile_corpus) плюс метрики поведения (behavior).
+2. Окна: порции по ~60 тыс. символов: собственные слова пользователя и переписки целиком,
+   память ассистента, сводки прежнего разбора и метрики. Объёмные шумные источники (просмотры YouTube,
+   действия Google, поиск, страницы браузера, трекер окон): только через метрики и сводки.
+3. Наблюдения (map, sonnet): из каждого окна; наблюдения по измерениям с номерами записей.
    Результат кешируется по содержимому окна: при перестройке новые месяцы разбираются,
-   старые — нет.
+   старые: нет.
 4. Разделы (reduce, основная модель): все наблюдения измерения → утверждения с видом знания,
    уверенностью, опорами, цитатами, противоречиями и смыслом для помощи.
-5. Правила поддержки и открытые вопросы — по всем утверждениям; затем проверка ссылок
+5. Правила поддержки и открытые вопросы: по всем утверждениям; затем проверка ссылок
    и атомарная публикация (personalization.save_profile). Чат получает выжимку сам.
 """
 from __future__ import annotations
@@ -45,7 +45,7 @@ REBUILD_EVERY = timedelta(days=7)
 CHECK_EVERY = 3600
 MAX_DEFER = timedelta(hours=6)  # очередь разбора важнее, но не бесконечно
 MAP_ATTEMPTS = 3
-MAP_MODEL = models.cli("profile")[0]  # уровни моделей — runtime/models.py
+MAP_MODEL = models.cli("profile")[0]  # уровни моделей: runtime/models.py
 CALL_TIMEOUT = 900
 KEEP_CORPORA = 1
 
@@ -83,7 +83,7 @@ DIMENSION_IDS = tuple(d[0] for d in DIMENSIONS)
 KINDS = ("explicit_statement", "observed_behavior", "hypothesis", "secondary_report")
 CONFIDENCE = ("high", "medium", "low")
 
-# Источники, которые читаются целиком; остальное — только собственные реплики пользователя.
+# Источники, которые читаются целиком; остальное: только собственные реплики пользователя.
 MAPPED_SOURCES = {"telegram", "ai_chat", "gmail", "document", "creative", "notification",
                   "screen", "messages", "facts", "people", "goals", "tasks", "job_summaries",
                   "metrics", "imports", "obsidian", "feedback"}
@@ -210,7 +210,7 @@ def _clip(text: str, limit: int) -> str:
 
 def _speaker(source: str, role: str, metadata: dict) -> str:
     if role == "user":
-        return "Я"  # в заголовке окна: «Я» — пользователь
+        return "Я"  # в заголовке окна: «Я»; пользователь
     if source == "messages":
         return "Аня" if role == "assistant" else role
     if role in ("secondary", "derived"):
@@ -268,7 +268,7 @@ def _normal(text: str) -> str:
 
 
 def clean_observations(window: Window, raw: list[dict]) -> list[dict]:
-    """Номера записей → ссылки корпуса; без опоры — отброшено; цитата — только дословная."""
+    """Номера записей → ссылки корпуса; без опоры: отброшено; цитата; только дословная."""
     result = []
     for item in raw[:MAX_OBSERVATIONS]:
         if item.get("section") not in DIMENSION_IDS or not str(item.get("text", "")).strip():
@@ -294,7 +294,7 @@ def clean_observations(window: Window, raw: list[dict]) -> list[dict]:
 
 
 def _observation_lines(observations: list[dict]) -> tuple[str, dict[str, dict]]:
-    """Наблюдения раздела для модели (o-номера); не влезает — сначала уверенное и свежее."""
+    """Наблюдения раздела для модели (o-номера); не влезает: сначала уверенное и свежее."""
     rank = {"high": 0, "medium": 1, "low": 2}
     ordered = sorted(observations, key=lambda o: (rank[o["confidence"]], o["period"]),
                      reverse=False)
@@ -306,7 +306,7 @@ def _observation_lines(observations: list[dict]) -> tuple[str, dict[str, dict]]:
             continue
         chosen.append((item, line))
         size += len(line)
-    chosen.sort(key=lambda pair: pair[0]["period"])  # хронология — видно, как менялось
+    chosen.sort(key=lambda pair: pair[0]["period"])  # хронология: видно, как менялось
     by_id, lines = {}, []
     for index, (item, line) in enumerate(chosen, 1):
         by_id[f"o{index}"] = item
@@ -316,7 +316,7 @@ def _observation_lines(observations: list[dict]) -> tuple[str, dict[str, dict]]:
 
 
 def build_section(dimension: tuple[str, str, str], data: dict, by_id: dict[str, dict]) -> AnalysisSection:
-    """Ответ модели → проверенный раздел: опоры только из наблюдений, цитаты — их же."""
+    """Ответ модели → проверенный раздел: опоры только из наблюдений, цитаты; их же."""
     section_id, title, _ = dimension
     claims = []
     for item in data.get("claims") or []:

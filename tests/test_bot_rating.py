@@ -44,8 +44,8 @@ class RatingTests(unittest.IsolatedAsyncioTestCase):
             "SELECT substr(ts,1,10) FROM messages WHERE id=?", (self.reply,)).fetchone()[0])
         self.assertEqual((item["rating"], item["why"]), ("unhelpful", "Нет рычагов: письменный отказ, жалоба"))
         self.assertEqual(item["asked"], "Мне отказали в общаге")
-        self.assertIn("👎", self.core.chat.await_args.args[0])  # Аня понимает, что это отзыв
-        # её новый ответ снова с кнопками
+        self.assertIn("👎", self.core.chat.await_args.args[0])  # Ассистент понимает, что это отзыв
+        # new reply includes rating buttons
         markup = self.bot.send_message.await_args.kwargs["reply_markup"]
         self.assertEqual(markup.inline_keyboard[0][1].callback_data, "fb:99:-")
 

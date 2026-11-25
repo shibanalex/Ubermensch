@@ -66,7 +66,7 @@ def create_app(core: Core, token: str) -> web.Application:
         return web.json_response(dashboard.build(core), dumps=lambda v: json.dumps(v, ensure_ascii=False, default=str))
 
     async def post_experiment_decision(request: web.Request) -> web.Response:
-        """Его решение кнопкой в Obsidian — это и есть согласие (или отказ) владельца."""
+        """Его решение кнопкой в Obsidian: это и есть согласие (или отказ) владельца."""
         data = contracts.ExperimentDecision.model_validate(await body(request))
         try:
             item = core.store.decide_experiment(int(request.match_info['id']), data.accept, data.consent)
@@ -87,7 +87,7 @@ def create_app(core: Core, token: str) -> web.Application:
         return web.json_response({'ok': True})
 
     async def post_goal_plan(request: web.Request) -> web.Response:
-        """Утвердить план цели (предложение Ани с его правками)."""
+        """Утвердить план цели (предложение ассистента с его правками)."""
         data = contracts.GoalPlanApproval.model_validate(await body(request))
         try:
             core.store.save_goal_plan(int(request.match_info['id']), data.metric, data.unit, data.baseline,
@@ -153,7 +153,7 @@ def create_app(core: Core, token: str) -> web.Application:
         return web.json_response({"id": core.add_task(data.title, due)})
 
     async def get_tasks(request: web.Request) -> web.Response:
-        """Открытые задачи и выполненные сегодня — для виджета (легче, чем весь /api/state)."""
+        """Открытые задачи и выполненные сегодня: для виджета (легче, чем весь /api/state)."""
         return web.json_response({"today": date.today().isoformat(),
                                   "tasks": [dict(t) for t in core.store.tasks()]})
 
@@ -180,7 +180,7 @@ def create_app(core: Core, token: str) -> web.Application:
         return web.json_response({'started': True, 'run': core.jobs.submit('collect', {})}, status=202)
 
     async def post_voice(request: web.Request) -> web.Response:
-        """Пересобрать стиль переписки и голос Ани сейчас, не дожидаясь недели."""
+        """Пересобрать стиль переписки и голос ассистента сейчас, не дожидаясь недели."""
         return web.json_response({'started': True, 'run': core.jobs.submit('voice', {})}, status=202)
 
     async def post_deep_import(request: web.Request) -> web.Response:
@@ -223,7 +223,7 @@ def create_app(core: Core, token: str) -> web.Application:
     # --- для сервера инструментов (ubermensch.tools): действия и подтверждения ---
 
     async def post_approval(request: web.Request) -> web.Response:
-        """Ждёт «да/нет» пользователя (до 10 минут) — запрос висит всё это время."""
+        """Ждёт подтверждение пользователя (до 10 минут): запрос висит всё это время."""
         data = contracts.ApprovalRequest.model_validate(await body(request))
         approved = await core.request_approval(data.title, data.details)
         return web.json_response({"approved": approved})
